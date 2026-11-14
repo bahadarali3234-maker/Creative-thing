@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Design Library – Themes, Styles, Fonts A–Z, Layouts, Effects</title>
+<style>
+:root{--bg:#0c0e16;--sf:#161a27;--bd:#262c3f;--tx:#e8eaf3;--mu:#8b93ad;--ac:#7c8cff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--tx);padding:24px;max-width:1240px;margin:auto;line-height:1.5}
+h1{font-size:clamp(1.6rem,4vw,2.4rem)}
+.sub{color:var(--mu);margin:6px 0 18px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:5}
+.tab,.btn{background:var(--sf);color:var(--tx);border:1px solid var(--bd);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:.9rem}
+.tab.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.btn:hover,.tab:hover{border-color:var(--ac)}
+input{background:var(--sf);border:1px solid var(--bd);color:var(--tx);padding:8px 12px;border-radius:10px;flex:1;min-width:160px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;margin-top:14px}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card h3{font-size:1rem}.card p,.card small{color:var(--mu);font-size:.82rem}
+.sw{display:flex;height:42px;border-radius:8px;overflow:hidden;border:1px solid var(--bd)}
+.sw i{flex:1}
+.hx{display:flex;flex-wrap:wrap;gap:4px;font:11px ui-monospace,monospace;color:var(--mu)}
+.stage{padding:22px;border-radius:12px;display:grid;place-items:center;min-height:120px}
+.demo{padding:18px 22px;text-align:center;font-weight:600;min-width:70%}
+pre{background:#090b12;border:1px solid var(--bd);border-radius:8px;padding:10px;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;color:#b9c1e0;max-height:150px;overflow:auto}
+.fh{font-size:1.7rem;line-height:1.15}.fb{font-size:.95rem}
+.hide{display:none!important}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ac);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}
+#toast.show{opacity:1}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<h1>Design Library</h1>
+<p class="sub" id="count"></p>
+<div class="bar">
+  <button class="tab on" data-t="palettes">Themes</button>
+  <button class="tab" data-t="styles">Styles</button>
+  <button class="tab" data-t="fonts">Fonts A–Z</button>
+  <button class="tab" data-t="gradients">Gradients</button>
+  <button class="tab" data-t="layouts">Layouts</button>
+  <button class="tab" data-t="effects">Effects</button>
+  <input id="q" placeholder="Search… (e.g. luxury, glass, cafe, neon)">
+  <button class="btn" id="exp">Copy full JSON</button>
+</div>
+<div class="grid" id="grid"></div>
+<div id="toast">Copied ✓</div>
+
+<script type="application/json" id="design-data">
+{
+"palettes":[
+["Midnight Luxe","elegant, premium","#0b0d17","#151a2b","#c9a24b","#6d5dfc","#f5d98b","#eef0f7","luxury, jewellery, law firm"],
+["Ocean Breeze","fresh, airy","#f4fbff","#ffffff","#0ea5e9","#0369a1","#22d3ee","#0c2a3d","travel, spa, SaaS"],
+["Sunset Glow","warm, energetic","#1a0b14","#2a1220","#ff6b35","#f72585","#ffd166","#fff1e8","events, food delivery"],
+["Forest Calm","natural, trustworthy","#f3f7f2","#ffffff","#2f6b3a","#8bb174","#d9a441","#1e2b1f","eco brands, organic, wellness"],
+["Neon Cyber","futuristic, techy","#07070f","#11111f","#00f0ff","#b026ff","#ff2e97","#e8f8ff","gaming, crypto, tech"],
+["Royal Purple","creative, bold","#12071f","#1d0f33","#8b5cf6","#d946ef","#fbbf24","#f3e8ff","agency, music, nightlife"],
+["Coral Cafe","friendly, cozy","#fff8f3","#ffffff","#e76f51","#2a9d8f","#f4a261","#3a2a22","cafe, bakery, restaurant"],
+["Monochrome Pro","minimal, sharp","#ffffff","#f4f4f5","#111111","#52525b","#ef4444","#18181b","portfolio, studio, architecture"],
+["Rose Gold","feminine, soft luxury","#fff5f5","#ffffff","#b76e79","#e8b4b8","#d4a373","#3b2327","beauty, salon, wedding"],
+["Emerald Fintech","trust, growth","#06130f","#0d231c","#10b981","#34d399","#fbbf24","#e8fff6","finance, banking, investing"],
+["Sky Medical","clean, caring","#f5faff","#ffffff","#2563eb","#14b8a6","#38bdf8","#0f2342","clinic, hospital, pharmacy"],
+["Candy Pop","playful, joyful","#fff0f7","#ffffff","#ff4d9d","#7c4dff","#ffd23f","#2b1b3d","kids, toys, games"],
+["Desert Sand","earthy, warm","#faf3e7","#ffffff","#c2703d","#8a5a3b","#e3b04b","#3b2a1c","handicrafts, travel, interior"],
+["Arctic Frost","cool, crisp","#eef6fb","#ffffff","#3b82f6","#94a3b8","#67e8f9","#0f172a","SaaS, dashboards, startups"],
+["Crimson Noir","aggressive, powerful","#0a0a0a","#161616","#dc2626","#f97316","#fafafa","#f5f5f5","fitness, automotive, barber"],
+["Lavender Dream","calm, dreamy","#f7f3ff","#ffffff","#8b7cf6","#c4b5fd","#f9a8d4","#2e2550","meditation, apps, journals"],
+["Gold and Black","premium, exclusive","#0a0a0a","#141414","#d4af37","#8c6d1f","#f5e6a8","#f5f0e1","real estate, watches, hotels"],
+["Mint Fresh","light, healthy","#f0fdf9","#ffffff","#14b8a6","#5eead4","#fb923c","#0f3d36","health food, juice, yoga"],
+["Retro Sunset 80s","nostalgic, vibrant","#240046","#3c096c","#ff9e00","#ff0054","#00f5d4","#fff1fb","music, festivals, retro shops"],
+["Slate Corporate","professional, serious","#f8fafc","#ffffff","#334155","#0ea5e9","#f59e0b","#0f172a","B2B, consulting, enterprise"],
+["Cherry Blossom","gentle, stylish","#fff7fa","#ffffff","#ec4899","#f9a8d4","#84cc16","#4a1d33","florist, fashion, gifts"],
+["Deep Space","cosmic, intelligent","#05060f","#0e1226","#6366f1","#22d3ee","#f472b6","#e0e7ff","AI products, startups, science"],
+["Olive and Cream","organic, refined","#f6f1e3","#fffdf6","#6b7a3a","#a3b18a","#bc6c25","#2a2f1c","fine dining, farms, tea"],
+["Electric Sport","energetic, athletic","#0b132b","#1c2541","#3a86ff","#ffbe0b","#fb5607","#f1faee","sports, gyms, events"]
+],
+"styles":[
+["Glassmorphism","linear-gradient(135deg,#6d5dfc,#ec4899)","background:rgba(255,255,255,.12);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid rgba(255,255,255,.25);box-shadow:0 8px 32px rgba(0,0,0,.25);border-radius:20px;color:#fff","Needs a colorful or image background behind it. Great for navbars, cards, modals."],
+["Neumorphism (raised)","#e0e5ec","background:#e0e5ec;box-shadow:9px 9px 16px #a3b1c6,-9px -9px 16px #ffffff;border-radius:20px;color:#444","Soft UI. Background and element share the same color. Use for buttons, toggles, cards."],
+["Neumorphism (pressed)","#e0e5ec","background:#e0e5ec;box-shadow:inset 6px 6px 10px #a3b1c6,inset -6px -6px 10px #ffffff;border-radius:16px;color:#444","Pressed or active state, inputs, sliders."],
+["Claymorphism","#fde2ea","background:#ffb3c7;border-radius:28px;box-shadow:inset -8px -8px 16px rgba(0,0,0,.15),inset 8px 8px 16px rgba(255,255,255,.5),10px 14px 24px rgba(0,0,0,.18);color:#4a1630","Chunky 3D puffy look for kids, apps, playful brands."],
+["Neo-Brutalism","#f4f4f0","background:#ffe14d;border:3px solid #000;box-shadow:6px 6px 0 #000;border-radius:0;color:#000;font-weight:800","Bold borders, hard shadows, flat loud colors. Startups, creators, portfolios."],
+["Neon Glow","#05050c","background:#0b0b1a;border:2px solid #0ff;box-shadow:0 0 12px #0ff,inset 0 0 12px rgba(0,255,255,.3);border-radius:14px;color:#0ff;text-shadow:0 0 8px #0ff","Dark backgrounds only. Gaming, crypto, nightlife."],
+["Aurora Mesh","#0f0a1f","background:radial-gradient(at 20% 20%,#7c3aed,transparent 50%),radial-gradient(at 80% 30%,#06b6d4,transparent 50%),radial-gradient(at 50% 90%,#ec4899,transparent 50%),#0f0a1f;color:#fff;border-radius:20px","Animated or static mesh gradient hero and section backgrounds."],
+["Bento Grid","#f3f4f6","background:#fff;border:1px solid #e5e7eb;border-radius:24px;box-shadow:0 1px 2px rgba(0,0,0,.05);color:#111","Feature sections as mixed-size tiles in a CSS grid."],
+["Minimal Line","#fafafa","background:#fafafa;border:1px solid #111;border-radius:2px;color:#111","Thin borders, lots of whitespace, strong type. Studios, editorial."],
+["Dark Luxe Gold","#050505","background:linear-gradient(145deg,#1a1a1a,#0d0d0d);border:1px solid #c9a24b;border-radius:12px;color:#e9d9a6;box-shadow:0 10px 30px rgba(0,0,0,.6)","Premium dark cards with metallic accents."],
+["Retro Paper","#e8d5a8","background:#f4e4c1;border:3px double #7a3e1d;border-radius:6px;color:#5a2d12;font-family:Courier New,monospace","Vintage, typewriter, craft and old-school brands."],
+["Gradient Border","#0e1120","background:linear-gradient(#12162a,#12162a) padding-box,linear-gradient(135deg,#00f0ff,#b026ff,#ff2e97) border-box;border:2px solid transparent;border-radius:18px;color:#fff","Premium highlight for pricing and featured cards."]
+],
+"fonts":[
+["A","Abril Fatface","Lato","editorial, fashion"],["B","Bebas Neue","Open Sans","bold, sports"],["C","Cormorant Garamond","Montserrat","luxury, weddings"],["D","DM Serif Display","DM Sans","modern serif"],["E","Epilogue","Inter","clean tech"],["F","Fraunces","Work Sans","warm, friendly"],["G","Gilda Display","Karla","boutique, spa"],["H","Hanken Grotesk","Source Sans 3","corporate"],["I","Instrument Serif","Inter","elegant minimal"],["J","Josefin Sans","Lora","retro chic"],["K","Kanit","Roboto","strong, automotive"],["L","Lexend","Merriweather","readable, education"],["M","Manrope","Inter","SaaS, apps"],["N","Nunito","Nunito Sans","soft, kids, health"],["O","Outfit","Inter","modern startup"],["P","Playfair Display","Source Sans 3","classic editorial"],["Q","Quicksand","Nunito","playful rounded"],["R","Raleway","Roboto","light, elegant"],["S","Space Grotesk","DM Sans","techy, creative"],["T","Tenor Sans","Lato","refined, hotel"],["U","Unbounded","Inter","futuristic, bold"],["V","Vollkorn","Work Sans","bookish, calm"],["W","Work Sans","Libre Baskerville","professional"],["X","Xanh Mono","Inter","code, developer"],["Y","Yeseva One","Poppins","beauty, feminine"],["Z","Zen Dots","Inter","sci-fi, gaming"]
+],
+"gradients":[
+["Sunrise","linear-gradient(135deg,#ff9a9e,#fad0c4)"],["Ocean","linear-gradient(135deg,#2193b0,#6dd5ed)"],["Purple Haze","linear-gradient(135deg,#667eea,#764ba2)"],["Emerald","linear-gradient(135deg,#11998e,#38ef7d)"],["Fire","linear-gradient(135deg,#f12711,#f5af19)"],["Midnight","linear-gradient(135deg,#0f2027,#203a43,#2c5364)"],["Candy","linear-gradient(135deg,#ff6a88,#ff99ac,#ffd1ff)"],["Neon","linear-gradient(135deg,#00f0ff,#b026ff,#ff2e97)"],["Gold","linear-gradient(135deg,#bf953f,#fcf6ba,#b38728)"],["Mint","linear-gradient(135deg,#a8edea,#fed6e3)"],["Royal","linear-gradient(135deg,#141e30,#243b55)"],["Peach","linear-gradient(135deg,#ffecd2,#fcb69f)"]
+],
+"layouts":[
+["Navbar","Logo (left) | Links (center) | CTA button + theme toggle (right)","Sticky, blur on scroll, hamburger drawer on mobile, active link highlight with scroll-spy, smooth scroll."],
+["Hero – Split","Headline + subtext + 2 buttons (left) | Hero image with floating cards (right)","Typing or rotating word, floating shapes, CTA opens modal or scrolls."],
+["Hero – Centered","Badge / Big headline / subtext / buttons / full-width image or mockup below","Gradient text, animated aurora background, scroll indicator."],
+["Logo Marquee","Row of partner logos scrolling infinitely","Pure CSS marquee, pause on hover."],
+["Features Grid","3 to 6 cards: icon, title, 2-line text","Hover lift, staggered reveal via IntersectionObserver."],
+["Bento Showcase","Mixed-size tiles in a 4-column grid, one large tile with image","CSS grid-template-areas, tilt on hover."],
+["Gallery","Masonry or grid of 8 to 12 images with category filter chips","Working filter, lightbox with next/prev/ESC, lazy loading."],
+["Stats Counters","4 big numbers with labels in a strip","Count-up animation when visible."],
+["Process Steps","3 to 4 steps connected by a line (only if real sequence)","Progress line fills on scroll."],
+["Testimonials Slider","Avatar, quote, name, role, star rating, arrows and dots","Autoplay, swipe on touch, pause on hover."],
+["Pricing","3 plan cards, middle highlighted, monthly/yearly toggle","Toggle recalculates prices, buttons open signup modal."],
+["FAQ Accordion","6 questions with expand/collapse","One open at a time, animated height, aria-expanded."],
+["Contact + Form","Info and map/image (left) | Form (right)","JS validation, inline errors, success toast, button loading state."],
+["Newsletter CTA","Full-width banner with email input and button","Email regex validation, success state."],
+["Footer","Brand + 3 link columns + socials + copyright + back-to-top","Back-to-top button appears after 400px scroll."],
+["Shop Grid + Cart","Product cards, search, category filter, cart drawer","Add/remove/qty, running total, badge count, persistent in memory."]
+],
+"effects":[
+["Scroll reveal","IntersectionObserver adds .in class; CSS: .rv{opacity:0;transform:translateY(24px);transition:.7s}.rv.in{opacity:1;transform:none}"],
+["Gradient text","background:linear-gradient(90deg,var(--primary),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent"],
+["Hover lift card","transition:.3s;:hover{transform:translateY(-8px);box-shadow:0 20px 40px rgba(0,0,0,.2)}"],
+["Marquee","@keyframes mq{to{transform:translateX(-50%)}} .track{display:flex;width:max-content;animation:mq 30s linear infinite} (duplicate the items once)"],
+["Floating shape","@keyframes fl{50%{transform:translateY(-18px)}} .shape{animation:fl 6s ease-in-out infinite}"],
+["Shimmer button","background:linear-gradient(110deg,var(--primary) 40%,#fff6 50%,var(--primary) 60%);background-size:200% 100%;animation:sh 2.5s infinite;@keyframes sh{to{background-position:-200% 0}}"],
+["Parallax hero","window scroll listener (requestAnimationFrame): bg.style.transform=`translateY(${scrollY*.3}px)`"],
+["Typing text","JS loop that types and deletes words from an array into a span with a blinking caret"],
+["3D tilt card","mousemove: compute rotateX/rotateY from cursor offset, apply transform:perspective(800px) rotateX() rotateY()"],
+["Count-up","requestAnimationFrame easing from 0 to data-target when the element enters the viewport"],
+["Custom cursor glow","a fixed radial-gradient div following mousemove with transform, pointer-events:none"],
+["Dark/light toggle","data-theme attribute on html, CSS variables per theme, save choice in localStorage inside try/catch"]
+]
+}
+</script>
+
+<script>
+const D=JSON.parse(document.getElementById('design-data').textContent);
+const grid=document.getElementById('grid'),store=[];let tab='palettes';
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const cp=t=>store.push(t)-1;
+function toast(){const t=document.getElementById('toast');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1100)}
+function copy(t){try{navigator.clipboard.writeText(t).then(toast)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove();toast()}}
+const btn=t=>`<button class="btn" data-c="${cp(t)}">Copy</button>`;
+const R={
+palettes:()=>D.palettes.map(p=>{const c=p.slice(2,8),n=['bg','surface','primary','secondary','accent','text'];
+const css=n.map((k,i)=>`--${k}:${c[i]};`).join('');
+return `<div class="card"><h3>${p[0]}</h3><small>${p[1]}</small><div class="sw">${c.map(x=>`<i style="background:${x}"></i>`).join('')}</div><div class="hx">${c.join(' ')}</div><p>Best for: ${p[8]}</p>${btn(':root{'+css+'}')}</div>`}),
+styles:()=>D.styles.map(s=>`<div class="card"><h3>${s[0]}</h3><div class="stage" style="background:${s[1]}"><div class="demo" style="${s[2]}">Sample Card</div></div><p>${s[3]}</p><pre>${esc(s[2])}</pre>${btn(s[2])}</div>`),
+fonts:()=>D.fonts.map(f=>`<div class="card"><small>${f[0]} · ${f[3]}</small><div class="fh" style="font-family:'${f[1]}',serif">${f[1]}</div><div class="fb" style="font-family:'${f[2]}',sans-serif">The quick brown fox jumps over the lazy dog. Body text in ${f[2]}.</div>${btn(`Heading: ${f[1]} | Body: ${f[2]} | <link href="https://fonts.googleapis.com/css2?family=${f[1].replace(/ /g,'+')}&family=${f[2].replace(/ /g,'+')}&display=swap" rel="stylesheet">`)}</div>`),
+gradients:()=>D.gradients.map(g=>`<div class="card"><h3>${g[0]}</h3><div class="stage" style="background:${g[1]}"></div><pre>${esc('background:'+g[1])}</pre>${btn('background:'+g[1]+';')}</div>`),
+layouts:()=>D.layouts.map(l=>`<div class="card"><h3>${l[0]}</h3><pre>${esc(l[1])}</pre><p>${esc(l[2])}</p>${btn(l[0]+': '+l[1]+' — '+l[2])}</div>`),
+effects:()=>D.effects.map(e=>`<div class="card"><h3>${e[0]}</h3><pre>${esc(e[1])}</pre>${btn(e[1])}</div>`)
+};
+function render(){store.length=0;grid.innerHTML=R[tab]().join('');filter()}
+function filter(){const q=document.getElementById('q').value.toLowerCase();grid.querySelectorAll('.card').forEach(c=>c.classList.toggle('hide',q&&!c.textContent.toLowerCase().includes(q)))}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');tab=b.dataset.t;render()});
+grid.addEventListener('click',e=>{const b=e.target.closest('[data-c]');if(b)copy(store[b.dataset.c])});
+document.getElementById('q').addEventListener('input',filter);
+document.getElementById('exp').onclick=()=>copy(JSON.stringify(D));
+const fam=D.fonts.flatMap(f=>[f[1],f[2]]).filter((v,i,a)=>a.indexOf(v)===i).map(f=>'family='+f.replace(/ /g,'+')).join('&');
+const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?'+fam+'&display=swap';document.head.appendChild(l);
+document.getElementById('count').textContent=`${D.palettes.length} themes · ${D.styles.length} styles · ${D.fonts.length} font pairings · ${D.gradients.length} gradients · ${D.layouts.length} layout blocks · ${D.effects.length} effects`;
+render();
+</script>
+</body>
+</html>

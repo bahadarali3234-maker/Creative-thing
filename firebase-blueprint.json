@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "lastLoginAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid"]
+    },
+    "ChatThread": {
+      "title": "ChatThread",
+      "description": "User conversation thread with Grok assistant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 256 },
+        "promptBanner": { "type": "string", "maxLength": 2048 },
+        "activeTab": { "type": "string", "maxLength": 64 },
+        "messages": { "type": "array" },
+        "messagesCount": { "type": "number" },
+        "lastUpdated": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId"]
+    },
+    "UserProject": {
+      "title": "UserProject",
+      "description": "User project blueprint and memory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "lastSyncedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Consultation booking reservation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "phone": { "type": "string", "maxLength": 64 },
+        "topic": { "type": "string", "maxLength": 256 },
+        "selectedDate": { "type": "string", "maxLength": 64 },
+        "selectedSlot": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "email", "selectedDate", "selectedSlot"]
+    },
+    "CustomTemplate": {
+      "title": "CustomTemplate",
+      "description": "User-saved MythoriaLib creative studio template",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "kind": { "type": "string", "maxLength": 32 },
+        "name": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "kind", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile documents keyed by UID"
+    },
+    "/chat_threads/{threadId}": {
+      "schema": { "$ref": "#/entities/ChatThread" },
+      "description": "Chat conversations authored by user"
+    },
+    "/user_projects/{projectId}": {
+      "schema": { "$ref": "#/entities/UserProject" },
+      "description": "User projects blueprints"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Consultation bookings"
+    },
+    "/custom_templates/{templateId}": {
+      "schema": { "$ref": "#/entities/CustomTemplate" },
+      "description": "User custom creative studio templates keyed by template ID"
+    }
+  }
+}

@@ -1,0 +1,233 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-surface: var(--surface);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--on-primary);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--surface-soft);
+  --color-accent-foreground: var(--text);
+  --color-ring: var(--primary);
+}
+
+@layer base {
+  :root {
+    /* -------------------------------------------------------------------
+     * LIGHT THEME — BLUE / WHITE / SOFT NEUMORPHIC
+     * Clean, modern AI-workspace aesthetic
+     * ------------------------------------------------------------------- */
+    --bg: #F4F8FC;
+    --bg-gradient-start: #F8FAFD;
+    --bg-gradient-end: #EEF4FA;
+    --surface: #FFFFFF;
+    --surface-soft: #EEF5FB;
+    --surface-card: #FFFFFF;
+    --surface-nav: rgba(255, 255, 255, 0.85);
+
+    --primary: #4DA3FF;
+    --primary-light: #8CC8FF;
+    --primary-dark: #1769AA;
+    --primary-glow: rgba(77, 163, 255, 0.35);
+
+    --text: #000000;
+    --prompt-bg: oklch(1 0 0);
+    --prompt-text: oklch(0.19 0 0);
+    --prompt-muted: oklch(0.5 0 0);
+    --prompt-border: oklch(0.87 0 0);
+    --prompt-icon: oklch(0.94 0 0);
+    --remove-bg: oklch(0.57 0 0);
+    --on-primary: #FFFFFF;
+    --text-secondary: #667085;
+    --text-muted: #98A2B3;
+
+    --border: rgba(23, 105, 170, 0.12);
+    --border-strong: rgba(23, 105, 170, 0.22);
+
+    --shadow-light: rgba(255, 255, 255, 0.95);
+    --shadow-dark: rgba(71, 105, 135, 0.16);
+
+    /* Neumorphic shadow presets for light theme */
+    --shadow-neumorphic: 8px 8px 22px rgba(71, 105, 135, 0.12), -8px -8px 22px rgba(255, 255, 255, 0.95);
+    --shadow-neumorphic-soft: 5px 5px 14px rgba(71, 105, 135, 0.08), -5px -5px 14px rgba(255, 255, 255, 0.95);
+    --shadow-neumorphic-inset: inset 3px 3px 6px rgba(71, 105, 135, 0.10), inset -3px -3px 6px rgba(255, 255, 255, 0.95);
+
+    color-scheme: light;
+  }
+
+  /* Dark mode removed — the app is permanently light (blue / white / black text). */
+
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 380ms ease, color 380ms ease;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Syne', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+/* -------------------------------------------------------------
+ * Global Theme-Aware Typography & Luxury Serif
+ * ------------------------------------------------------------- */
+.font-luxury-serif {
+  font-family: 'Cormorant Garamond', 'Bodoni 72', 'Bodoni Moda', 'Playfair Display', 'Times New Roman', serif;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color: var(--text);
+}
+
+.font-luxury-serif strong,
+.font-luxury-serif b {
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* -------------------------------------------------------------
+ * Neumorphic Utility Classes (Theme Sensitive)
+ * ------------------------------------------------------------- */
+.neumorphic-surface {
+  background-color: var(--surface);
+  box-shadow: var(--shadow-neumorphic);
+  border: 1px solid var(--border);
+  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neumorphic-card {
+  background-color: var(--surface-card);
+  box-shadow: var(--shadow-neumorphic);
+  border: 1px solid var(--border);
+  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neumorphic-card-soft {
+  background-color: var(--surface-soft);
+  box-shadow: var(--shadow-neumorphic-soft);
+  border: 1px solid var(--border);
+  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neumorphic-inset {
+  box-shadow: var(--shadow-neumorphic-inset);
+  border: 1px solid var(--border);
+}
+
+.theme-button-primary {
+  background-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 18px var(--primary-glow);
+  transition: all 250ms ease;
+}
+
+.theme-button-primary:hover {
+  background-color: var(--primary-dark);
+  box-shadow: 0 6px 24px var(--primary-glow);
+}
+
+.theme-accent-text {
+  color: var(--primary);
+}
+
+.theme-accent-glow {
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+
+/* -------------------------------------------------------------
+ * Animations & Marquee
+ * ------------------------------------------------------------- */
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marquee-right {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-right 32s linear infinite;
+}
+
+.animate-marquee-right:hover {
+  animation-play-state: paused;
+}
+
+/* -------------------------------------------------------------
+ * Custom Scrollbar
+ * ------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  opacity: 0.5;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* -------------------------------------------------------------
+ * Strict Exceptions from user spec:
+ * Prompt box and questions card retain crisp white card styling
+ * ------------------------------------------------------------- */
+.fixed-prompt-box { --surface: var(--prompt-bg); --text: var(--prompt-text); --border: var(--prompt-border); background: var(--prompt-bg); color: var(--prompt-text); color-scheme: light; }
+.fixed-prompt-box input { color: var(--prompt-text); }
+.fixed-prompt-box input::placeholder { color: var(--prompt-muted); }
+.snippet-box { --surface: var(--prompt-bg); --text: var(--prompt-text); --border: var(--prompt-border); background: var(--prompt-bg) !important; color: var(--prompt-text) !important; color-scheme: light; }
+.snippet-box *:not(button):not(button *) { color: var(--prompt-text) !important; background-color: var(--prompt-bg) !important; opacity: 1 !important; -webkit-text-fill-color: var(--prompt-text) !important; }
+.snippet-box pre { color: var(--prompt-text) !important; visibility: visible !important; }
+
+.simple-loader { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); }
+.simple-loader span { width: 28px; height: 28px; border: 2px solid var(--border-strong); border-top-color: var(--primary); border-radius: 50%; animation: loading-spin .8s linear infinite; }
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+.attachment-grid { display: flex; flex-wrap: nowrap; gap: 10px; width: 100%; padding-block: 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.attachment-grid > * { flex-shrink: 0; scroll-snap-align: start; }
+.attachment-file { width: 240px !important; }
+.attachment-tile { position: relative; min-width: 0; height: 80px; border-radius: 18px; overflow: hidden; background: var(--prompt-bg); border: 1px solid var(--prompt-border); }
+.attachment-image { width: 80px; flex-shrink: 0; }
+.attachment-file { width: min(260px, 100%); max-width: 100%; }
+.attachment-tile img { width: 100%; height: 100%; object-fit: cover; }
+.attachment-document { height: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 38px 12px 12px; color: var(--prompt-text); }
+.attachment-file-icon { width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--prompt-border); background: var(--prompt-icon); display: grid; place-items: center; flex-shrink: 0; color: var(--prompt-muted); }
+.attachment-file-label { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.attachment-file-label span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.attachment-file-label small { font-size: 11px; color: var(--prompt-muted); }
+.attachment-remove { position: absolute; right: 5px; top: 5px; width: 27px; height: 27px; border-radius: 50%; padding: 0; background: var(--remove-bg); color: var(--prompt-bg); }
+.attachment-remove:hover { background: var(--prompt-text); color: var(--prompt-bg); }
+.welcome-enter { width: 48px; height: 48px; border-radius: 50%; background: var(--prompt-bg); color: var(--prompt-text); border: 1px solid var(--prompt-border); }
+.reference-gallery { color: var(--text); }
+.reference-gallery-header { flex-wrap: wrap; gap: 8px; }
+.reference-gallery-card { box-shadow: none; background: var(--surface); border-color: var(--border-strong); border-radius: 18px; }
+.chat-workspace { --shadow-neumorphic-soft: 0 2px 12px var(--primary-glow); }
+.chat-workspace [class*="bg-[var(--primary)]"] { color: var(--on-primary); }
+.chat-workspace [class*="bg-[var(--primary)]"] > * { color: inherit; }
+.preview-shell { background: var(--bg); color: var(--text); }
+.preview-toolbar { background: var(--surface); border-bottom: 1px solid var(--border); }
+.preview-frame { background: var(--surface); }
+@media (prefers-reduced-motion: reduce) { .simple-loader span { animation: none; } }

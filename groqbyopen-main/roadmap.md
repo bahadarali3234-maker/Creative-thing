@@ -1,0 +1,15 @@
+# Requested updates
+- [ ] Match the design library to the app's light blue/white interface, expand it with the v2 library's added design tools, and preserve its image search behavior.
+- [ ] Render generated theme choices as immediate, visible palette question cards with real labeled color swatches; prevent duplicate plain-text choices.
+- [ ] Embed the design library in a full-screen composer modal with secure same-origin message handling and prompt attachment chips.
+- [ ] Apply the uploaded v3 staged design workflow in the website-builder system prompt and verify the library/theme-choice flow.
+- [x] Design Library v2: system-prompt v2 injected into every Groq request (design library JSON from design-library.html; layouts/effects only for website tasks), temperature 0.6, max output 32768, Groq vision for attached images (text + image in one message).
+- [x] Theme options UI: the 4 "Option N" palettes render as clickable swatch cards that send "I choose Option N"; blueprint code block + html Preview/Code tabs with Copy/Download; Design Library button in composer opens /design-library.html.
+- [x] Remove dark mode — app permanently light (blue/white, black text); no theme toggle anywhere.
+- [x] Staged website builder: template concepts → colour palettes → blueprint approval, with visual preview cards and palette cards (Figma-reference style) in the question UI.
+- [x] Casual/farewell intent layer server-side ("Bye", "B U", "C u", "Thx", "Hlo", "I'm leaving", Roman Urdu goodbyes) so they never trigger workflows.
+- [x] Image results: horizontal cards, heading + description left, image right, max 4 by default.
+- [ ] Activity panel: replace remaining hardcoded thinking stages with honest, task-driven activity entries.
+- [ ] Chat layout: verify orientation/rotation keeps everything inside the viewport (point 10 of master prompt).
+- [ ] Deeper file-attachment parsing for AI access (point 13).
+- [ ] End-to-end test of full website build flow (template → palette → blueprint → generated site) once user tries it.

@@ -1,0 +1,224 @@
+C R E A T I V E   T H I N K
+LIBRARY
+==========================================================================
+DESIGN SOURCE DOCUMENT
+5 references · 1 image reference · 10 Nov 2026, 17:06
+
+HOW TO USE
+This document holds 5 design references with complete, self-contained source and 1 image reference.
+Rebuild each reference faithfully — keep its layout, spacing, typographic scale and colour roles.
+Every block below is one HTML file with inline CSS and the small script it needs, so it can be dropped straight into a page.
+==========================================================================
+
+1. Glassmorphism
+   Family: Styles  ·  Palette: Monochrome Pro  ·  Type: Nunito + Nunito Sans
+--------------------------------------------------------------------------
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glassmorphism — Monochrome Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito&family=Nunito+Sans&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ffffff;--surface:#f4f4f5;--primary:#111111;--secondary:#52525b;--accent:#ef4444;--ink:#18181b;--line:rgba(24,24,27,0.14);--soft:rgba(24,24,27,0.06);--muted:rgba(24,24,27,0.62);--display:'Nunito',Georgia,serif;--body:'Nunito Sans',system-ui,sans-serif;--radius:18px;--dark:0}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img{max-width:100%;display:block}a{color:inherit}h1,h2,h3,h4,p{margin:0}
+.st1{position:relative;min-height:100vh;display:grid;place-items:center;padding:48px 24px;overflow:hidden}
+.st1-bg{position:absolute;inset:0;background:linear-gradient(135deg,var(--primary),var(--secondary) 55%,var(--accent))}
+.st1-card{position:relative;width:min(360px,100%);padding:30px;border-radius:24px;color:#fff;background:rgba(255,255,255,.12);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.3);box-shadow:0 20px 50px rgba(0,0,0,.28)}
+.st1-card span{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;opacity:.8}
+.st1-card h2{margin:12px 0 10px;font-family:var(--display);font-size:27px;font-weight:600;line-height:1.15}
+.st1-card p{margin:0 0 22px;font-size:13.5px;line-height:1.6;opacity:.85}
+.st1-card button{border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.2);color:#fff;font-family:var(--body);font-size:13px;font-weight:600;padding:11px 22px;border-radius:999px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="st1">
+  <div class="st1-bg"></div>
+  <div class="st1-card">
+    <span>Glass surface</span>
+    <h2>See through, stay readable</h2>
+    <p>Blur, a faint white border and a soft shadow — best over colour or imagery.</p>
+    <button>Continue</button>
+  </div>
+</div>
+
+</body>
+</html>
+
+==========================================================================
+
+2. Scroll Reveal
+   Family: Motion  ·  Palette: Deep Space  ·  Type: Zen Dots + Inter
+--------------------------------------------------------------------------
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll Reveal — Deep Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Dots&family=Inter&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#05060f;--surface:#0e1226;--primary:#6366f1;--secondary:#22d3ee;--accent:#f472b6;--ink:#e0e7ff;--line:rgba(224,231,255,0.14);--soft:rgba(224,231,255,0.06);--muted:rgba(224,231,255,0.62);--display:'Zen Dots',Georgia,serif;--body:'Inter',system-ui,sans-serif;--radius:18px;--dark:1}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img{max-width:100%;display:block}a{color:inherit}h1,h2,h3,h4,p{margin:0}
+.e1{min-height:100vh;display:grid;place-items:center;padding:44px 24px;background:var(--bg)}
+.e1-list{display:grid;gap:14px;text-align:center}
+.e1-rv{margin:0;font-family:var(--display);font-size:clamp(26px,4.4vw,42px);font-weight:600;opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.e1-rv.in{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="e1"><div class="e1-list">
+  <p class="e1-rv">First line arrives</p><p class="e1-rv">Then the second follows</p><p class="e1-rv">And the last settles in</p>
+</div></div>
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.25});
+document.querySelectorAll('.e1-rv').forEach((el,i)=>{el.style.transitionDelay=(i*110)+'ms';io.observe(el)})
+</script>
+</body>
+</html>
+
+==========================================================================
+
+3. Diagonal Duo
+   Family: Gradients  ·  Palette: Slate Corporate  ·  Type: Vollkorn + Work Sans
+--------------------------------------------------------------------------
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagonal Duo — Slate Corporate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vollkorn&family=Work+Sans&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8fafc;--surface:#ffffff;--primary:#334155;--secondary:#0ea5e9;--accent:#f59e0b;--ink:#0f172a;--line:rgba(15,23,42,0.14);--soft:rgba(15,23,42,0.06);--muted:rgba(15,23,42,0.62);--display:'Vollkorn',Georgia,serif;--body:'Work Sans',system-ui,sans-serif;--radius:18px;--dark:0}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img{max-width:100%;display:block}a{color:inherit}h1,h2,h3,h4,p{margin:0}
+.g1{min-height:100vh;display:grid;place-items:center;padding:44px 24px;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+.g1-card{width:min(340px,100%);padding:30px;border-radius:22px;background:rgba(255,255,255,.95);color:#16181d}
+.g1-card span{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--primary)}
+.g1-card h2{margin:10px 0 8px;font-family:var(--display);font-size:26px;font-weight:600}
+.g1-card p{margin:0;font-size:13px;line-height:1.6;color:#5b6270}
+</style>
+</head>
+<body>
+<div class="g1"><div class="g1-card"><span>01</span><h2>Diagonal duo</h2><p>Two palette colours, 135 degrees, one card floating on top.</p></div></div>
+
+</body>
+</html>
+
+==========================================================================
+
+4. Abril Fatface + Lato
+   Family: Type  ·  Palette: Olive and Cream  ·  Type: Abril Fatface + Lato
+--------------------------------------------------------------------------
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abril Fatface + Lato — Olive and Cream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Lato&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f1e3;--surface:#fffdf6;--primary:#6b7a3a;--secondary:#a3b18a;--accent:#bc6c25;--ink:#2a2f1c;--line:rgba(42,47,28,0.14);--soft:rgba(42,47,28,0.06);--muted:rgba(42,47,28,0.62);--display:'Abril Fatface',Georgia,serif;--body:'Lato',system-ui,sans-serif;--radius:18px;--dark:0}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img{max-width:100%;display:block}a{color:inherit}h1,h2,h3,h4,p{margin:0}
+.ty{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:54px clamp(24px,6vw,72px);background:var(--bg)}
+.ty-meta{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:12px}
+.ty-head{margin:34px 0 0;font-family:var(--display);font-weight:600;font-size:clamp(44px,9vw,104px);line-height:.94;letter-spacing:-.035em}
+.ty-head em{font-style:italic;color:var(--primary);font-size:.44em;letter-spacing:-.01em;display:block;margin-top:.16em}
+.ty-body{margin:26px 0 0;max-width:46ch;font-family:var(--body);font-size:14px;line-height:1.7;color:var(--muted)}
+.ty-spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:18px;margin:34px 0;padding-top:20px;border-top:1px solid var(--line)}
+.ty-spec div{display:flex;flex-direction:column;gap:4px}
+.ty-spec b{font-family:var(--display);font-size:16px;font-weight:500;letter-spacing:.02em}
+.ty-spec span{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ty-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.ty-row button{border:0;background:var(--ink);color:var(--bg);font-family:var(--body);font-size:13px;font-weight:600;padding:13px 24px;border-radius:999px;cursor:pointer}
+.ty-row span{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="ty"><div class="ty-meta"><span>Type pairing</span><span>Display + text</span></div>
+  <h2 class="ty-head">Aa Bb Cc<br/><em>Abril Fatface</em></h2>
+  <p class="ty-body">Lato set as the working text face. Body copy at fourteen pixels with one and seven line height, a measure of about forty-four characters, and enough contrast against the ground to stay comfortable for long reads.</p>
+  <div class="ty-spec">
+    <div><b>ABCDEFGHIJKLM</b><span>Display caps</span></div>
+    <div><b>0123456789</b><span>Figures</span></div>
+    <div><b>&amp; ? ! — " "</b><span>Punctuation</span></div>
+  </div>
+  <div class="ty-row"><button>Use this pairing</button><span>Abril Fatface &middot; Lato</span></div>
+</div>
+
+</body>
+</html>
+
+==========================================================================
+
+5. Pricing Card
+   Family: Components  ·  Palette: Forest Calm  ·  Type: Space Grotesk + DM Sans
+--------------------------------------------------------------------------
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing Card — Forest Calm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk&family=DM+Sans&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f7f2;--surface:#ffffff;--primary:#2f6b3a;--secondary:#8bb174;--accent:#d9a441;--ink:#1e2b1f;--line:rgba(30,43,31,0.14);--soft:rgba(30,43,31,0.06);--muted:rgba(30,43,31,0.62);--display:'Space Grotesk',Georgia,serif;--body:'DM Sans',system-ui,sans-serif;--radius:18px;--dark:0}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img{max-width:100%;display:block}a{color:inherit}h1,h2,h3,h4,p{margin:0}
+.cp8{min-height:100vh;display:grid;place-items:center;padding:48px 24px;font-family:var(--body)}
+.cp8-card{position:relative;width:min(320px,100%);background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:28px;box-shadow:0 40px 70px -55px var(--ink)}
+.cp8-badge{position:absolute;top:18px;right:18px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#fff;background:var(--primary);padding:5px 10px;border-radius:999px}
+.cp8-card h4{margin:0;font-family:var(--display);font-size:24px;font-weight:600}
+.cp8-price{font-family:var(--display);font-size:46px;font-weight:600;line-height:1;margin:16px 0 20px}
+.cp8-price span{font-family:var(--body);font-size:13px;color:var(--muted);font-weight:400}
+.cp8-card ul{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:10px;font-size:13.5px;color:var(--muted)}
+.cp8-card li:before{content:"\2713";color:var(--primary);margin-right:9px;font-weight:700}
+.cp8-card button{width:100%;padding:14px;border-radius:14px;border:0;background:var(--ink);color:var(--bg);font-family:var(--body);font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+.cp8-card button:hover{background:var(--primary);color:#fff}
+</style>
+</head>
+<body>
+<div class="cp8"><div class="cp8-card">
+  <span class="cp8-badge">Most popular</span>
+  <h4>Studio</h4>
+  <div class="cp8-price">$29<span>/month</span></div>
+  <ul><li>Unlimited projects</li><li>Shared component library</li><li>Priority support</li></ul>
+  <button>Choose Studio</button>
+</div></div>
+
+</body>
+</html>
+
+==========================================================================
+
+IMAGE REFERENCES
+--------------------------------------------------------------------------
+1. Architecture of Siwa01 — https://upload.wikimedia.org/wikipedia/commons/0/03/Architecture_of_Siwa01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original
+==========================================================================
+
+End of document · Creative Think Library

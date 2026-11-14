@@ -1,0 +1,65 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAllowedImage() {
+      return request.resource.contentType in ['image/jpeg', 'image/png'];
+    }
+
+    function isAllowedVideo() {
+      return request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime'];
+    }
+
+    // Default deny everywhere
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // User-scoped storage
+    match /users/{userId} {
+      // 1. Source face photos: max 10MB, jpeg/png
+      match /faces/{faceId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId)
+                     && request.resource.size <= 10 * 1024 * 1024
+                     && isAllowedImage();
+        allow delete: if isOwner(userId);
+      }
+
+      // 2. Source input videos: max 500MB, mp4/webm/quicktime
+      match /videos/{videoId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId)
+                     && request.resource.size <= 500 * 1024 * 1024
+                     && isAllowedVideo();
+        allow delete: if isOwner(userId);
+      }
+
+      // 3. Rendered results: max 1GB, mp4/webm/quicktime
+      match /results/{resultId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId)
+                     && request.resource.size <= 1024 * 1024 * 1024
+                     && isAllowedVideo();
+        allow delete: if isOwner(userId);
+      }
+
+      // 4. Any other file under user's directory: must respect type & max 1GB size
+      match /{allUserPaths=**} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId)
+                     && request.resource.size <= 1024 * 1024 * 1024
+                     && (isAllowedImage() || isAllowedVideo());
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

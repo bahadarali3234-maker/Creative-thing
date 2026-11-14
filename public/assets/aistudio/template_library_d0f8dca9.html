@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MythoriaLib — Template Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;800;900&family=Noto+Sans+Devanagari:wght@600;800&family=Playfair+Display:wght@700;900&family=Bebas+Neue&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f6;--panel:#ffffff;--ink:#14213d;--muted:#5b6785;--line:#d5dbe8;--accent:#2f5bea;--accent-ink:#fff;--ok:#0f8a5f}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1524;--panel:#171f35;--ink:#e8ecf7;--muted:#98a3c2;--line:#2a3558;--accent:#6f93ff;--accent-ink:#0b1020;--ok:#4cd39b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Space Grotesk","Noto Sans Devanagari",system-ui,sans-serif;line-height:1.5}
+header{padding:28px 20px 12px;max-width:1200px;margin:auto}
+h1{margin:0 0 6px;font-size:28px}
+header p{margin:0;color:var(--muted);max-width:70ch}
+.bar{max-width:1200px;margin:auto;padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab,button,select,input[type=search],input[type=text]{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px}
+.tab{cursor:pointer}.tab[aria-selected=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button{cursor:pointer}button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=search]{flex:1;min-width:180px}
+main{max-width:1200px;margin:auto;padding:8px 20px 60px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.card canvas{width:100%;display:block;background:#000}
+.card .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;flex:1}
+.card h3{margin:0;font-size:16px}
+.meta{color:var(--muted);font-size:13px}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+.row button{padding:6px 10px;font-size:13px}
+.storyboard{display:flex;gap:2px;height:46px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.storyboard span{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;text-shadow:0 1px 2px #0008;overflow:hidden;white-space:nowrap}
+.swatches{display:flex;gap:4px}.swatches i{width:22px;height:22px;border-radius:5px;border:1px solid var(--line);display:block}
+.panel{grid-column:1/-1;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.panel label{display:block;margin:8px 0 4px;font-size:13px;color:var(--muted)}
+.panel input[type=text],.panel select{width:100%}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+.checker{background:conic-gradient(#ccc 25%,#eee 0 50%,#ccc 0 75%,#eee 0) 0 0/16px 16px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>MythoriaLib — templates for images, thumbnails &amp; videos</h1>
+  <p>Browse built-in templates, preview thumbnails live, copy the JSON for your LLM, save your own custom templates, and test background removal. Everything runs in the browser.</p>
+</header>
+
+<div class="bar">
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <input type="search" id="q" placeholder="Search by name, topic or style…" aria-label="Search templates">
+</div>
+<div class="bar" id="previewBar">
+  <label>Preview headline <input type="text" id="pvTitle" value="AI से कमाई 2026" style="min-width:220px"></label>
+  <label>Subtitle <input type="text" id="pvSub" value="Step-by-step guide" style="min-width:180px"></label>
+  <button id="importBtn">Import custom JSON</button>
+  <button id="exportBtn">Export all custom</button>
+</div>
+<main id="grid"></main>
+<div id="toast" role="status"></div>
+
+<script>
+/* ===================================================================
+   MythoriaLib — data + API. Copy this <script> block into your app to
+   use it directly. Sizes/positions are fractions of the canvas.
+   =================================================================== */
+(function(){
+const PALETTES = [
+  {id:"ink-gold",     name:"Ink & Gold",       colors:["#0b0d12","#e8b04b","#f4f1ea","#7a5b1e"]},
+  {id:"neon-night",   name:"Neon Night",       colors:["#0b1020","#6a2cff","#00e5ff","#ff2d55"]},
+  {id:"money-red",    name:"Money Red",        colors:["#0a0a0a","#e10600","#ffffff","#ffcc00"]},
+  {id:"fresh-mint",   name:"Fresh Mint",       colors:["#0d3b36","#2ec4b6","#f7fff7","#ff9f1c"]},
+  {id:"sunset-pop",   name:"Sunset Pop",       colors:["#2b1055","#ff4d6d","#ffb703","#fff3e0"]},
+  {id:"chalk",        name:"Chalkboard",       colors:["#1f3a2e","#f5f5f0","#ffd166","#8ecae6"]},
+  {id:"teal-orange",  name:"Cinematic",        colors:["#081c24","#1b6f7a","#ff8a3d","#f5e9da"]},
+  {id:"mono-clean",   name:"Mono Clean",       colors:["#ffffff","#111827","#2f5bea","#e5e7eb"]}
+];
+
+const FONTS = [
+  {id:"Poppins",              use:"Bold headlines, Latin + good with Hindi pairing", weights:[600,800,900]},
+  {id:"Noto Sans Devanagari", use:"Hindi / Devanagari text (always for Hindi)",     weights:[600,800]},
+  {id:"Playfair Display",     use:"Documentary / editorial titles (Latin)",         weights:[700,900]},
+  {id:"Bebas Neue",           use:"Tall condensed titles, gaming, news (Latin)",    weights:[400]},
+  {id:"Space Grotesk",        use:"Tech / explainer UI text (Latin)",               weights:[500,700]}
+];
+
+const VOICES = [
+  {id:"Kore",   gender:"female", tone:"calm, clear, authoritative", best:"documentary, news"},
+  {id:"Aoede",  gender:"female", tone:"bright, friendly",           best:"explainers, ads"},
+  {id:"Leda",   gender:"female", tone:"soft, intimate",             best:"storytelling"},
+  {id:"Charon", gender:"male",   tone:"deep, steady",               best:"documentary, finance"},
+  {id:"Puck",   gender:"male",   tone:"lively, youthful",           best:"tech, gaming, reels"},
+  {id:"Fenrir", gender:"male",   tone:"powerful, dramatic",         best:"trailers, history"},
+  {id:"Orus",   gender:"male",   tone:"warm, conversational",       best:"tutorials"}
+];
+
+const T = (o)=>o; // readability helper
+const THUMBS = [
+ T({id:"neon-tech",kind:"thumbnail",name:"Neon Tech",category:["tech","ai","coding"],size:[1280,720],
+   background:{type:"gradient",angle:135,colors:["#0b1020","#1b2a6b","#6a2cff"]},
+   shapes:[{type:"circle",x:.86,y:.22,r:.26,color:"#00e5ff",opacity:.22},{type:"bar",x:0,y:.92,w:1,h:.08,color:"#00e5ff",opacity:.9}],
+   text:{title:{font:"Poppins",weight:900,size:.13,color:"#fff",stroke:{color:"#000",width:8},x:.06,y:.34,maxWidth:.6,uppercase:true},
+         subtitle:{font:"Poppins",weight:600,size:.05,color:"#00e5ff",x:.06,y:.8},
+         badge:{text:"NEW",bg:"#ff2d55",color:"#fff",x:.06,y:.07}}}),
+ T({id:"bold-money",kind:"thumbnail",name:"Bold Money",category:["finance","business","earning"],size:[1280,720],
+   background:{type:"gradient",angle:160,colors:["#0a0a0a","#2a0000","#e10600"]},
+   shapes:[{type:"circle",x:.82,y:.5,r:.34,color:"#ffcc00",opacity:.2},{type:"bar",x:0,y:0,w:.03,h:1,color:"#ffcc00",opacity:1}],
+   text:{title:{font:"Noto Sans Devanagari",weight:800,size:.15,color:"#fff",stroke:{color:"#000",width:10},x:.08,y:.3,maxWidth:.62},
+         subtitle:{font:"Poppins",weight:800,size:.055,color:"#ffcc00",x:.08,y:.78},
+         badge:{text:"2026 GUIDE",bg:"#ffcc00",color:"#000",x:.08,y:.07}}}),
+ T({id:"clean-corporate",kind:"thumbnail",name:"Clean Corporate",category:["business","education","explainer"],size:[1280,720],
+   background:{type:"solid",colors:["#ffffff"]},
+   shapes:[{type:"bar",x:0,y:0,w:1,h:.06,color:"#2f5bea",opacity:1},{type:"circle",x:.9,y:.85,r:.3,color:"#2f5bea",opacity:.12}],
+   text:{title:{font:"Poppins",weight:800,size:.12,color:"#111827",x:.07,y:.3,maxWidth:.65},
+         subtitle:{font:"Space Grotesk",weight:500,size:.05,color:"#2f5bea",x:.07,y:.78},
+         badge:{text:"LEARN",bg:"#2f5bea",color:"#fff",x:.07,y:.12}}}),
+ T({id:"glitch-arcade",kind:"thumbnail",name:"Glitch Arcade",category:["gaming","fun"],size:[1280,720],
+   background:{type:"gradient",angle:45,colors:["#120022","#3b0a6e","#ff2bd6"]},
+   shapes:[{type:"bar",x:0,y:.2,w:1,h:.03,color:"#00f0ff",opacity:.7},{type:"bar",x:0,y:.62,w:1,h:.02,color:"#ff2bd6",opacity:.8}],
+   text:{title:{font:"Bebas Neue",weight:400,size:.22,color:"#fff",stroke:{color:"#00f0ff",width:6},x:.06,y:.32,maxWidth:.7,uppercase:true},
+         subtitle:{font:"Poppins",weight:800,size:.05,color:"#ffe600",x:.06,y:.82},
+         badge:{text:"LIVE",bg:"#00f0ff",color:"#000",x:.06,y:.07}}}),
+ T({id:"chalk-board",kind:"thumbnail",name:"Chalk Board",category:["education","explainer","school"],size:[1280,720],
+   background:{type:"gradient",angle:180,colors:["#1f3a2e","#274d3c"]},
+   shapes:[{type:"circle",x:.88,y:.2,r:.14,color:"#ffd166",opacity:.35}],
+   text:{title:{font:"Poppins",weight:800,size:.12,color:"#f5f5f0",x:.07,y:.32,maxWidth:.7},
+         subtitle:{font:"Space Grotesk",weight:700,size:.05,color:"#ffd166",x:.07,y:.78},
+         badge:{text:"EXPLAINED",bg:"#8ecae6",color:"#10303d",x:.07,y:.08}}}),
+ T({id:"warm-magazine",kind:"thumbnail",name:"Warm Magazine",category:["food","lifestyle","travel"],size:[1280,720],
+   background:{type:"gradient",angle:120,colors:["#ff9f1c","#ff4d6d"]},
+   shapes:[{type:"circle",x:.8,y:.55,r:.38,color:"#fff3e0",opacity:.25}],
+   text:{title:{font:"Playfair Display",weight:900,size:.13,color:"#fff",stroke:{color:"#5a1730",width:6},x:.07,y:.3,maxWidth:.62},
+         subtitle:{font:"Poppins",weight:600,size:.05,color:"#fff3e0",x:.07,y:.78},
+         badge:{text:"TRY THIS",bg:"#fff",color:"#ff4d6d",x:.07,y:.08}}}),
+ T({id:"breaking-red",kind:"thumbnail",name:"Breaking Red",category:["news","facts","shocking"],size:[1280,720],
+   background:{type:"gradient",angle:90,colors:["#000","#1a0000"]},
+   shapes:[{type:"bar",x:0,y:.78,w:1,h:.14,color:"#e10600",opacity:1},{type:"bar",x:0,y:.76,w:1,h:.012,color:"#fff",opacity:1}],
+   text:{title:{font:"Bebas Neue",weight:400,size:.2,color:"#fff",stroke:{color:"#000",width:4},x:.05,y:.3,maxWidth:.85,uppercase:true},
+         subtitle:{font:"Poppins",weight:800,size:.06,color:"#fff",x:.05,y:.8},
+         badge:{text:"BREAKING",bg:"#e10600",color:"#fff",x:.05,y:.07}}}),
+ T({id:"cinematic-teal-orange",kind:"thumbnail",name:"Cinematic Teal/Orange",category:["documentary","story","history"],size:[1280,720],
+   background:{type:"gradient",angle:200,colors:["#081c24","#1b6f7a","#ff8a3d"]},
+   shapes:[{type:"bar",x:0,y:0,w:1,h:.09,color:"#000",opacity:1},{type:"bar",x:0,y:.91,w:1,h:.09,color:"#000",opacity:1}],
+   text:{title:{font:"Playfair Display",weight:900,size:.13,color:"#f5e9da",x:.08,y:.4,maxWidth:.8},
+         subtitle:{font:"Poppins",weight:600,size:.04,color:"#ff8a3d",x:.08,y:.74},
+         badge:{text:"DOCUMENTARY",bg:"#ff8a3d",color:"#081c24",x:.08,y:.14}}}),
+ T({id:"quote-gradient",kind:"thumbnail",name:"Quote Gradient",category:["motivation","quotes","social"],size:[1080,1080],
+   background:{type:"gradient",angle:135,colors:["#2b1055","#ff4d6d","#ffb703"]},
+   shapes:[{type:"circle",x:.15,y:.15,r:.22,color:"#fff",opacity:.12}],
+   text:{title:{font:"Playfair Display",weight:900,size:.085,color:"#fff",x:.1,y:.3,maxWidth:.8},
+         subtitle:{font:"Poppins",weight:600,size:.035,color:"#fff3e0",x:.1,y:.85},
+         badge:{text:"“",bg:"transparent",color:"#fff",x:.1,y:.1}}}),
+ T({id:"split-hero",kind:"thumbnail",name:"Split Hero (cut-out friendly)",category:["tech","creator","vlog"],size:[1280,720],
+   background:{type:"gradient",angle:90,colors:["#111827","#111827","#2f5bea"]},
+   shapes:[{type:"circle",x:.78,y:.5,r:.36,color:"#6f93ff",opacity:.35}],
+   text:{title:{font:"Poppins",weight:900,size:.12,color:"#fff",stroke:{color:"#000",width:6},x:.05,y:.3,maxWidth:.5,uppercase:true},
+         subtitle:{font:"Poppins",weight:600,size:.045,color:"#9db6ff",x:.05,y:.8},
+         badge:{text:"MUST WATCH",bg:"#ffcc00",color:"#000",x:.05,y:.07}},
+   image_slot:{x:.55,y:.08,w:.42,h:.9,fit:"cutout",outline:"#ffffff",shadow:true}})
+];
+
+const IMAGES = [
+ {id:"poster-bold",kind:"image",name:"Bold Poster",category:["poster","event"],size:[1080,1350],note:"Huge 2-line headline, one accent shape, date/venue footer."},
+ {id:"insta-quote",kind:"image",name:"Instagram Quote Card",category:["social","quotes"],size:[1080,1080],note:"Centered quote, author line, soft gradient."},
+ {id:"yt-banner",kind:"image",name:"YouTube Channel Banner",category:["banner","creator"],size:[2560,1440],note:"Keep content in the central 1546×423 safe area."},
+ {id:"story-9x16",kind:"image",name:"Story / Reel Cover",category:["social","reel"],size:[1080,1920],note:"Headline in the middle third; keep top 250px and bottom 340px free."},
+ {id:"infographic-3",kind:"image",name:"3-Step Infographic",category:["infographic","education"],size:[1080,1350],note:"Three numbered blocks with icon, title, one-line explanation."},
+ {id:"logo-type",kind:"image",name:"Wordmark Logo Graphic",category:["logo","brand"],size:[1000,1000],note:"Type-only mark with a simple geometric symbol."}
+];
+
+const VIDEOS = [
+ {id:"doc-60",kind:"video",name:"Documentary 60s",style:"documentary",duration:60,aspect:"16:9",palette:"teal-orange",font:"Playfair Display",voice:"Kore",
+  transition:"fade",captions:true,scenes:[["Title",5,"#1b6f7a"],["Hook",8,"#0f4c57"],["Context",10,"#2b6f77"],["Key fact 1",10,"#ff8a3d"],["Key fact 2",10,"#d96b24"],["Impact",10,"#0f4c57"],["Closing",7,"#081c24"]]},
+ {id:"doc-120",kind:"video",name:"Documentary 2 min",style:"documentary",duration:120,aspect:"16:9",palette:"ink-gold",font:"Playfair Display",voice:"Charon",
+  transition:"fade",captions:true,scenes:[["Title",5,"#7a5b1e"],["Hook",10,"#0b0d12"],["Origin",15,"#3b2d10"],["Rise",20,"#7a5b1e"],["Turning point",20,"#e8b04b"],["Today",20,"#3b2d10"],["Future",15,"#0b0d12"],["Closing",15,"#7a5b1e"]]},
+ {id:"explainer-90",kind:"video",name:"Motion Explainer 90s",style:"motion-graphic",duration:90,aspect:"16:9",palette:"neon-night",font:"Space Grotesk",voice:"Aoede",
+  transition:"slide-left",captions:false,scenes:[["Title",4,"#6a2cff"],["Problem",12,"#ff2d55"],["Idea",12,"#00a6c0"],["How it works 1",14,"#6a2cff"],["How it works 2",14,"#4a1fb5"],["Numbers chart",14,"#00a6c0"],["Benefits",10,"#ff2d55"],["CTA",10,"#6a2cff"]]},
+ {id:"reel-30",kind:"video",name:"Vertical Reel 30s",style:"motion-graphic",duration:30,aspect:"9:16",palette:"sunset-pop",font:"Poppins",voice:"Puck",
+  transition:"zoom",captions:true,scenes:[["Hook",4,"#ff4d6d"],["Point 1",7,"#ffb703"],["Point 2",7,"#2b1055"],["Point 3",7,"#ff4d6d"],["CTA",5,"#ffb703"]]},
+ {id:"news-45",kind:"video",name:"News Facts 45s",style:"motion-graphic",duration:45,aspect:"16:9",palette:"money-red",font:"Bebas Neue",voice:"Fenrir",
+  transition:"wipe",captions:true,scenes:[["Headline",5,"#e10600"],["Fact 1",10,"#222"],["Fact 2",10,"#b00500"],["Fact 3",10,"#222"],["Takeaway",10,"#e10600"]]},
+ {id:"tutorial-75",kind:"video",name:"Tutorial Steps 75s",style:"motion-graphic",duration:75,aspect:"16:9",palette:"fresh-mint",font:"Poppins",voice:"Orus",
+  transition:"slide-up",captions:true,scenes:[["Title",4,"#2ec4b6"],["What you need",10,"#0d3b36"],["Step 1",14,"#2ec4b6"],["Step 2",14,"#1f9d91"],["Step 3",14,"#0d3b36"],["Common mistake",10,"#ff9f1c"],["Recap + CTA",9,"#2ec4b6"]]}
+];
+
+/* ---------- storage for custom templates ---------- */
+const KEY = "mythoria_custom_templates_v1";
+function loadCustom(){ try{ return JSON.parse(localStorage.getItem(KEY)||"[]"); }catch(e){ return window.__memCustom||[]; } }
+function saveAll(arr){ try{ localStorage.setItem(KEY,JSON.stringify(arr)); }catch(e){ window.__memCustom=arr; } }
+function saveTemplate(t){
+  if(!t||!t.id||!t.kind) throw new Error("Template needs id and kind");
+  const arr=loadCustom().filter(x=>x.id!==t.id); t.custom=true; arr.push(t); saveAll(arr); return t;
+}
+function deleteTemplate(id){ saveAll(loadCustom().filter(x=>x.id!==id)); }
+
+function all(kind){
+  const base = kind==="thumbnail"?THUMBS : kind==="image"?IMAGES : kind==="video"?VIDEOS : [];
+  return base.concat(loadCustom().filter(t=>t.kind===kind));
+}
+function get(id){ return [].concat(THUMBS,IMAGES,VIDEOS,loadCustom()).find(t=>t.id===id); }
+function suggest(topic,kind){
+  const w=(topic||"").toLowerCase().split(/\W+/).filter(Boolean);
+  const scored=all(kind||"thumbnail").map(t=>{
+    const hay=(t.category||[]).concat([t.name,t.style||""]).join(" ").toLowerCase();
+    return {t,s:w.reduce((n,x)=>n+(hay.includes(x)?1:0),0)};
+  }).sort((a,b)=>b.s-a.s);
+  return scored[0]?scored[0].t:null;
+}
+
+/* ---------- canvas renderer for thumbnail templates ---------- */
+function wrap(ctx,text,maxW){
+  const words=text.split(/\s+/),lines=[];let cur="";
+  for(const w of words){const t=cur?cur+" "+w:w; if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w;}else cur=t;}
+  if(cur)lines.push(cur); return lines;
+}
+async function renderThumbnail(canvas,tpl,content){
+  if(typeof tpl==="string") tpl=get(tpl);
+  content=content||{};
+  const [W,H]=tpl.size; canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext("2d");
+  try{ await document.fonts.ready; }catch(e){}
+  const bg=tpl.background;
+  if(bg.type==="gradient"){
+    const a=(bg.angle-90)*Math.PI/180, cx=W/2, cy=H/2, r=Math.hypot(W,H)/2;
+    const g=ctx.createLinearGradient(cx-Math.cos(a)*r,cy-Math.sin(a)*r,cx+Math.cos(a)*r,cy+Math.sin(a)*r);
+    bg.colors.forEach((c,i)=>g.addColorStop(i/(bg.colors.length-1||1),c)); ctx.fillStyle=g;
+  } else ctx.fillStyle=bg.colors[0];
+  ctx.fillRect(0,0,W,H);
+  (tpl.shapes||[]).forEach(s=>{
+    ctx.globalAlpha=s.opacity==null?1:s.opacity; ctx.fillStyle=s.color; ctx.beginPath();
+    if(s.type==="circle"){ctx.arc(s.x*W,s.y*H,s.r*W,0,Math.PI*2);ctx.fill();}
+    else ctx.fillRect(s.x*W,s.y*H,s.w*W,s.h*H);
+    ctx.globalAlpha=1;
+  });
+  if(content.image&&tpl.image_slot){
+    const s=tpl.image_slot, img=content.image, bx=s.x*W, by=s.y*H, bw=s.w*W, bh=s.h*H;
+    const k=Math.min(bw/img.width,bh/img.height), dw=img.width*k, dh=img.height*k, dx=bx+(bw-dw)/2, dy=by+bh-dh;
+    if(s.shadow){ctx.shadowColor="rgba(0,0,0,.55)";ctx.shadowBlur=30;ctx.shadowOffsetY=10;}
+    ctx.drawImage(img,dx,dy,dw,dh); ctx.shadowColor="transparent"; ctx.shadowBlur=0;
+  }
+  const tx=tpl.text||{};
+  const title=content.title||"Your headline";
+  if(tx.title){
+    const t=tx.title; const fs=t.size*W*(W>H?1:1);
+    ctx.font=`${t.weight} ${fs}px "${t.font}", sans-serif`; ctx.textBaseline="top"; ctx.textAlign=t.align||"left";
+    const str=t.uppercase?title.toUpperCase():title;
+    const lines=wrap(ctx,str,(t.maxWidth||.8)*W);
+    lines.forEach((ln,i)=>{
+      const x=t.x*W,y=t.y*H+i*fs*1.08;
+      if(t.stroke){ctx.lineJoin="round";ctx.lineWidth=t.stroke.width;ctx.strokeStyle=t.stroke.color;ctx.strokeText(ln,x,y);}
+      ctx.fillStyle=t.color; ctx.fillText(ln,x,y);
+    });
+  }
+  if(tx.subtitle&&(content.subtitle||"")!==""){
+    const t=tx.subtitle; ctx.font=`${t.weight} ${t.size*W}px "${t.font}", sans-serif`; ctx.textAlign="left"; ctx.textBaseline="top";
+    ctx.fillStyle=t.color; ctx.fillText(content.subtitle,t.x*W,t.y*H);
+  }
+  if(tx.badge){
+    const b=tx.badge, label=content.badge||b.text, fs=.035*W;
+    ctx.font=`800 ${fs}px "Poppins",sans-serif`; ctx.textBaseline="middle"; ctx.textAlign="left";
+    const pw=ctx.measureText(label).width+fs*1.2, ph=fs*1.7;
+    if(b.bg!=="transparent"){ctx.fillStyle=b.bg;ctx.fillRect(b.x*W,b.y*H,pw,ph);}
+    ctx.fillStyle=b.color; ctx.fillText(label,b.x*W+fs*.6,b.y*H+ph/2);
+  }
+  return canvas;
+}
+
+/* ---------- background removal (runs in the browser) ---------- */
+function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.crossOrigin="anonymous";i.onload=()=>res(i);i.onerror=rej;i.src=src;});}
+function fileToDataURL(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});}
+
+// Method A: AI model (best quality). Needs internet once to fetch the model.
+async function removeBackgroundAI(blob){
+  const mod = await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm");
+  return await mod.removeBackground(blob); // returns Blob (PNG with alpha)
+}
+// Method B: offline fallback. Works well on plain/solid backgrounds (studio, wall, sky).
+async function removeBackgroundSimple(src,{tolerance=48,feather=2}={}){
+  const img=await loadImage(src), c=document.createElement("canvas"); c.width=img.width;c.height=img.height;
+  const ctx=c.getContext("2d",{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const d=ctx.getImageData(0,0,c.width,c.height), p=d.data, W=c.width, H=c.height;
+  const px=(x,y)=>{const i=(y*W+x)*4;return [p[i],p[i+1],p[i+2]];};
+  const corners=[px(0,0),px(W-1,0),px(0,H-1),px(W-1,H-1)];
+  const bgc=corners.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]);
+  const dist=(r,g,b)=>Math.hypot(r-bgc[0],g-bgc[1],b-bgc[2]);
+  const seen=new Uint8Array(W*H), stack=[];
+  for(let x=0;x<W;x++){stack.push(x,0,x,H-1);} for(let y=0;y<H;y++){stack.push(0,y,W-1,y);}
+  while(stack.length){
+    const y=stack.pop(), x=stack.pop(); if(x<0||y<0||x>=W||y>=H) continue;
+    const k=y*W+x; if(seen[k]) continue; const i=k*4;
+    if(dist(p[i],p[i+1],p[i+2])>tolerance) continue;
+    seen[k]=1; p[i+3]=0; stack.push(x+1,y,x-1,y,x,y+1,x,y-1);
+  }
+  ctx.putImageData(d,0,0);
+  if(feather>0){const t=document.createElement("canvas");t.width=W;t.height=H;const tc=t.getContext("2d");tc.filter=`blur(${feather*.5}px)`;tc.drawImage(c,0,0);return t;}
+  return c;
+}
+async function removeBackground(fileOrDataURL,opts){
+  opts=opts||{};
+  const blob = typeof fileOrDataURL==="string" ? await (await fetch(fileOrDataURL)).blob() : fileOrDataURL;
+  try{
+    const out=await removeBackgroundAI(blob);
+    return {method:"ai",dataURL:await fileToDataURL(out)};
+  }catch(e){
+    const src=await fileToDataURL(blob), cv=await removeBackgroundSimple(src,{feather:opts.edge_feather||2,tolerance:opts.tolerance||48});
+    return {method:"simple",dataURL:cv.toDataURL("image/png")};
+  }
+}
+
+/* ---------- prompt helper: compact catalog to inject into the LLM ---------- */
+function catalogForPrompt(){
+  return JSON.stringify({
+    thumbnails:all("thumbnail").map(t=>({id:t.id,name:t.name,category:t.category,size:t.size})),
+    images:all("image").map(t=>({id:t.id,name:t.name,size:t.size})),
+    videos:all("video").map(t=>({id:t.id,name:t.name,style:t.style,duration:t.duration,aspect:t.aspect,voice:t.voice})),
+    voices:VOICES.map(v=>({id:v.id,gender:v.gender,tone:v.tone})),
+    fonts:FONTS.map(f=>f.id), palettes:PALETTES.map(p=>p.id)
+  });
+}
+
+window.MythoriaLib={PALETTES,FONTS,VOICES,all,get,suggest,renderThumbnail,saveTemplate,deleteTemplate,loadCustom,
+  removeBackground,removeBackgroundSimple,removeBackgroundAI,catalogForPrompt,
+  /** Handle a tool message emitted by the LLM (see system prompt, section 8 & 7). */
+  async handleTool(msg,uploads){
+    if(msg.tool==="save_template") return {ok:true,saved:saveTemplate(msg.template).id};
+    if(msg.tool==="list_templates") return {ok:true,templates:all(msg.kind).map(t=>({id:t.id,name:t.name}))};
+    if(msg.tool==="remove_background"){
+      const u=(uploads||{})[msg.upload_id]; if(!u) return {ok:false,error:"upload not found"};
+      const r=await removeBackground(u,msg); return {ok:true,upload_id:msg.upload_id+"_cutout",...r};
+    }
+    return {ok:false,error:"unknown tool"};
+  }};
+})();
+</script>
+
+<script>
+/* ===================== Library browser UI (demo only) ===================== */
+const $=s=>document.querySelector(s), L=window.MythoriaLib;
+const KINDS=[["thumbnail","Thumbnails"],["image","Image formats"],["video","Video templates"],["voices","Voices"],["palettes","Palettes & fonts"],["bg","Background remover"]];
+let kind="thumbnail", cutout=null;
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),1600);}
+function copy(txt){navigator.clipboard.writeText(txt).then(()=>toast("Copied JSON"),()=>toast("Copy failed"));}
+function el(h){const d=document.createElement("div");d.innerHTML=h.trim();return d.firstChild;}
+
+function tabs(){
+  const t=$("#tabs"); t.innerHTML="";
+  KINDS.forEach(([k,n])=>{const b=el(`<button class="tab" role="tab" aria-selected="${k===kind}">${n}</button>`);
+    b.onclick=()=>{kind=k;tabs();draw();};t.appendChild(b);});
+  $("#previewBar").style.display=kind==="thumbnail"?"flex":"none";
+}
+function match(t,q){return !q||JSON.stringify(t).toLowerCase().includes(q);}
+
+async function draw(){
+  const g=$("#grid"); g.innerHTML=""; const q=$("#q").value.trim().toLowerCase();
+  if(kind==="thumbnail"){
+    for(const t of L.all("thumbnail").filter(t=>match(t,q))){
+      const c=document.createElement("canvas");
+      const card=el(`<article class="card"></article>`); card.appendChild(c);
+      const body=el(`<div class="body"><h3>${t.name}${t.custom?" (custom)":""}</h3><div class="meta">${(t.category||[]).join(", ")} · ${t.size[0]}×${t.size[1]}</div><div class="row"></div></div>`);
+      const row=body.querySelector(".row");
+      const mk=(label,fn,cls)=>{const b=el(`<button class="${cls||""}">${label}</button>`);b.onclick=fn;row.appendChild(b);};
+      mk("Copy JSON",()=>copy(JSON.stringify(t,null,2)));
+      mk("Download PNG",()=>{const a=document.createElement("a");a.download=t.id+".png";a.href=c.toDataURL("image/png");a.click();});
+      mk("Duplicate as custom",()=>{const n=JSON.parse(JSON.stringify(t));n.id=t.id+"-copy-"+Date.now().toString(36);n.name=t.name+" copy";L.saveTemplate(n);toast("Saved to your custom library");draw();});
+      if(t.custom) mk("Delete",()=>{L.deleteTemplate(t.id);draw();});
+      card.appendChild(body); g.appendChild(card);
+      L.renderThumbnail(c,t,{title:$("#pvTitle").value,subtitle:$("#pvSub").value,image:cutout});
+    }
+  }
+  if(kind==="image"){
+    L.all("image").filter(t=>match(t,q)).forEach(t=>{
+      const ratio=(t.size[1]/t.size[0]*100).toFixed(1);
+      g.appendChild(el(`<article class="card"><div class="body"><div style="aspect-ratio:${t.size[0]}/${t.size[1]};max-height:220px;border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted)">${t.size[0]}×${t.size[1]}</div><h3>${t.name}</h3><div class="meta">${t.category.join(", ")}</div><div>${t.note}</div><div class="row"><button onclick='copy(${JSON.stringify(JSON.stringify(t,null,2))})'>Copy JSON</button></div></div></article>`));
+    });
+  }
+  if(kind==="video"){
+    L.all("video").filter(t=>match(t,q)).forEach(t=>{
+      const pal=L.PALETTES.find(p=>p.id===t.palette);
+      const sb=(t.scenes||[]).map(s=>`<span style="flex:${s[1]};background:${s[2]}" title="${s[0]} (${s[1]}s)">${s[0]}</span>`).join("");
+      const card=el(`<article class="card"><div class="body"><h3>${t.name}</h3><div class="meta">${t.style} · ${t.duration}s · ${t.aspect} · voice ${t.voice} · transition ${t.transition}</div>
+        <div class="storyboard">${sb}</div>
+        <div class="swatches">${pal?pal.colors.map(c=>`<i style="background:${c}"></i>`).join(""):""}</div>
+        <div class="meta">Font: ${t.font} · captions ${t.captions?"on":"off"}</div>
+        <div class="row"></div></div></article>`);
+      const b=el(`<button>Copy JSON</button>`);b.onclick=()=>copy(JSON.stringify(t,null,2));card.querySelector(".row").appendChild(b);
+      g.appendChild(card);
+    });
+  }
+  if(kind==="voices"){
+    L.VOICES.filter(t=>match(t,q)).forEach(v=>g.appendChild(el(`<article class="card"><div class="body"><h3>${v.id}</h3><div class="meta">${v.gender} · ${v.tone}</div><div>Best for: ${v.best}</div><div class="meta">Check Google's current voice list; names can change.</div></div></article>`)));
+  }
+  if(kind==="palettes"){
+    L.PALETTES.filter(t=>match(t,q)).forEach(p=>g.appendChild(el(`<article class="card"><div class="body"><h3>${p.name}</h3><div class="swatches">${p.colors.map(c=>`<i style="background:${c}" title="${c}"></i>`).join("")}</div><div class="meta">${p.colors.join("  ")}</div></div></article>`)));
+    L.FONTS.forEach(f=>g.appendChild(el(`<article class="card"><div class="body"><h3 style="font-family:'${f.id}'">${f.id} — Aa अआइ 123</h3><div class="meta">${f.use}</div></div></article>`)));
+  }
+  if(kind==="bg"){
+    const p=el(`<section class="panel"><h3>Background remover</h3><p class="meta">Pick a photo. It tries an in-browser AI model first (needs internet once), then falls back to an offline method that works best on plain backgrounds. The result is used as the cut-out in the Thumbnails tab.</p><input type="file" id="bgFile" accept="image/*"><div id="bgOut" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px"></div></section>`);
+    g.appendChild(p);
+    p.querySelector("#bgFile").onchange=async e=>{
+      const f=e.target.files[0]; if(!f) return; const out=p.querySelector("#bgOut"); out.textContent="Working…";
+      try{
+        const orig=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+        const res=await L.removeBackground(f); const im=new Image(); im.onload=()=>{cutout=im;toast("Cut-out ready ("+res.method+")");};im.src=res.dataURL;
+        out.innerHTML=`<div><div class="meta">Original</div><img src="${orig}" style="max-height:260px;border-radius:8px"></div><div><div class="meta">Cut-out (${res.method})</div><img class="checker" src="${res.dataURL}" style="max-height:260px;border-radius:8px"><br><a download="cutout.png" href="${res.dataURL}"><button>Download PNG</button></a></div>`;
+      }catch(err){out.textContent="Could not process this image: "+err.message;}
+    };
+  }
+  if(!g.children.length) g.appendChild(el(`<p class="meta">Nothing matches that search.</p>`));
+}
+
+$("#q").addEventListener("input",draw);
+$("#pvTitle").addEventListener("input",draw);
+$("#pvSub").addEventListener("input",draw);
+$("#exportBtn").onclick=()=>{const a=document.createElement("a");a.download="my_templates.json";a.href="data:application/json,"+encodeURIComponent(JSON.stringify(L.loadCustom(),null,2));a.click();};
+$("#importBtn").onclick=()=>{const t=prompt("Paste template JSON (one object or an array):");if(!t)return;try{const j=JSON.parse(t);(Array.isArray(j)?j:[j]).forEach(L.saveTemplate);toast("Imported");draw();}catch(e){toast("Invalid JSON");}};
+tabs(); document.fonts.ready.then(draw); draw();
+</script>
+</body>
+</html>
