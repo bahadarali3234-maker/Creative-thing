@@ -12,7 +12,7 @@ import {
   markKeyRateLimited,
   type GrokKeyEntry,
 } from './grokKeyPool';
-import { buildTtsCacheKey, getOrSynthesizeTts } from './ttsCache';
+import { buildTtsCacheKey, getOrSynthesizeTts, getOrSynthesizePermanentPreview } from './ttsCache';
 import {
   CLARIFICATION_GATE_SYSTEM_PROMPT,
   parseAndValidateGateResponse,
@@ -247,8 +247,8 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
 
     let rawPlannerJson = '';
 
-    // Try configured Grok/Groq keys first with automatic rate-limit failover
-    const plannerKeyEntries = getAvailableGrokKeys();
+    // Try configured Grok/Groq keys with automatic rate-limit failover
+    const plannerKeyEntries = getAvailableGrokKeys({ includeCooldownAsLastResort: true });
     for (const keyEntry of plannerKeyEntries) {
       const candidateModels =
         keyEntry.provider === 'xai'
@@ -292,31 +292,6 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
       if (rawPlannerJson) break;
     }
 
-    // Fallback to Gemini
-    if (!rawPlannerJson) {
-      const client = getGeminiClient();
-      if (client) {
-        for (const plannerModel of ['gemini-4-hydrogen', 'gemini-3.8-flash']) {
-          try {
-            const geminiRes = await client.models.generateContent({
-              model: plannerModel,
-              contents: [{ role: 'user', parts: [{ text: payload }] }],
-              config: {
-                systemInstruction: IMAGE_PLANNER_SYSTEM_PROMPT,
-                temperature: 0.1,
-                maxOutputTokens: 700,
-                responseMimeType: 'application/json',
-              },
-            });
-            if (geminiRes.text) {
-              rawPlannerJson = geminiRes.text;
-              break;
-            }
-          } catch (err) {}
-        }
-      }
-    }
-
     if (rawPlannerJson) {
       const plan = parseImagePlannerResponse(rawPlannerJson);
       return res.json(plan);
@@ -338,7 +313,7 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
 
     try {
       const searchPromises = subjects.map((subj: PlannerSubject) =>
-        executeSubjectSearch(subj, mode, getGeminiClient)
+        executeSubjectSearch(subj, mode)
       );
       const results = await Promise.all(searchPromises);
       return res.json({ results });
@@ -362,7 +337,7 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
         must_include: [q.split(' ')[0]],
         count: 4,
       };
-      const searchRes = await executeSubjectSearch(singleSubject, 'AUTO_REFERENCE', getGeminiClient);
+      const searchRes = await executeSubjectSearch(singleSubject, 'AUTO_REFERENCE');
       return res.json({
         query: q,
         images: searchRes.images,
@@ -502,9 +477,9 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
       base64Data = audio.split('base64,')[1];
     }
 
-    const groqSttKeys = getAvailableGrokKeys({ providerFilter: 'groq' });
+    const groqSttKeys = getAvailableGrokKeys({ providerFilter: 'groq', includeCooldownAsLastResort: true });
 
-    // 1. Try Groq Whisper Primary (with automatic fallback key rotation on HTTP 429)
+    // Groq Whisper STT Only (with automatic dual-key rate-limit rotation)
     for (const keyEntry of groqSttKeys) {
       const WHISPER_MODELS = ['whisper-large-v3-turbo', 'whisper-large-v3'];
       for (const whisperModel of WHISPER_MODELS) {
@@ -522,6 +497,7 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
               Authorization: `Bearer ${keyEntry.key}`,
             },
             body: formData,
+            signal: AbortSignal.timeout(12000),
           });
 
           if (groqRes.ok) {
@@ -544,43 +520,7 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
       }
     }
 
-    // 2. Gemini Multimodal Audio Fallback
-    const ai = getGeminiClient();
-    if (ai) {
-      const STT_MODELS = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-transcribe'];
-      for (const sttModel of STT_MODELS) {
-        try {
-          const geminiRes = await ai.models.generateContent({
-            model: sttModel,
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType: mimeType || 'audio/webm',
-                      data: base64Data,
-                    },
-                  },
-                  {
-                    text: 'Transcribe the spoken words in this audio recording accurately and verbatim. Return ONLY the transcribed text without any conversational preamble or notes.',
-                  },
-                ],
-              },
-            ],
-          });
-
-          const transcribed = geminiRes.text?.trim() || '';
-          if (transcribed) {
-            return res.json({ text: transcribed, provider: 'gemini-audio' });
-          }
-        } catch (geminiAudioErr) {
-          console.warn(`Gemini Audio STT error with ${sttModel}:`, geminiAudioErr);
-        }
-      }
-    }
-
-    return res.status(500).json({ error: 'Audio transcription failed across both Groq and Gemini.' });
+    return res.status(502).json({ error: 'Groq audio transcription unavailable right now. Please try again.' });
   });
 
   const STUDIO_VOICE_STYLES: Record<string, string> = {
@@ -850,6 +790,49 @@ ${clarificationResult ? JSON.stringify(clarificationResult) : 'None / Proceed'}
 
     return { entry, cached };
   }
+
+  // Permanent Voice Preview Endpoint: synthesizes once and saves permanently to .cache/voice-previews/<voiceId>.json
+  app.post('/api/tts/preview', async (req, res) => {
+    try {
+      const { voiceId, text, prebuiltVoice, style } = req.body;
+      if (!voiceId || typeof voiceId !== 'string') {
+        return res.status(400).json({ error: 'voiceId is required for voice preview' });
+      }
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Sample text is required for voice preview' });
+      }
+
+      const { entry, cached } = await getOrSynthesizePermanentPreview(voiceId, async () => {
+        const { entry: synthEntry } = await synthesizeGeminiTtsAudio({
+          text,
+          voice: voiceId,
+          prebuiltVoice,
+          style,
+        });
+        return {
+          audioData: synthEntry.audioData,
+          mimeType: synthEntry.mimeType,
+          voice: synthEntry.voice,
+          model: synthEntry.model,
+        };
+      });
+
+      return res.json({
+        audioData: entry.audioData,
+        mimeType: entry.mimeType,
+        voice: entry.voice,
+        model: entry.model,
+        cacheKey: entry.cacheKey,
+        cached,
+        permanent: true,
+        provider: 'gemini-studio-tts',
+      });
+    } catch (synthErr: any) {
+      const msg = synthErr?.message || 'Voice preview synthesis unavailable right now.';
+      const status = msg.includes('required') ? 400 : msg.includes('unavailable') ? 503 : 502;
+      return res.status(status).json({ error: msg });
+    }
+  });
 
   // Studio Text-to-Speech (TTS) Endpoint: Gemini 3.8 Studio TTS (Unary 24kHz WAV)
   app.post('/api/tts', async (req, res) => {
@@ -2174,16 +2157,24 @@ Conversation Summary: ${conversation_summary || 'Ongoing session'}`;
       ? `\n\n[MYTHORIALIB STUDIO CATALOG]:\n${studioCatalog}`
       : '';
 
-    return `${basePrompt}${catalogSection}${uploadsSection}\n\n[RUNTIME OVERRIDE]: Remember to follow Section 11 Response Format Rules strictly and output COMPLETE self-contained HTML without placeholders or truncation.`;
+    return `${basePrompt}${catalogSection}${uploadsSection}
+
+[RUNTIME OVERRIDE — VIDEO VOICEOVER & SELF-CONTAINED RENDERING]:
+- Follow Section 11 Response Format Rules strictly and output COMPLETE self-contained HTML without placeholders or truncation.
+- IMPORTANT VIDEO AUDIO RULE: Do NOT turn on automatic AI TTS voiceover for videos. The user provides their own uploaded/recorded voiceover audio track when desired. Keep \`<audio id="vo" src="{{AUDIO_URL}}">\` in the HTML and drive visual animations smoothly from \`performance.now()\` / \`window.VIDEO.seek(t)\` when \`{{AUDIO_URL}}\` is empty, or sync to \`vo.currentTime\` when user audio is attached.`;
   }
 
   function detectCreativeStudioRequest(text = ''): boolean {
     const t = String(text || '').trim();
     if (!t) return false;
     if (/^\{"tool":|\{"timing_report":|timing_report|upload_id/i.test(t)) return true;
+    // Do not hijack web photo search requests ("find photo", "search images of", "show me real pictures")
+    if (/\b(find|search|google|dhundo|dikhao|show\s+me\s+(real\s+)?(photo|image|pic))\b/i.test(t) && !/\b(create|make|generate|design|banao|bana\s*do|draw)\b/i.test(t)) {
+      return false;
+    }
     return /\b(thumbnail|thumbnails|poster|posters|banner|quote\s*card|insta\s*quote|instagram\s*post|story\s*cover|reel\s*cover|infographic|wordmark|logo\s*(graphic|type|card)|short\s*video|reel\b|explainer\s*video|motion\s*graphic|documentary(\s*video)?|video\s*(banao|bana|create|make|generate|export|par|on)|background\s*(remove|hata|cutout)|remove\s*background|cutout|save\s*template|list\s*templates|custom\s*template|re-?time\s*video)\b/i.test(
       t
-    );
+    ) || /\b(create|make|generate|design|banao|bana\s*do|draw)\b.{0,45}\b(image|images|picture|pictures|artwork|illustration|graphic|card|visual|video|videos|clip|animation)\b/i.test(t);
   }
 
   function detectVoiceDetailedTopicRequest(text = ''): boolean {
@@ -2195,9 +2186,10 @@ Conversation Summary: ${conversation_summary || 'Ongoing session'}`;
   }
 
   function buildVoiceAssistantSystemPrompt(assistantPersona = 'Zara', voiceLanguage?: string): string {
-    const langNote = voiceLanguage
-      ? `Preferred voice session language: ${voiceLanguage}. Always reply in Roman script (e.g. Roman Urdu / Roman Hindi) unless native script was explicitly requested.`
-      : 'Detect user language and reply in Roman script (e.g. Roman Urdu / Roman Hindi) unless native script was explicitly requested.';
+    const langNote =
+      !voiceLanguage || voiceLanguage === 'auto'
+        ? 'Automatically detect the language of the user message: if the user speaks/writes in Urdu, Hindi, or Roman Urdu/Hinglish, ALWAYS reply in natural **Urdu (Roman)** using Latin letters (never Arabic/Nastaliq script unless explicitly asked). If the user speaks/writes in English or another language, reply clearly in that same language (Roman script if Urdu/Hindi/Arabic).'
+        : `Preferred voice session language: ${voiceLanguage}. Always detect language and reply in Roman Urdu when speaking Urdu/Hindi, or in the user's detected language.`;
 
     return `You are ${assistantPersona}, a live real-time phone-call voice & camera vision AI assistant inside Daro & Zara.
 
@@ -2206,9 +2198,9 @@ CRITICAL CALLING MODE RULES (STRICTLY MANDATORY):
    This is a live voice calling interface — NEVER give long answers, paragraphs, bulleted essays, markdown tables, or code dumps here. Answer conversational questions or camera ("What is this?") requests cleanly in **strictly 2 to 3 crisp spoken sentences max**.
 2. DETAILED TOPIC -> REDIRECT TO CHAT:
    Whenever the user asks for a detailed explanation, step-by-step guide, complete topic breakdown, comparisons, charts, code, scripts, thumbnails, or videos (e.g., "explain in detail", "poori tafseel batao", "I want a detailed topic", "step by step guide"):
-   - Reply in **strictly 2 short spoken lines**: briefly acknowledge the topic in 1 sentence and clearly tell the user (in their language / Roman script) to **go to Chat** ("Aap Chat section mein jayein, wahan aapko is topic ki poori tafseel aur complete explanation mil jayegi." or in English: "Since this is a voice call, please open Chat for the complete detailed explanation.").
+   - Reply in **strictly 2 short spoken lines**: briefly acknowledge the topic in 1 sentence and clearly tell the user (in their language / Urdu Roman) to **go to Chat** ("Aap Chat section mein jayein, wahan aapko is topic ki poori tafseel aur complete explanation mil jayegi." or in English: "Since this is a voice call, please open Chat for the complete detailed explanation.").
    - Append the exact token **[GO_TO_CHAT]** at the very end of your response so the app shows the one-tap "Go to Chat" button.
-3. PLAIN NATURAL SPEECH:
+3. PLAIN NATURAL SPEECH & AUTO LANGUAGE:
    Write clean, easy-to-speak sentences without markdown headings (#), code blocks, \`\`\`image-card blocks, or emojis. NEVER output image-card blocks or visual galleries in voice call mode; instead offer to continue in Chat with [GO_TO_CHAT] if the user asks for images or detailed topics. ${langNote}`;
   }
 
@@ -2229,7 +2221,7 @@ CRITICAL CALLING MODE RULES (STRICTLY MANDATORY):
       studioUploads?: any[];
     }
   ): Promise<boolean> {
-    const keyPool = getAvailableGrokKeys();
+    const keyPool = getAvailableGrokKeys({ includeCooldownAsLastResort: true });
     if (keyPool.length === 0) {
       if (getConfiguredGrokKeys().length > 0) {
         console.warn('All configured Grok/Groq keys are temporarily in rate-limit cooldown, falling back to Gemini.');
@@ -2818,7 +2810,7 @@ STRICTNESS LEVEL: ${strictness}
 
     // Call fast model for ultra-low latency (<1.5s)
     try {
-      const clarifyKeyEntries = getAvailableGrokKeys();
+      const clarifyKeyEntries = getAvailableGrokKeys({ includeCooldownAsLastResort: true });
       let rawJsonResult = '';
 
       // Try configured Grok/Groq keys with automatic rate-limit failover
@@ -2868,34 +2860,6 @@ STRICTNESS LEVEL: ${strictness}
         if (rawJsonResult) break;
       }
 
-      // If Grok/Groq didn't respond or wasn't configured, try Gemini
-      if (!rawJsonResult) {
-        const client = getGeminiClient();
-        if (client) {
-          const geminiModels = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
-          for (const modelName of geminiModels) {
-            try {
-              const geminiRes = await client.models.generateContent({
-                model: modelName,
-                contents: [{ role: 'user', parts: [{ text: gateEvaluationPayload }] }],
-                config: {
-                  systemInstruction: CLARIFICATION_GATE_SYSTEM_PROMPT,
-                  temperature: 0.15,
-                  maxOutputTokens: 800,
-                  responseMimeType: 'application/json',
-                },
-              });
-              if (geminiRes.text) {
-                rawJsonResult = geminiRes.text;
-                break;
-              }
-            } catch (gErr) {
-              console.warn(`Gemini model ${modelName} clarification error:`, gErr);
-            }
-          }
-        }
-      }
-
       if (rawJsonResult) {
         const decision = parseAndValidateGateResponse(rawJsonResult);
         return res.json(decision);
@@ -2924,19 +2888,20 @@ STRICTNESS LEVEL: ${strictness}
       /\b(urdu\s*(script|font|likh|mein\s*likh)|in\s*urdu\s*script|nastaliq|arabic\s*script|devanagari|hindi\s*script|native\s*script)\b/i.test(p) ||
       /اردو\s*(میں|فونٹ|اسکرپٹ)|عربی\s*میں|हिंदी\s*लिपि/i.test(p);
 
+    const isAutoLocale = !voiceLanguage || voiceLanguage === 'auto';
     let detectedLanguage = 'English';
     if (/[\u0600-\u06FF]/.test(p)) {
-      detectedLanguage = voiceLanguage?.startsWith('ar') ? 'Arabic' : 'Urdu / Arabic';
+      detectedLanguage = !isAutoLocale && voiceLanguage?.startsWith('ar') ? 'Arabic' : 'Roman Urdu';
     } else if (/[\u0900-\u097F]/.test(p)) {
-      detectedLanguage = 'Hindi';
+      detectedLanguage = 'Roman Hindi';
     } else if (
-      /\b(kya|hai|hain|mein|main|ap|aap|kaise|kaisa|karo|kero|batao|btao|samjhao|chahiye|nahi|nhi|bhai|yaar|aur|kyun|kab|kahan|mujhe|mjhe|hoga|hogi|wala|wali|sath|acha|theek|thik|shukriya|banao|bnana|bna|likh|dedo|krdo|ker|hota|bola|jub|jab|sa|ka|ki|ke|ko|se|pe|par)\b/i.test(p) ||
-      voiceLanguage?.startsWith('ur')
+      /\b(kya|hai|hain|mein|main|ap|aap|kaise|kaisa|karo|kero|batao|btao|samjhao|chahiye|nahi|nhi|bhai|yaar|aur|kyun|kab|kahan|mujhe|mjhe|hoga|hogi|wala|wali|sath|acha|theek|thik|shukriya|banao|bnana|bna|likh|dedo|krdo|ker|hota|bola|jub|jab|sa|ka|ki|ke|ko|se|pe|par|salam|assalam)\b/i.test(p) ||
+      (!isAutoLocale && voiceLanguage?.startsWith('ur'))
     ) {
       detectedLanguage = 'Roman Urdu';
-    } else if (voiceLanguage?.startsWith('hi')) {
+    } else if (!isAutoLocale && voiceLanguage?.startsWith('hi')) {
       detectedLanguage = 'Roman Hindi';
-    } else if (voiceLanguage?.startsWith('ar')) {
+    } else if (!isAutoLocale && voiceLanguage?.startsWith('ar')) {
       detectedLanguage = 'Roman Arabic';
     } else if (/\b(hola|gracias|como|que|para|por\s*favor)\b/i.test(p)) {
       detectedLanguage = 'Spanish';
@@ -3120,13 +3085,8 @@ STRICTNESS LEVEL: ${strictness}
 
     let streamSuccess = false;
     const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
-    const hasNonImageBinaryAttachment = Array.isArray(attachments) && attachments.some((a: any) => {
-      const mime = String(a?.type || '');
-      return mime.startsWith('video/') || mime.startsWith('audio/') || mime === 'application/pdf';
-    });
-    const hasGroqOrGrokKeys = getAvailableGrokKeys().length > 0;
-    const useSearchGrounding = !hasAttachments && !isVoiceAssistant && !isCreativeStudio && shouldUseWebGrounding(prompt, isSimple, isBuildyWebsiteOrUi) && Boolean(process.env.GEMINI_API_KEY);
-    let collectedSources: Array<{ title: string; uri: string; domain: string }> = [];
+    const hasGroqOrGrokKeys = getAvailableGrokKeys({ includeCooldownAsLastResort: true }).length > 0;
+    const collectedSources: Array<{ title: string; uri: string; domain: string }> = [];
 
     const streamOptions = {
       isVoiceAssistant,
@@ -3137,45 +3097,22 @@ STRICTNESS LEVEL: ${strictness}
       studioUploads,
     };
 
-    // Use Groq primary for all chat/text/image requests when Groq keys exist (unless live web search grounding or video/audio/PDF binary parsing is explicitly required)
-    if (hasNonImageBinaryAttachment || useSearchGrounding || !hasGroqOrGrokKeys) {
-      console.log(`Initiating Gemini stream (binaryAtt=${hasNonImageBinaryAttachment}, webGrounding=${useSearchGrounding}, studio=${isCreativeStudio})...`);
-      streamSuccess = await streamGeminiFallback(effectivePrompt, attachments, isSimple ? null : contextPackage, sendChunk, isSimple, {
-        ...streamOptions,
-        useSearchGrounding,
-        onSources: (srcs) => {
-          collectedSources = srcs;
-        },
-      });
-      if (!streamSuccess && hasGroqOrGrokKeys) {
-        console.warn('Gemini path unavailable, falling back to Groq...');
-        streamSuccess = await streamGroq(effectivePrompt, history, isSimple ? null : contextPackage, sendChunk, isSimple, attachments, streamOptions);
-      }
-    } else {
-      console.log(`Initiating fast stream via Groq primary (${isSimple ? 'INSTANT GREETING PATH' : isVoiceAssistant ? 'VOICE ASSISTANT' : isCreativeStudio ? 'CREATIVE STUDIO' : 'STANDARD PATH'})...`);
+    // Strict Provider Split: Always use dual Groq/Grok keys for LLM chat (Gemini is reserved strictly for TTS)
+    if (hasGroqOrGrokKeys) {
+      console.log(`Initiating fast stream via Groq/Grok (${isSimple ? 'INSTANT GREETING PATH' : isVoiceAssistant ? 'VOICE ASSISTANT' : isCreativeStudio ? 'CREATIVE STUDIO' : 'STANDARD PATH'})...`);
       streamSuccess = await streamGroq(effectivePrompt, history, isSimple ? null : contextPackage, sendChunk, isSimple, attachments, streamOptions);
-      if (!streamSuccess) {
-        console.warn('Groq primary busy/unavailable. Engaging Gemini fallback...');
-        streamSuccess = await streamGeminiFallback(effectivePrompt, attachments, isSimple ? null : contextPackage, sendChunk, isSimple, {
-          ...streamOptions,
-          useSearchGrounding: false,
-          onSources: (srcs) => {
-            collectedSources = srcs;
-          },
-        });
-      }
     }
 
-    if (!streamSuccess && !isSimple && getAvailableGrokKeys().length > 0) {
-      console.warn('AI providers busy. Executing brief backoff retry...');
+    if (!streamSuccess && !isSimple && hasGroqOrGrokKeys) {
+      console.warn('Groq/Grok keys busy. Executing brief backoff retry across pool...');
       await new Promise((resolve) => setTimeout(resolve, 600));
       streamSuccess = await streamGroq(effectivePrompt, history, contextPackage, sendChunk, isSimple, attachments, streamOptions);
     }
 
-    // 4. ROBUST FALLBACK: If external AI engines are temporarily rate-limited, provide immediate structured response
+    // 4. ROBUST FALLBACK: If Groq keys are unavailable or rate-limited, provide immediate structured response
     if (!streamSuccess) {
-      console.warn('AI providers temporarily rate-limited. Streaming structured fallback...');
-      const fallbackText = generateStructuredFallback(effectivePrompt, attachments, contextPackage);
+      console.warn('Groq/Grok providers temporarily rate-limited. Streaming structured fallback...');
+      const fallbackText = generateStructuredFallback(String(prompt || ''), attachments, contextPackage);
       const chunks = fallbackText.match(/.{1,60}/gs) || [fallbackText];
       for (const c of chunks) {
         sendChunk({ text: c, provider: 'intelligent-system-fallback' });
@@ -3189,14 +3126,14 @@ STRICTNESS LEVEL: ${strictness}
       Boolean(isVoiceAssistant) &&
       (/\[GO_TO_CHAT\]/i.test(accumulatedText) || detectVoiceDetailedTopicRequest(prompt));
 
-    // Build dynamic per-query thoughtSummary & grounded sources metadata
+    // Build dynamic per-query thoughtSummary & metadata
     const thoughtSummary = buildDynamicThoughtSummary({
       prompt: String(prompt || ''),
       answer: accumulatedText,
       detectedLanguage,
       scriptMode,
       activeSkillName: isCreativeStudio ? 'Creative Studio' : activeSkill?.name,
-      groundedUsed: useSearchGrounding || lastProvider.startsWith('gemini'),
+      groundedUsed: false,
       sourcesCount: collectedSources.length,
       hasAttachments,
       attachmentsCount: Array.isArray(attachments) ? attachments.length : 0,
@@ -3208,7 +3145,7 @@ STRICTNESS LEVEL: ${strictness}
       meta: {
         sources: collectedSources,
         thoughtSummary,
-        provider: lastProvider || (hasAttachments || useSearchGrounding ? 'gemini' : 'groq'),
+        provider: lastProvider || 'groq',
         ...(suggestGoToChat ? { suggestGoToChat: true, detailedTopicQuery: String(prompt || '').trim() } : {}),
       },
     });

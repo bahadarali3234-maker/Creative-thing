@@ -16,6 +16,10 @@ import {
   RefreshCw,
   Layers,
   Wand2,
+  Upload,
+  Mic,
+  Square,
+  Trash2,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import {
@@ -278,6 +282,7 @@ export interface StudioVideoPlayerCardProps {
   htmlCode: string;
   videoPlan: VideoPlan;
   uploadsMap?: Record<string, string>;
+  userVoiceover?: { url: string; name: string } | null;
   isStreaming?: boolean;
   onOpenFullScreenEditor?: (code: string, fileName?: string, lang?: string) => void;
   onTimingDriftReport?: (reportJson: string) => void;
@@ -287,14 +292,17 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
   htmlCode,
   videoPlan,
   uploadsMap = {},
+  userVoiceover = null,
   isStreaming = false,
   onOpenFullScreenEditor,
   onTimingDriftReport,
 }) => {
   const [tab, setTab] = useState<'player' | 'scenes' | 'code'>('player');
   const [containerWidth, setContainerWidth] = useState(640);
-  const [voState, setVoState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [voBlobUrl, setVoBlobUrl] = useState<string>('');
+  const [voState, setVoState] = useState<'idle' | 'loading' | 'ready' | 'error'>('ready');
+  const [voBlobUrl, setVoBlobUrl] = useState<string>(userVoiceover?.url || '');
+  const [voLabel, setVoLabel] = useState<string>(userVoiceover?.name || '');
+  const [isRecordingVo, setIsRecordingVo] = useState<boolean>(false);
   const [segmentTimings, setSegmentTimings] = useState<
     Array<{ scene: string; start: number; end: number; actual: number }>
   >([]);
@@ -309,6 +317,9 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const voUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const voRecorderRef = useRef<MediaRecorder | null>(null);
+  const voChunksRef = useRef<Blob[]>([]);
   const rafRef = useRef<number | null>(null);
   const playStartPerfRef = useRef<number>(0);
   const playOffsetRef = useRef<number>(0);
@@ -321,73 +332,98 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
     return videoPlan.aspect === '9:16' ? [1080, 1920] : [1280, 720];
   }, [videoPlan]);
 
-  const effectiveDuration = Math.min(120, Math.max(5, actualTotalDuration || videoPlan.duration || 30));
+  const effectiveDuration = Math.min(120, Math.max(3, actualTotalDuration || videoPlan.duration || 30));
 
-  // Synthesize full multi-segment Gemini TTS voiceover cleanly once stream completes
+  // Sync user-provided voiceover if passed from chat attachment (never auto-trigger TTS)
   useEffect(() => {
-    if (isStreaming) return;
-    const segments = videoPlan?.tts?.segments || [];
-    if (segments.length === 0) {
+    if (userVoiceover?.url && !voBlobUrl) {
+      setVoBlobUrl(userVoiceover.url);
+      setVoLabel(userVoiceover.name || 'User Voiceover');
       setVoState('ready');
+    }
+  }, [userVoiceover?.url, userVoiceover?.name]);
+
+  const syncDurationFromUserAudio = (audioDur: number) => {
+    if (!Number.isFinite(audioDur) || audioDur <= 0.5) return;
+    const clampedDur = Math.min(120, Number(audioDur.toFixed(2)));
+    setActualTotalDuration(clampedDur);
+    const plannedTotal = Math.max(1, Number(videoPlan.duration) || 30);
+    if (Math.abs(clampedDur - plannedTotal) > 1.5 && Array.isArray(videoPlan.scenes) && videoPlan.scenes.length > 0) {
+      const ratio = clampedDur / plannedTotal;
+      const computedTimings = videoPlan.scenes.map((sc) => {
+        const start = Number((sc.start * ratio).toFixed(2));
+        const end = Number((sc.end * ratio).toFixed(2));
+        return {
+          scene: sc.id,
+          start,
+          end,
+          actual: Number(Math.max(0.5, end - start).toFixed(2)),
+        };
+      });
+      setSegmentTimings(computedTimings);
+      setDriftDetected(true);
+    } else {
+      setDriftDetected(false);
+    }
+  };
+
+  const handleUploadUserVoiceover = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    stopPlayback();
+    const url = URL.createObjectURL(file);
+    setVoBlobUrl(url);
+    setVoLabel(file.name);
+    setVoState('ready');
+    setCurrentTime(0);
+  };
+
+  const handleToggleRecordVoiceover = async () => {
+    if (isRecordingVo && voRecorderRef.current) {
+      try {
+        voRecorderRef.current.stop();
+      } catch {}
+      setIsRecordingVo(false);
       return;
     }
-
-    let cancelled = false;
-    let createdUrl = '';
-    setVoState('loading');
-
-    fetch('/api/studio/voiceover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        segments,
-        voice: videoPlan.tts.voice || 'Kore',
-        style: videoPlan.tts.style || 'Clear studio narrator',
-      }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Voiceover HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.audioData) {
-          createdUrl = base64ToBlobUrl(data.audioData, data.mimeType || 'audio/wav');
-          setVoBlobUrl(createdUrl);
-          if (typeof data.totalDuration === 'number' && data.totalDuration > 1) {
-            setActualTotalDuration(Math.min(120, data.totalDuration));
-          }
-          if (Array.isArray(data.segmentTimings)) {
-            setSegmentTimings(data.segmentTimings);
-            const hasDrift = data.segmentTimings.some((st: any) => {
-              const plannedScene = videoPlan.scenes.find((s) => s.id === st.scene);
-              if (!plannedScene) return false;
-              const plannedDur = Math.max(0.5, plannedScene.end - plannedScene.start);
-              return Math.abs(st.actual - plannedDur) > 0.75;
-            });
-            setDriftDetected(hasDrift);
-          }
+    try {
+      stopPlayback();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      voChunksRef.current = [];
+      rec.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) voChunksRef.current.push(ev.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((tr) => tr.stop());
+        const blob = new Blob(voChunksRef.current, { type: 'audio/webm' });
+        if (blob.size > 200) {
+          const url = URL.createObjectURL(blob);
+          setVoBlobUrl(url);
+          setVoLabel('Recorded Voiceover');
           setVoState('ready');
-        } else {
-          setVoState('error');
+          setCurrentTime(0);
         }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          console.warn('Video voiceover synth warning:', err);
-          setVoState('error');
-        }
-      });
+        setIsRecordingVo(false);
+      };
+      rec.start(200);
+      voRecorderRef.current = rec;
+      setIsRecordingVo(true);
+    } catch {
+      setIsRecordingVo(false);
+    }
+  };
 
-    return () => {
-      cancelled = true;
-      if (createdUrl) {
-        try {
-          URL.revokeObjectURL(createdUrl);
-        } catch {}
-      }
-    };
-  }, [isStreaming, videoPlan]);
+  const handleClearVoiceover = () => {
+    stopPlayback();
+    setVoBlobUrl('');
+    setVoLabel('');
+    setActualTotalDuration(videoPlan.duration || 30);
+    setDriftDetected(false);
+    setSegmentTimings([]);
+    setCurrentTime(0);
+  };
 
   const resolvedHtml = useMemo(
     () => resolveStudioPlaceholders(htmlCode, uploadsMap, voBlobUrl || ''),
@@ -605,19 +641,30 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
 
   return (
     <div className="mt-3 rounded-2xl bg-white border border-zinc-200 overflow-hidden text-zinc-900">
-      {/* Hidden audio controller for instant synchronized studio narration */}
+      {/* Hidden audio controller for synchronized user-provided voiceover */}
       {voBlobUrl && (
         <audio
           ref={audioRef}
           src={voBlobUrl}
           preload="auto"
           className="hidden"
+          onLoadedMetadata={(e) => {
+            syncDurationFromUserAudio((e.currentTarget as HTMLAudioElement).duration);
+          }}
           onEnded={() => {
             stopPlayback();
             setCurrentTime(effectiveDuration);
           }}
         />
       )}
+
+      <input
+        ref={voUploadInputRef}
+        type="file"
+        accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+        onChange={handleUploadUserVoiceover}
+        className="hidden"
+      />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-zinc-200 bg-[#F4F8FC]">
@@ -630,7 +677,7 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
               {videoPlan.title || 'Creative Video'}
             </div>
             <div className="text-[11px] font-semibold text-zinc-500 tabular-nums">
-              {videoPlan.style} · {videoPlan.aspect} · {formatClock(effectiveDuration)} · Voice: {videoPlan.tts?.voice || 'Kore'}
+              {videoPlan.style} · {videoPlan.aspect} · {formatClock(effectiveDuration)} · {voBlobUrl ? `Voiceover: ${voLabel || 'User Audio'}` : 'User Voiceover Ready'}
             </div>
           </div>
         </div>
@@ -785,14 +832,60 @@ export const StudioVideoPlayerCard: React.FC<StudioVideoPlayerCardProps> = ({
               {formatClock(currentTime)} / {formatClock(effectiveDuration)}
             </span>
 
-            <button
-              type="button"
-              onClick={handleToggleMute}
-              className="min-h-[44px] min-w-[44px] rounded-lg border border-zinc-200 hover:border-[#00A6FF] text-zinc-700 flex items-center justify-center cursor-pointer shrink-0"
-              aria-label={isMuted ? 'Unmute' : 'Mute'}
-            >
-              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
+            {voBlobUrl && (
+              <button
+                type="button"
+                onClick={handleToggleMute}
+                className="min-h-[44px] min-w-[44px] rounded-lg border border-zinc-200 hover:border-[#00A6FF] text-zinc-700 flex items-center justify-center cursor-pointer shrink-0"
+                aria-label={isMuted ? 'Unmute' : 'Mute'}
+              >
+                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
+            )}
+          </div>
+
+          {/* User-Provided Voiceover Controls (No Auto TTS) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-zinc-200">
+            <div className="text-xs font-bold text-[#0A2A66] truncate">
+              {voBlobUrl
+                ? `Voiceover Track: ${voLabel || 'User Audio'} (${formatClock(effectiveDuration)})`
+                : 'No voiceover attached — add your own audio or record live'}
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => voUploadInputRef.current?.click()}
+                className="min-h-[34px] px-2.5 py-1 rounded-lg border border-zinc-200 hover:border-[#00A6FF] bg-white text-[#0A2A66] text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload size={12} />
+                <span>{voBlobUrl ? 'Replace Audio' : 'Upload Voiceover'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleRecordVoiceover}
+                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  isRecordingVo
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'border border-zinc-200 hover:border-[#00A6FF] bg-white text-[#0A2A66]'
+                }`}
+              >
+                {isRecordingVo ? <Square size={11} className="fill-current" /> : <Mic size={12} />}
+                <span>{isRecordingVo ? 'Stop Recording' : 'Record Voiceover'}</span>
+              </button>
+
+              {voBlobUrl && (
+                <button
+                  type="button"
+                  onClick={handleClearVoiceover}
+                  className="min-h-[34px] px-2.5 py-1 rounded-lg border border-red-200 hover:bg-red-50 text-red-600 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  title="Remove voiceover"
+                >
+                  <Trash2 size={12} />
+                  <span>Remove</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ) : tab === 'scenes' ? (

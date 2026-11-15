@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { GoogleGenAI } from '@google/genai';
+
 
 export interface PlannerSubject {
   id?: string;
@@ -52,7 +52,7 @@ export async function crawlGoogleImages(query: string): Promise<NormalizedImage[
         'Cookie':
           'SOCS=CAISHAgBEhJnd3NfMjAyNDA2MTAtMF9SQzIaAmVuIAEaBgiA_LyaBg; CONSENT=PENDING+999; NID=511=dummy',
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(2400),
     });
 
     if (!res.ok) return [];
@@ -110,7 +110,7 @@ export async function crawlBingImages(query: string): Promise<NormalizedImage[]>
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(2400),
     });
 
     if (!res.ok) return [];
@@ -168,7 +168,7 @@ export async function crawlDuckDuckGoImages(query: string): Promise<NormalizedIm
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(2200),
       }
     );
 
@@ -187,7 +187,7 @@ export async function crawlDuckDuckGoImages(query: string): Promise<NormalizedIm
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             Referer: 'https://duckduckgo.com/',
           },
-          signal: AbortSignal.timeout(5500),
+          signal: AbortSignal.timeout(2400),
         }
       );
 
@@ -237,7 +237,7 @@ export async function crawlWikimediaImages(query: string): Promise<NormalizedIma
     const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
       query
     )}&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`;
-    const cRes = await fetch(commonsUrl, { signal: AbortSignal.timeout(4500) });
+    const cRes = await fetch(commonsUrl, { signal: AbortSignal.timeout(2200) });
     if (cRes.ok) {
       const cData: any = await cRes.json();
       const pages = cData?.query?.pages || {};
@@ -401,99 +401,33 @@ export function filterAndScoreImages(candidates: NormalizedImage[], subject: Pla
   return { topImages, backupPool };
 }
 
-/**
- * Batched Gemini Vision / Relevance Verification
- * For USER_REQUESTED or borderline candidates (score < 65), checks if image titles/alt match the target entity.
- */
-export async function verifyCandidatesWithGemini(
-  candidates: NormalizedImage[],
-  subject: PlannerSubject,
-  getGeminiClient: () => GoogleGenAI | null
-): Promise<NormalizedImage[]> {
-  if (candidates.length <= 2) return candidates;
-
-  const client = getGeminiClient();
-  if (!client) return candidates;
-
-  try {
-    const listDescription = candidates
-      .slice(0, 8)
-      .map((c, idx) => `[${idx}] Title: "${c.title}" | Alt: "${c.alt}" | Domain: ${c.sourceDomain}`)
-      .join('\n');
-
-    const prompt = `You are an image verification system.
-Target Subject: "${subject.label}" (Intent: ${subject.intent || 'visual reference'})
-
-Candidate images:
-${listDescription}
-
-Which of these candidate indexes are genuinely relevant and accurate visual photos of "${subject.label}"?
-Return a JSON array of valid 0-based integer indexes ordered by relevance. E.g. [0, 1, 2, 4].
-Do not output markdown code blocks. Just the JSON array.`;
-
-    const res = await Promise.race([
-      client.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          temperature: 0.1,
-          maxOutputTokens: 200,
-        },
-      }),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Vision check timeout')), 2500)),
-    ]);
-
-    if (res && res.text) {
-      let raw = res.text.trim();
-      if (raw.startsWith('```')) {
-        raw = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/, '').trim();
-      }
-      const indexes = JSON.parse(raw);
-      if (Array.isArray(indexes) && indexes.length > 0) {
-        const approved: NormalizedImage[] = [];
-        for (const idx of indexes) {
-          if (typeof idx === 'number' && candidates[idx]) {
-            approved.push(candidates[idx]);
-          }
-        }
-        if (approved.length >= 2) {
-          // Append remaining candidates as backup
-          const unapproved = candidates.filter((c) => !approved.includes(c));
-          return [...approved, ...unapproved];
-        }
-      }
-    }
-  } catch (err) {
-    // On timeout or error, safely retain original scored ranking
-  }
-
-  return candidates;
-}
+const referenceCache = new Map<string, { ts: number; data: SubjectSearchResult }>();
+const REF_CACHE_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Execute full search pipeline for a single planner subject
+ * Execute fast parallel search pipeline for a single planner subject (zero Gemini LLM calls)
  */
 export async function executeSubjectSearch(
   subject: PlannerSubject,
-  mode: string,
-  getGeminiClient: () => GoogleGenAI | null
+  _mode: string,
+  _unused?: any
 ): Promise<SubjectSearchResult> {
   const queriesToRun = subject.queries && subject.queries.length > 0 ? subject.queries : [subject.label];
   const primaryQuery = queriesToRun[0];
+  const cacheKey = `${subject.label.toLowerCase()}::${queriesToRun.join('|').toLowerCase()}::${subject.count || 4}`;
 
-  // Run all crawlers in parallel with safe timeouts
-  const crawlerPromises: Promise<NormalizedImage[]>[] = [
-    crawlGoogleImages(primaryQuery),
-    crawlBingImages(primaryQuery),
-    crawlDuckDuckGoImages(primaryQuery),
-    crawlWikimediaImages(primaryQuery),
-  ];
-
-  // If there is a second alternate query, run it in Bing/DDG as well
-  if (queriesToRun[1]) {
-    crawlerPromises.push(crawlBingImages(queriesToRun[1]));
-    crawlerPromises.push(crawlDuckDuckGoImages(queriesToRun[1]));
+  const cached = referenceCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < REF_CACHE_TTL_MS) {
+    return cached.data;
   }
+
+  // Run fast crawlers in parallel
+  const crawlerPromises: Promise<NormalizedImage[]>[] = [
+    crawlDuckDuckGoImages(primaryQuery),
+    crawlBingImages(primaryQuery),
+    crawlWikimediaImages(primaryQuery),
+    crawlGoogleImages(primaryQuery),
+  ];
 
   const settled = await Promise.allSettled(crawlerPromises);
   const allCandidates: NormalizedImage[] = [];
@@ -504,20 +438,11 @@ export async function executeSubjectSearch(
     }
   }
 
-  // Filter and score
+  // Filter and deterministic score
   let { topImages, backupPool } = filterAndScoreImages(allCandidates, subject);
 
-  // Vision / Relevance check if USER_REQUESTED or borderline score
-  const isBorderline = topImages.some((img) => (img.score || 0) < 65);
-  if (mode === 'USER_REQUESTED' || isBorderline) {
-    const combined = [...topImages, ...backupPool];
-    const verified = await verifyCandidatesWithGemini(combined, subject, getGeminiClient);
-    topImages = verified.slice(0, subject.count || 4);
-    backupPool = verified.slice(subject.count || 4);
-  }
-
-  // Fallback: if all crawlers yielded 0 images, run category search on wikimedia
-  if (topImages.length === 0) {
+  // Fallback only if zero images came back
+  if (topImages.length === 0 && primaryQuery !== subject.label) {
     const fallbackImages = await crawlWikimediaImages(subject.label);
     const scored = filterAndScoreImages(fallbackImages, subject);
     topImages = scored.topImages;
@@ -525,12 +450,21 @@ export async function executeSubjectSearch(
   }
 
   const googleSearchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(primaryQuery)}`;
-
-  return {
+  const finalResult: SubjectSearchResult = {
     subject,
     images: topImages,
     backupPool,
     googleSearchUrl,
     totalFound: topImages.length + backupPool.length,
   };
+
+  if (topImages.length > 0) {
+    if (referenceCache.size > 150) {
+      const oldestKey = referenceCache.keys().next().value;
+      if (oldestKey) referenceCache.delete(oldestKey);
+    }
+    referenceCache.set(cacheKey, { ts: Date.now(), data: finalResult });
+  }
+
+  return finalResult;
 }

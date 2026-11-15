@@ -6,17 +6,15 @@ import {
   Camera,
   ArrowUp,
   X,
-  Volume2,
-  VolumeX,
   RefreshCw,
   RotateCcw,
-  Sparkles,
   ImagePlus,
   Check,
   Play,
   Loader2,
   MessageSquare,
   ArrowRight,
+  AudioLines,
 } from 'lucide-react';
 import {
   GEMINI_TTS_VOICES,
@@ -24,6 +22,8 @@ import {
   setStoredVoice,
   getVoiceInfo,
   speakWithGeminiTts,
+  createStreamingTtsSession,
+  playVoicePreviewSample,
   stopGeminiTts,
 } from '../utils/geminiTts';
 import { isSimpleMessage } from './FullScreenChatView';
@@ -36,17 +36,6 @@ export interface LiveVoiceCallModalProps {
   onGoToChat?: (topicPrompt: string) => void;
   onVoiceChanged?: (voiceId: string) => void;
 }
-
-const LANGUAGE_OPTIONS = [
-  { code: 'ur-PK', label: 'Urdu (Roman)' },
-  { code: 'en-US', label: 'English (US)' },
-  { code: 'en-GB', label: 'English (UK)' },
-  { code: 'hi-IN', label: 'Hindi (Roman)' },
-  { code: 'ar-SA', label: 'Arabic (Roman)' },
-  { code: 'es-ES', label: 'Español' },
-  { code: 'fr-FR', label: 'Français' },
-  { code: 'tr-TR', label: 'Türkçe' },
-];
 
 type AssistantStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -62,8 +51,6 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   const personaName = voiceInfo.persona; // 'Zara' (Female) | 'Daro' (Male)
 
   const [status, setStatus] = useState<AssistantStatus>('idle');
-  const [languageCode, setLanguageCode] = useState<string>('ur-PK');
-  const [isSpeakerOn, setIsSpeakerOn] = useState<boolean>(true);
   const [textInput, setTextInput] = useState<string>('');
   const [userTranscript, setUserTranscript] = useState<string>('');
   const [aiSpeechText, setAiSpeechText] = useState<string>(
@@ -260,8 +247,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   // Speak using high-definition Gemini Studio TTS
   const speakResponse = useCallback(
     (text: string, genId: number) => {
-      if (!isSpeakerOn || generationRef.current !== genId) {
-        if (generationRef.current === genId) setStatus('idle');
+      if (generationRef.current !== genId) {
         return;
       }
       setStatus('speaking');
@@ -279,7 +265,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         },
       });
     },
-    [isSpeakerOn, selectedVoiceId]
+    [selectedVoiceId]
   );
 
   // Send query (text, voice transcript, or snapped camera image) to /api/chat and parse SSE
@@ -314,6 +300,20 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           ]
         : [];
 
+      const liveTtsSession = createStreamingTtsSession({
+        messageId: `voice-${myGen}`,
+        voice: selectedVoiceId,
+        onStart: () => {
+          if (generationRef.current === myGen) setStatus('speaking');
+        },
+        onEnd: () => {
+          if (generationRef.current === myGen) setStatus('idle');
+        },
+        onError: () => {
+          if (generationRef.current === myGen) setStatus('idle');
+        },
+      });
+
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -325,7 +325,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             attachments: attachmentsPayload,
             isSimple: !imageDataUrl && isSimpleMessage(cleanedPrompt),
             isVoiceAssistant: true,
-            voiceLanguage: languageCode,
+            voiceLanguage: 'auto',
             assistantPersona: personaName,
           }),
         });
@@ -347,7 +347,10 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            if (generationRef.current !== myGen) return;
+            if (generationRef.current !== myGen) {
+              liveTtsSession.cancel();
+              return;
+            }
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -372,7 +375,10 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
                     .replace(/[*_`#>~|]/g, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-                  if (cleanDisplay) setAiSpeechText(cleanDisplay);
+                  if (cleanDisplay) {
+                    setAiSpeechText(cleanDisplay);
+                    liveTtsSession.pushText(cleanDisplay);
+                  }
                 }
               } catch {
                 // Ignore partial JSON frames
@@ -384,7 +390,10 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           fullText = fallbackJson?.text || fallbackJson?.reply || '';
         }
 
-        if (generationRef.current !== myGen) return;
+        if (generationRef.current !== myGen) {
+          liveTtsSession.cancel();
+          return;
+        }
 
         const shouldOfferGoToChat = metaSuggestGoToChat || /\[GO_TO_CHAT\]/i.test(fullText);
         if (shouldOfferGoToChat) {
@@ -401,15 +410,16 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
 
         historyRef.current = [...historyRef.current, { sender: 'ai', text: finalClean }];
         setAiSpeechText(finalClean);
-        speakResponse(finalClean, myGen);
+        liveTtsSession.finish(finalClean);
       } catch (err: any) {
+        liveTtsSession.cancel();
         if (err?.name === 'AbortError' || generationRef.current !== myGen) return;
         const fallback = 'Network ya server se rabta nahi ho saka. Dobara koshish karein.';
         setAiSpeechText(fallback);
         speakResponse(fallback, myGen);
       }
     },
-    [languageCode, personaName, speakResponse, stopAllActivity]
+    [personaName, selectedVoiceId, speakResponse, stopAllActivity]
   );
 
   // Start Listening via SpeechRecognition (+ Whisper /api/stt fallback)
@@ -429,7 +439,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         rec.continuous = false;
         rec.interimResults = true;
         rec.maxAlternatives = 1;
-        rec.lang = languageCode;
+        rec.lang = 'en-IN';
 
         rec.onresult = (event: any) => {
           if (generationRef.current !== myGen) return;
@@ -537,7 +547,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       setStatus('idle');
       showToast('Please allow microphone access');
     }
-  }, [languageCode, showToast, stopAllActivity, stopMicHardware, submitQuery]);
+  }, [showToast, stopAllActivity, stopMicHardware, submitQuery]);
 
   const handleOrbOrMicTap = () => {
     if (orbVideoRef.current) {
@@ -644,9 +654,9 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        {/* Top Header */}
+        {/* Top Header: ONLY Persona Name, Circular Voice Logo Button, and Cross Button */}
         <header className="relative z-20 flex items-center justify-between px-4 sm:px-6 pt-3.5 pb-2 gap-2">
-          {/* Left: Glowing Dot + Dynamic DARO / ZARA Persona Name */}
+          {/* Left: Glowing Dot + Assistant Name Only */}
           <div className="flex items-center gap-2.5">
             <span
               className="w-3.5 h-3.5 rounded-full shrink-0"
@@ -655,53 +665,21 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
                 boxShadow: '0 0 14px #4cc3ff',
               }}
             />
-            <div className="flex items-baseline gap-2">
-              <span className="font-extrabold tracking-[0.16em] text-sm sm:text-base text-[#0a2a66] uppercase">
-                {personaName}
-              </span>
-              <span className="hidden sm:inline-block text-[11px] font-semibold text-[#6179a0]">
-                · {voiceInfo.name}
-              </span>
-            </div>
+            <span className="font-extrabold tracking-[0.16em] text-sm sm:text-base text-[#0a2a66] uppercase">
+              {personaName}
+            </span>
           </div>
 
-          {/* Right Controls: Language Pill, Speaker, Quick Voices Switcher, Close */}
+          {/* Right Controls: Circular Voices Logo Button & Cross Button Only */}
           <div className="flex items-center gap-2">
-            <select
-              value={languageCode}
-              onChange={(e) => setLanguageCode(e.target.value)}
-              aria-label="Assistant Language"
-              className="appearance-none bg-white/75 backdrop-blur-md border border-[#4cc3ff]/40 hover:border-[#4cc3ff] rounded-full px-3 py-1.5 text-xs font-bold text-[#0a2a66] focus:outline-none cursor-pointer shadow-sm"
-            >
-              {LANGUAGE_OPTIONS.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
-
             <button
               type="button"
               onClick={() => setIsVoiceDrawerOpen(true)}
-              className="px-3 py-1.5 rounded-full bg-white/75 backdrop-blur-md border border-[#4cc3ff]/40 hover:border-[#4cc3ff] text-xs font-bold text-[#0a2a66] flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
-              title="Switch Zara / Daro Voice"
+              className="w-9 h-9 rounded-full bg-white/75 backdrop-blur-md border border-[#4cc3ff]/40 hover:border-[#4cc3ff] text-[#0a2a66] flex items-center justify-center cursor-pointer shadow-sm transition-colors"
+              title="Voices"
+              aria-label="Voices"
             >
-              <Sparkles size={13} className="text-[#1450c8]" />
-              <span>Voices</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                const next = !isSpeakerOn;
-                setIsSpeakerOn(next);
-                if (!next) stopGeminiTts();
-              }}
-              className="w-9 h-9 rounded-full bg-white/75 backdrop-blur-md border border-[#4cc3ff]/40 hover:border-[#4cc3ff] text-[#0a2a66] flex items-center justify-center cursor-pointer shadow-sm"
-              title={isSpeakerOn ? 'Mute Assistant Audio' : 'Enable Assistant Audio'}
-              aria-label="Toggle Speaker"
-            >
-              {isSpeakerOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              <AudioLines size={17} className="text-[#1450c8]" />
             </button>
 
             <button
@@ -1138,13 +1116,11 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
                               return;
                             }
                             setTestingVoiceId(v.id);
-                            speakWithGeminiTts(
-                              v.previewSample,
-                              v.id,
-                              () => setTestingVoiceId(v.id),
-                              () => setTestingVoiceId(null),
-                              () => setTestingVoiceId(null)
-                            );
+                            playVoicePreviewSample(v, {
+                              onStart: () => setTestingVoiceId(v.id),
+                              onEnd: () => setTestingVoiceId(null),
+                              onError: () => setTestingVoiceId(null),
+                            });
                           }}
                           className="px-2 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
                         >

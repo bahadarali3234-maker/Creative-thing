@@ -133,16 +133,18 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
 
   // Microphone and Speech-to-Text Support with Live Transcription
   const [micStatusMsg, setMicStatusMsg] = useState<string | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
   const micBaseInputRef = useRef<string>('');
+  const liveTranscriptRef = useRef<string>('');
   const isRecordingRef = useRef<boolean>(false);
   const suppressSttFallbackRef = useRef<boolean>(false);
 
   const showMicToast = (msg: string) => {
     setMicStatusMsg(msg);
-    setTimeout(() => setMicStatusMsg(null), 3000);
+    setTimeout(() => setMicStatusMsg((curr) => (curr === msg ? null : curr)), 3000);
   };
 
   const processFiles = (files: FileList | File[]) => {
@@ -471,8 +473,10 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     suppressSttFallbackRef.current = false;
     isRecordingRef.current = true;
     setIsRecording(true);
+    setIsTranscribing(false);
     // Capture starting text in input box
     micBaseInputRef.current = inputValue;
+    liveTranscriptRef.current = '';
     showMicToast('Listening... Speak now (Live transcription active)');
 
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -498,6 +502,8 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
               interim += (interim ? ' ' : '') + res[0].transcript.trim();
             }
           }
+          const combinedTranscript = [finalChunk, interim].filter(Boolean).join(' ').trim();
+          liveTranscriptRef.current = combinedTranscript;
           const base = micBaseInputRef.current;
           const liveCombined = [base, finalChunk, interim].filter(Boolean).join(' ');
           setInputValue(liveCombined);
@@ -546,13 +552,14 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           if (audioBlob.size < 50) return;
 
-          // If SpeechRecognition didn't produce text, fallback to /api/stt
-          if (!startedSpeechRecognition || inputValue === micBaseInputRef.current) {
+          // If SpeechRecognition didn't produce text, fallback to Groq Whisper /api/stt
+          if (!startedSpeechRecognition || !liveTranscriptRef.current.trim()) {
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);
             reader.onloadend = async () => {
               const base64Audio = reader.result as string;
               try {
+                setIsTranscribing(true);
                 showMicToast('Transcribing audio...');
                 const sttRes = await fetch('/api/stt', {
                   method: 'POST',
@@ -566,6 +573,9 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                 }
               } catch (sttErr) {
                 console.warn('STT transcription error:', sttErr);
+                showMicToast('Transcription service unavailable');
+              } finally {
+                setIsTranscribing(false);
               }
             };
           }
@@ -797,11 +807,12 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                       );
                     }}
                   />
-                ) : isRecording ? (
+                ) : isRecording || isTranscribing ? (
                   <SttSoundBar
                     key="stt-sound-bar-modal"
-                    isTranscribing={false}
+                    isTranscribing={isTranscribing}
                     liveText={inputValue}
+                    statusNotification={micStatusMsg || fileLimitError}
                     onCancel={handleCancelMic}
                     onStopKeepText={handleStopMicKeepText}
                     onConfirm={handleConfirmMic}
@@ -1201,19 +1212,6 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             type="button"
                             onClick={() => {
                               setIsDrawerOpen(false);
-                              setIsCreativeStudioOpen(true);
-                            }}
-                            className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center justify-between text-foreground transition-all cursor-pointer"
-                          >
-                            <div className="flex items-center gap-3.5">
-                              <Sparkles size={19} strokeWidth={1.8} className="text-[#00a6ff]" />
-                              <span className="tracking-wide font-semibold">Creative Studio</span>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDrawerOpen(false);
                               window.open(BUILDY_URL, '_blank', 'noopener,noreferrer');
                             }}
                             className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center gap-3.5 text-foreground transition-all cursor-pointer"
@@ -1271,43 +1269,12 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                     </>
                   )}
 
-                  {/* BOTTOM ACTIONS: Welcome & User Profile Row (Fixed) */}
-                  <div className="shrink-0 space-y-2.5 pt-3 relative z-10 border-t border-border/60">
-                    {/* Theme-aware Button: ← Welcome */}
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="w-full py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 theme-button-primary"
-                    >
-                      <ArrowLeft size={17} className="text-white" />
-                      <span>Welcome</span>
-                    </button>
-
-                    {/* Gemini TTS Voice & Microphone Settings Button in Menu */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsVoiceSettingsOpen(true);
-                        setIsDrawerOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-sky-50/70 hover:bg-sky-50 text-foreground border border-border transition-all text-xs font-medium cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-[#00a6ff]/15 text-[#00a6ff] flex items-center justify-center">
-                          <Settings size={15} />
-                        </div>
-                        <div className="flex flex-col text-left">
-                          <span className="font-bold text-foreground">Voices</span>
-                          <span className="text-[10px] text-zinc-500">{activePersona} • 14 Studio Voices • Auto-Read</span>
-                        </div>
-                      </div>
-                      <ChevronRight size={14} className="text-zinc-400" />
-                    </button>
-
-                    {/* Menu Account Actions: Sign In (Guest) or Sign Out (Logged In) */}
+                  {/* BOTTOM ACTIONS: Spaced Account Row with Settings (Voices) Button in front of Sign Out / Sign In */}
+                  <div className="shrink-0 pt-5 pb-1 mt-2 relative z-10 border-t border-border/60">
+                    {/* Menu Account Actions: Settings (Voices) + Sign In (Guest) or Sign Out (Logged In) */}
                     {currentUser && !currentUser.isAnonymous ? (
-                      <div className="flex items-center justify-between px-2.5 py-2 select-none rounded-xl bg-sky-50/50 border border-border">
-                        <div className="flex items-center gap-2.5 min-w-0 truncate">
+                      <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-sky-50/50 border border-border">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
                           <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-[#00a6ff] flex items-center justify-center text-[#00a6ff] shadow-sm shrink-0 overflow-hidden">
                             {currentUser?.photoURL ? (
                               <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
@@ -1315,7 +1282,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                               <UserIcon size={17} className="fill-[#00a6ff] text-[#00a6ff]" />
                             )}
                           </div>
-                          <div className="flex flex-col truncate">
+                          <div className="flex flex-col min-w-0 truncate">
                             <span className="text-[13px] font-bold text-foreground leading-tight truncate">
                               {currentUser.displayName || currentUser.email?.split('@')[0]}
                             </span>
@@ -1325,31 +1292,49 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Sign Out Button in Menu */}
-                        <button
-                          type="button"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await logOut();
-                          }}
-                          className="ml-2 px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                          title="Sign Out"
-                        >
-                          <LogOut size={13} />
-                          <span>Sign Out</span>
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Settings Button for Voices in front of Sign Out */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsDrawerOpen(false);
+                              setIsVoiceSettingsOpen(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                            title="Voice Settings"
+                            aria-label="Voice Settings"
+                          >
+                            <Settings size={13} className="text-[#00a6ff]" />
+                            <span>Settings</span>
+                          </button>
+
+                          {/* Sign Out Button in Menu */}
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await logOut();
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                            title="Sign Out"
+                          >
+                            <LogOut size={13} />
+                            <span>Sign Out</span>
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div
                         onClick={onOpenLogin}
-                        className="flex items-center justify-between px-3 py-2 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-xl transition-colors"
+                        className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-2xl transition-colors"
                         title="Click to sign in"
                       >
-                        <div className="flex items-center gap-2.5 truncate">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
                           <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-zinc-300 flex items-center justify-center text-zinc-600 shrink-0">
                             <UserIcon size={16} />
                           </div>
-                          <div className="flex flex-col truncate">
+                          <div className="flex flex-col min-w-0 truncate">
                             <span className="text-[13px] font-bold text-foreground leading-tight truncate">
                               Guest User
                             </span>
@@ -1359,17 +1344,35 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Sign In Button in Menu */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenLogin?.();
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
-                        >
-                          Sign In
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Settings Button for Voices in front of Sign In */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsDrawerOpen(false);
+                              setIsVoiceSettingsOpen(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                            title="Voice Settings"
+                            aria-label="Voice Settings"
+                          >
+                            <Settings size={13} className="text-[#00a6ff]" />
+                            <span>Settings</span>
+                          </button>
+
+                          {/* Sign In Button in Menu */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenLogin?.();
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
+                          >
+                            Sign In
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

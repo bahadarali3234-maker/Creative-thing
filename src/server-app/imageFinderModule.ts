@@ -454,7 +454,7 @@ async function fetchWikipediaDetail(query: string): Promise<{
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
       cleanTitle
     )}&srlimit=1&format=json&origin=*`;
-    const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(3000) });
+    const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(1600) });
     if (sRes.ok) {
       const sJson: any = await sRes.json();
       const topTitle = sJson?.query?.search?.[0]?.title;
@@ -463,7 +463,7 @@ async function fetchWikipediaDetail(query: string): Promise<{
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle.replace(/\s+/g, '_'))}`,
           {
             headers: { 'User-Agent': 'CreativeStudioImageFinder/1.0' },
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(1600),
           }
         );
         if (sumRes.ok) {
@@ -500,7 +500,7 @@ async function scrapeDirectWebsite(rawUrl: string): Promise<GoogleScrapeImagesRe
       Accept: 'text/html,application/xhtml+xml',
     },
     redirect: 'follow',
-    signal: AbortSignal.timeout(6500),
+    signal: AbortSignal.timeout(3500),
   });
 
   if (res.url) {
@@ -574,6 +574,149 @@ async function scrapeDirectWebsite(rawUrl: string): Promise<GoogleScrapeImagesRe
   };
 }
 
+// Fast 10-minute in-memory search cache so repeat / paginated / multi-tab searches respond in <5ms
+const imageSearchCache = new Map<string, { ts: number; result: GoogleScrapeImagesResult }>();
+const IMAGE_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+
+async function fetchDuckDuckGoImagesFast(query: string, offset: number): Promise<{ items: ScrapedImageItem[]; hasMore: boolean }> {
+  const items: ScrapedImageItem[] = [];
+  let hasMore = false;
+  try {
+    const tokenRes = await fetch(
+      `https://duckduckgo.com/?q=${encodeURIComponent(query)}&t=h_&iar=images&iax=images&ia=images&kp=-1`,
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(2200),
+      }
+    );
+
+    if (tokenRes.ok) {
+      const html = await tokenRes.text();
+      const vqdMatch = html.match(/vqd=([\d-]+)/) || html.match(/vqd="([^"]+)"/);
+      const vqd = vqdMatch ? vqdMatch[1] : null;
+
+      if (vqd) {
+        const imgRes = await fetch(
+          `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${encodeURIComponent(vqd)}&p=-1&s=${offset}`,
+          {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Referer: 'https://duckduckgo.com/',
+            },
+            signal: AbortSignal.timeout(2500),
+          }
+        );
+
+        if (imgRes.ok) {
+          const data: any = await imgRes.json();
+          const results = Array.isArray(data?.results) ? data.results : [];
+          hasMore = Boolean(data?.next) || results.length >= 10;
+
+          for (const item of results) {
+            const rawUrl = String(item?.image || '').trim();
+            if (!rawUrl || isBlockedImageCandidate(rawUrl, item?.title)) continue;
+
+            let sourceDomain = 'web';
+            try {
+              sourceDomain = new URL(item.url || rawUrl).hostname.replace(/^www\./, '');
+            } catch {
+              sourceDomain = item.source || 'web';
+            }
+
+            items.push({
+              id: `ddg-${offset}-${items.length}-${Math.random().toString(36).slice(2, 6)}`,
+              title: String(item.title || query).trim(),
+              url: rawUrl,
+              thumbnail: String(item.thumbnail || rawUrl).trim(),
+              sourceUrl: String(item.url || rawUrl).trim(),
+              sourceDomain,
+              width: Number(item.width) || 1200,
+              height: Number(item.height) || 800,
+            });
+            if (items.length >= 12) break;
+          }
+        }
+      }
+    }
+  } catch (ddgErr) {
+    console.warn('[Image Finder] DuckDuckGo fast notice:', (ddgErr as any)?.name || ddgErr);
+  }
+  return { items, hasMore };
+}
+
+async function fetchWikipediaImagesFast(query: string, offset: number): Promise<ScrapedImageItem[]> {
+  const items: ScrapedImageItem[] = [];
+  try {
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+      query
+    )}&gsrlimit=8&gsroffset=${offset}&prop=pageimages|info&inprop=url&piprop=original|thumbnail&pithumbsize=1000&format=json&origin=*`;
+    const wikiRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(2000) });
+    if (wikiRes.ok) {
+      const wData: any = await wikiRes.json();
+      const pages = wData?.query?.pages;
+      if (pages && typeof pages === 'object') {
+        for (const pageId of Object.keys(pages)) {
+          const p = pages[pageId];
+          const imgUrl = p?.original?.source || p?.thumbnail?.source;
+          if (imgUrl && !isBlockedImageCandidate(imgUrl, p?.title)) {
+            items.push({
+              id: `wiki-${pageId}-${items.length}`,
+              title: String(p.title || query),
+              url: imgUrl,
+              thumbnail: p?.thumbnail?.source || imgUrl,
+              sourceUrl: p?.fullurl || `https://en.wikipedia.org/?curid=${pageId}`,
+              sourceDomain: 'wikipedia.org',
+              width: Number(p?.original?.width) || 1200,
+              height: Number(p?.original?.height) || 800,
+            });
+            if (items.length >= 10) break;
+          }
+        }
+      }
+    }
+  } catch {}
+  return items;
+}
+
+async function fetchWikimediaCommonsImagesFast(query: string, offset: number): Promise<ScrapedImageItem[]> {
+  const items: ScrapedImageItem[] = [];
+  try {
+    const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${encodeURIComponent(
+      query
+    )}&gsrlimit=8&gsroffset=${offset}&prop=imageinfo&iiprop=url|size&iiurlwidth=1000&format=json&origin=*`;
+    const cRes = await fetch(commonsUrl, { signal: AbortSignal.timeout(2000) });
+    if (cRes.ok) {
+      const cData: any = await cRes.json();
+      const pages = cData?.query?.pages;
+      if (pages && typeof pages === 'object') {
+        for (const pageId of Object.keys(pages)) {
+          const p = pages[pageId];
+          const info = Array.isArray(p?.imageinfo) ? p.imageinfo[0] : null;
+          const imgUrl = info?.thumburl || info?.url;
+          if (imgUrl && !isBlockedImageCandidate(imgUrl, p?.title)) {
+            items.push({
+              id: `commons-${pageId}-${items.length}`,
+              title: String(p.title || query).replace(/^File:/i, ''),
+              url: info?.url || imgUrl,
+              thumbnail: info?.thumburl || imgUrl,
+              sourceUrl: info?.descriptionurl || `https://commons.wikimedia.org/?curid=${pageId}`,
+              sourceDomain: 'wikimedia.org',
+              width: Number(info?.width) || 1200,
+              height: Number(info?.height) || 800,
+            });
+            if (items.length >= 10) break;
+          }
+        }
+      }
+    }
+  } catch {}
+  return items;
+}
+
 export async function searchGoogleScrapeImages(params: {
   query: string;
   offset?: number;
@@ -610,159 +753,68 @@ export async function searchGoogleScrapeImages(params: {
     };
   }
 
+  const cacheKey = `${query.toLowerCase()}::${offset}`;
+  const cached = imageSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < IMAGE_SEARCH_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  // Launch ALL image providers + detail fetch in parallel for fast response (~1.2–2.5s cold)
+  const [ddgSettled, wikiSettled, commonsSettled, detailSettled] = await Promise.allSettled([
+    fetchDuckDuckGoImagesFast(query, offset),
+    fetchWikipediaImagesFast(query, offset),
+    fetchWikimediaCommonsImagesFast(query, offset),
+    fetchWikipediaDetail(query),
+  ]);
+
   const images: ScrapedImageItem[] = [];
   const seenUrls = new Set<string>();
   let hasMore = false;
 
-  // 1. DuckDuckGo web image search with Moderate SafeSearch (kp=-1 / p=-1)
-  try {
-    const tokenRes = await fetch(
-      `https://duckduckgo.com/?q=${encodeURIComponent(query)}&t=h_&iar=images&iax=images&ia=images&kp=-1`,
-      {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        signal: AbortSignal.timeout(6000),
-      }
-    );
-
-    if (tokenRes.ok) {
-      const html = await tokenRes.text();
-      const vqdMatch = html.match(/vqd=([\d-]+)/) || html.match(/vqd="([^"]+)"/);
-      const vqd = vqdMatch ? vqdMatch[1] : null;
-
-      if (vqd) {
-        const imgRes = await fetch(
-          `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${encodeURIComponent(vqd)}&p=-1&s=${offset}`,
-          {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              Referer: 'https://duckduckgo.com/',
-            },
-            signal: AbortSignal.timeout(7000),
-          }
-        );
-
-        if (imgRes.ok) {
-          const data: any = await imgRes.json();
-          const results = Array.isArray(data?.results) ? data.results : [];
-          hasMore = Boolean(data?.next) || results.length >= 10;
-
-          for (const item of results) {
-            const rawUrl = String(item?.image || '').trim();
-            if (!rawUrl || seenUrls.has(rawUrl) || isBlockedImageCandidate(rawUrl, item?.title)) {
-              continue;
-            }
-            seenUrls.add(rawUrl);
-
-            let sourceDomain = 'web';
-            try {
-              sourceDomain = new URL(item.url || rawUrl).hostname.replace(/^www\./, '');
-            } catch {
-              sourceDomain = item.source || 'web';
-            }
-
-            images.push({
-              id: `ddg-${offset}-${images.length}-${Math.random().toString(36).slice(2, 6)}`,
-              title: String(item.title || query).trim(),
-              url: rawUrl,
-              thumbnail: String(item.thumbnail || rawUrl).trim(),
-              sourceUrl: String(item.url || rawUrl).trim(),
-              sourceDomain,
-              width: Number(item.width) || 1200,
-              height: Number(item.height) || 800,
-            });
-
-            if (images.length >= 12) break;
-          }
-        }
-      }
+  const pushUnique = (list: ScrapedImageItem[]) => {
+    for (const item of list) {
+      if (images.length >= 12) break;
+      if (!item.url || seenUrls.has(item.url)) continue;
+      seenUrls.add(item.url);
+      images.push(item);
     }
-  } catch (ddgErr) {
-    console.warn('[Image Finder] DuckDuckGo search warning:', ddgErr);
+  };
+
+  if (ddgSettled.status === 'fulfilled') {
+    hasMore = ddgSettled.value.hasMore;
+    pushUnique(ddgSettled.value.items);
+  }
+  if (images.length < 10 && wikiSettled.status === 'fulfilled') {
+    pushUnique(wikiSettled.value);
+  }
+  if (images.length < 10 && commonsSettled.status === 'fulfilled') {
+    pushUnique(commonsSettled.value);
   }
 
-  // 2. Fallback / Supplement via Wikipedia + Wikimedia Commons API
-  if (images.length < 4) {
-    try {
-      const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        query
-      )}&gsrlimit=8&gsroffset=${offset}&prop=pageimages|info&inprop=url&piprop=original|thumbnail&pithumbsize=1000&format=json&origin=*`;
-      const wikiRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(4500) });
-      if (wikiRes.ok) {
-        const wData: any = await wikiRes.json();
-        const pages = wData?.query?.pages;
-        if (pages && typeof pages === 'object') {
-          for (const pageId of Object.keys(pages)) {
-            const p = pages[pageId];
-            const imgUrl = p?.original?.source || p?.thumbnail?.source;
-            if (imgUrl && !seenUrls.has(imgUrl) && !isBlockedImageCandidate(imgUrl, p?.title)) {
-              seenUrls.add(imgUrl);
-              images.push({
-                id: `wiki-${pageId}-${images.length}`,
-                title: String(p.title || query),
-                url: imgUrl,
-                thumbnail: p?.thumbnail?.source || imgUrl,
-                sourceUrl: p?.fullurl || `https://en.wikipedia.org/?curid=${pageId}`,
-                sourceDomain: 'wikipedia.org',
-                width: Number(p?.original?.width) || 1200,
-                height: Number(p?.original?.height) || 800,
-              });
-              if (images.length >= 10) break;
-            }
-          }
-        }
-      }
-    } catch (wErr) {
-      console.warn('[Image Finder] Wikipedia image fallback error:', wErr);
-    }
-  }
+  const detail =
+    detailSettled.status === 'fulfilled'
+      ? detailSettled.value
+      : {
+          title: query,
+          description: '',
+          sourceUrl: `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iar=images&iax=images&ia=images`,
+        };
 
-  if (images.length < 4) {
-    try {
-      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${encodeURIComponent(
-        query
-      )}&gsrlimit=8&gsroffset=${offset}&prop=imageinfo&iiprop=url|size&iiurlwidth=1000&format=json&origin=*`;
-      const cRes = await fetch(commonsUrl, { signal: AbortSignal.timeout(4500) });
-      if (cRes.ok) {
-        const cData: any = await cRes.json();
-        const pages = cData?.query?.pages;
-        if (pages && typeof pages === 'object') {
-          for (const pageId of Object.keys(pages)) {
-            const p = pages[pageId];
-            const info = Array.isArray(p?.imageinfo) ? p.imageinfo[0] : null;
-            const imgUrl = info?.thumburl || info?.url;
-            if (imgUrl && !seenUrls.has(imgUrl) && !isBlockedImageCandidate(imgUrl, p?.title)) {
-              seenUrls.add(imgUrl);
-              images.push({
-                id: `commons-${pageId}-${images.length}`,
-                title: String(p.title || query).replace(/^File:/i, ''),
-                url: info?.url || imgUrl,
-                thumbnail: info?.thumburl || imgUrl,
-                sourceUrl: info?.descriptionurl || `https://commons.wikimedia.org/?curid=${pageId}`,
-                sourceDomain: 'wikimedia.org',
-                width: Number(info?.width) || 1200,
-                height: Number(info?.height) || 800,
-              });
-              if (images.length >= 10) break;
-            }
-          }
-        }
-      }
-    } catch (cErr) {
-      console.warn('[Image Finder] Wikimedia Commons fallback error:', cErr);
-    }
-  }
-
-  const detail = await fetchWikipediaDetail(query);
-
-  return {
+  const finalResult: GoogleScrapeImagesResult = {
     detail,
     images,
-    hasMore,
+    hasMore: hasMore || images.length >= 8,
     nextOffset: offset + images.length,
     suggestions: [],
   };
+
+  if (images.length > 0) {
+    if (imageSearchCache.size > 200) {
+      const oldestKey = imageSearchCache.keys().next().value;
+      if (oldestKey) imageSearchCache.delete(oldestKey);
+    }
+    imageSearchCache.set(cacheKey, { ts: Date.now(), result: finalResult });
+  }
+
+  return finalResult;
 }

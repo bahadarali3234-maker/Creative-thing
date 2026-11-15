@@ -8,7 +8,7 @@ import {
   setStoredVoice,
   getAutoReadAloud,
   setAutoReadAloud,
-  speakWithGeminiTts,
+  playVoicePreviewSample,
   stopGeminiTts,
 } from '../utils/geminiTts';
 
@@ -69,23 +69,24 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
     setLoadingVoiceId(voice.id);
     setPlayingVoiceId(null);
 
-    speakWithGeminiTts(
-      voice.previewSample,
-      voice.id,
-      () => {
+    playVoicePreviewSample(voice, {
+      onLoadingStart: () => {
+        setLoadingVoiceId(voice.id);
+      },
+      onStart: () => {
         setLoadingVoiceId(null);
         setPlayingVoiceId(voice.id);
       },
-      () => {
+      onEnd: () => {
         setLoadingVoiceId(null);
         setPlayingVoiceId(null);
       },
-      (err) => {
+      onError: (err) => {
         setLoadingVoiceId(null);
         setPlayingVoiceId(null);
         setTtsError(typeof err === 'string' ? err : 'Studio voice playback unavailable right now.');
-      }
-    );
+      },
+    });
   };
 
   if (!isOpen) return null;

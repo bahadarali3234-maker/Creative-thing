@@ -126,6 +126,8 @@ import {
   pauseGeminiTts,
   stopGeminiTts,
   clearPausedSession,
+  createStreamingTtsSession,
+  StreamingTtsController,
   getStoredVoice,
   getAutoReadAloud,
   getActiveAssistantPersona,
@@ -139,6 +141,7 @@ import {
   subscribeToUserChatThreads,
   syncChatThreadToFirestore,
   deleteChatThreadFromFirestore,
+  isFirestoreQuotaBlocked,
   getCurrentUser,
   logOut,
 } from '../firebase';
@@ -1505,12 +1508,13 @@ export const LiveMessageStreamRenderer: React.FC<{
   rawText: string;
   isStreaming?: boolean;
   uploadsMap?: Record<string, string>;
+  userVoiceover?: { url: string; name: string } | null;
   onOpenPreview?: (html: string, fileName?: string) => void;
   onOpenEditor?: (code: string, fileName?: string, language?: string) => void;
   onUseInChat?: (prompt: string) => void;
   onChooseTheme?: (choice: string) => void;
   onTimingDriftReport?: (reportJson: string) => void;
-}> = ({ rawText: rawTextProp, isStreaming = false, uploadsMap = {}, onOpenPreview, onOpenEditor, onUseInChat, onChooseTheme, onTimingDriftReport }) => {
+}> = ({ rawText: rawTextProp, isStreaming = false, uploadsMap = {}, userVoiceover = null, onOpenPreview, onOpenEditor, onUseInChat, onChooseTheme, onTimingDriftReport }) => {
   if (!rawTextProp) return null;
 
   const normalizedRaw = React.useMemo(() => normalizeMarkdownFences(rawTextProp), [rawTextProp]);
@@ -1647,6 +1651,7 @@ export const LiveMessageStreamRenderer: React.FC<{
                   htmlCode={seg.content}
                   videoPlan={videoPlan}
                   uploadsMap={uploadsMap}
+                  userVoiceover={userVoiceover}
                   isStreaming={isLastSegStreaming}
                   onOpenFullScreenEditor={onOpenEditor}
                   onTimingDriftReport={onTimingDriftReport}
@@ -1718,6 +1723,7 @@ export const LiveMessageStreamRenderer: React.FC<{
 export interface SttSoundBarProps {
   isTranscribing: boolean;
   liveText?: string;
+  statusNotification?: string | null;
   onCancel: () => void;
   onStopKeepText?: () => void;
   onConfirm: () => void;
@@ -1727,6 +1733,7 @@ export interface SttSoundBarProps {
 export const SttSoundBar: React.FC<SttSoundBarProps> = ({
   isTranscribing,
   liveText = '',
+  statusNotification = null,
   onCancel,
   onStopKeepText,
   onConfirm,
@@ -1758,6 +1765,14 @@ export const SttSoundBar: React.FC<SttSoundBarProps> = ({
       transition={{ duration: 0.22 }}
       className="w-full flex flex-col select-none"
     >
+      {/* Inline Notification inside Prompt Container */}
+      {statusNotification && (
+        <div className="px-2 sm:px-3 mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-[#0a2a66]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#00a6ff] animate-pulse shrink-0" />
+          <span>{statusNotification}</span>
+        </div>
+      )}
+
       {/* Live Transcribed Text Streaming as User Speaks */}
       <div className="px-2 sm:px-3 mb-3 min-h-[46px] flex items-center">
         <p className="font-extrabold italic text-zinc-900 dark:text-zinc-50 text-xl sm:text-2xl lg:text-[26px] tracking-tight leading-snug break-words">
@@ -2485,16 +2500,20 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   // Synchronize completed messages strictly to Firestore for authenticated user:
   useEffect(() => {
     if (!activeTopic || !chatThreads[activeTopic]) return;
+    if (isFirestoreQuotaBlocked()) return;
     const currentThread = chatThreads[activeTopic];
 
     if (currentUser?.uid && !currentUser.isAnonymous) {
       if (!currentThread.messages || currentThread.messages.length === 0) return;
       if (currentThread.messages.some((m) => m.isStreaming)) return;
       const timer = setTimeout(() => {
+        if (isFirestoreQuotaBlocked()) return;
         syncChatThreadToFirestore(currentThread, currentUser.uid).then((saved) => {
-          if (!saved) showToast('Chat could not be saved. Please try again.');
+          if (!saved && !isFirestoreQuotaBlocked()) {
+            showToast('Chat could not be saved. Please try again.');
+          }
         });
-      }, 500);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [chatThreads, activeTopic, currentUser?.uid]);
@@ -2539,6 +2558,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
 
   // Creative Studio (MythoriaLib) Upload Registry & Automated Tool Execution Loop
   const [studioUploads, setStudioUploads] = useState<StudioUploadEntry[]>([]);
+  const [latestUserVoiceover, setLatestUserVoiceover] = useState<{ url: string; name: string } | null>(null);
   const studioUploadsRef = useRef<StudioUploadEntry[]>([]);
   const studioUploadCounterRef = useRef<number>(1);
   const studioToolDepthRef = useRef<number>(0);
@@ -2816,6 +2836,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
   const micBaseInputRef = useRef<string>('');
+  const sttProducedTextRef = useRef<boolean>(false);
   const isMicActiveRef = useRef<boolean>(false);
   const suppressSttFallbackRef = useRef<boolean>(false);
 
@@ -3553,6 +3574,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       let streamSources: SourceCitation[] = [];
       let streamThoughtSummary: ThoughtSummaryMeta | undefined = undefined;
       let streamProvider: 'gemini' | 'groq' | undefined = undefined;
+      let streamTtsController: StreamingTtsController | null = null;
+      const containsCodeOrStudioMedia = (txt: string) =>
+        /```(?!chart\b|json-chart\b|question\b)|<div[^>]+id=["']canvas["']|window\.VIDEO|<!DOCTYPE\s+html/i.test(txt || '');
 
       try {
         const currentThread = chatThreads[topicKey];
@@ -3736,6 +3760,42 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                     };
                   });
 
+                  // Start TTS speaking as soon as 2 words have streamed (unless code/generated media)
+                  if (getAutoReadAloud()) {
+                    if (containsCodeOrStudioMedia(currentCleanText)) {
+                      if (streamTtsController) {
+                        streamTtsController.cancel();
+                        streamTtsController = null;
+                      }
+                    } else {
+                      if (!streamTtsController) {
+                        streamTtsController = createStreamingTtsSession({
+                          messageId: aiMsgId,
+                          voice: getStoredVoice(),
+                          onLoadingStart: () => setSynthesizingMsgId(aiMsgId),
+                          onStart: () => {
+                            setSynthesizingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                            setCurrentlySpeakingMsgId(aiMsgId);
+                          },
+                          onPause: () => {
+                            setCurrentlySpeakingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                            setPausedSpeakingMsgId(aiMsgId);
+                          },
+                          onEnd: () => {
+                            setSynthesizingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                            setCurrentlySpeakingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                            setPausedSpeakingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                          },
+                          onError: () => {
+                            setSynthesizingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                            setCurrentlySpeakingMsgId((curr) => (curr === aiMsgId ? null : curr));
+                          },
+                        });
+                      }
+                      streamTtsController.pushText(currentCleanText);
+                    }
+                  }
+
                   // Faster audio & haptic ticks in sync with live generation
                   const now = Date.now();
                   if (now - lastAudioTick >= 60) {
@@ -3871,9 +3931,16 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
           };
         });
 
-        // Automatically speak AI answer with Gemini TTS if enabled in settings
-        if (getAutoReadAloud() && cleanFullAnswer) {
-          handleToggleSpeakMessage(aiMsgId, cleanFullAnswer);
+        // Automatically flush 2-word live Gemini TTS session if enabled & conversational (no code/generated media)
+        if (getAutoReadAloud() && cleanFullAnswer && !containsCodeOrStudioMedia(cleanFullAnswer)) {
+          if (streamTtsController) {
+            streamTtsController.finish(cleanFullAnswer);
+          } else {
+            handleToggleSpeakMessage(aiMsgId, cleanFullAnswer);
+          }
+        } else if (streamTtsController) {
+          streamTtsController.cancel();
+          streamTtsController = null;
         }
 
         // Execute MythoriaLib Creative Studio tool call automatically if emitted (remove_background / save_template / list_templates)
@@ -3966,6 +4033,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
           const base64Data = ev.target?.result as string;
           if (isImg && base64Data) {
             registerStudioUpload(base64Data, file.name, file.type || 'image/png');
+          }
+          if (isAudio && base64Data) {
+            setLatestUserVoiceover({ url: base64Data, name: file.name });
           }
           const newAttachment: AttachedFile = {
             id: attachmentId,
@@ -4355,8 +4425,10 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
     suppressSttFallbackRef.current = false;
     isMicActiveRef.current = true;
     setIsMicActive(true);
+    setIsTranscribing(false);
     // Save existing text before voice input starts
     micBaseInputRef.current = inputVal;
+    sttProducedTextRef.current = false;
     showToast('Listening... Speak now (Live transcription active)');
 
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -4380,6 +4452,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
             } else {
               interim += (interim ? ' ' : '') + res[0].transcript.trim();
             }
+          }
+          if (finalChunk || interim) {
+            sttProducedTextRef.current = true;
           }
           const base = micBaseInputRef.current;
           const liveCombined = [base, finalChunk, interim].filter(Boolean).join(' ');
@@ -4412,7 +4487,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       }
     }
 
-    // Audio stream & MediaRecorder for Whisper backend fallback
+    // Audio stream & MediaRecorder for Groq Whisper backend fallback
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -4432,13 +4507,14 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
 
           if (audioBlob.size < 50) return;
 
-          // If speech recognition didn't yield text, fallback to /api/stt
-          if (!startedSpeechRecognition || inputVal === micBaseInputRef.current) {
+          // If speech recognition didn't yield text, fallback to Groq Whisper /api/stt
+          if (!startedSpeechRecognition || !sttProducedTextRef.current) {
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);
             reader.onloadend = async () => {
               const base64Audio = reader.result as string;
               try {
+                setIsTranscribing(true);
                 showToast('Transcribing audio input...');
                 const sttRes = await fetch('/api/stt', {
                   method: 'POST',
@@ -4453,6 +4529,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
               } catch (sttErr) {
                 console.warn('Groq STT transcription error:', sttErr);
                 showToast('Transcription service unavailable');
+              } finally {
+                setIsTranscribing(false);
               }
             };
           }
@@ -4690,20 +4768,6 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                         type="button"
                         onClick={() => {
                           setIsMobileSidebarOpen(false);
-                          setIsCreativeStudioOpen(true);
-                        }}
-                        className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center justify-between text-foreground transition-all cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <Sparkles size={19} strokeWidth={1.8} className="text-[#00a6ff]" />
-                          <span className="tracking-wide font-semibold">Creative Studio</span>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMobileSidebarOpen(false);
                           window.open(BUILDY_URL, '_blank', 'noopener,noreferrer');
                         }}
                         className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center gap-3.5 text-foreground transition-all cursor-pointer"
@@ -4782,8 +4846,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                 </>
               )}
 
-              {/* BOTTOM ACTIONS: ← Welcome + Voices + Account Row */}
-              <div className="shrink-0 space-y-2.5 pt-3 relative z-10 border-t border-border/60">
+              {/* BOTTOM ACTIONS: ← Welcome + Spaced Account Row with Settings (Voices) Button */}
+              <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => {
@@ -4796,29 +4860,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                   <span>Welcome</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsVoiceSettingsOpen(true);
-                    setIsMobileSidebarOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-sky-50/70 hover:bg-sky-50 text-foreground border border-border transition-all text-xs font-medium cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-[#00a6ff]/15 text-[#00a6ff] flex items-center justify-center">
-                      <Volume2 size={15} />
-                    </div>
-                    <div className="flex flex-col text-left">
-                      <span className="font-bold text-foreground">Voices</span>
-                      <span className="text-[10px] text-zinc-500">{activePersona} • 14 Studio Voices • Auto-Read</span>
-                    </div>
-                  </div>
-                  <ChevronRight size={14} className="text-zinc-400" />
-                </button>
-
                 {currentUser && !currentUser.isAnonymous ? (
-                  <div className="flex items-center justify-between px-2.5 py-2 select-none rounded-xl bg-sky-50/50 border border-border">
-                    <div className="flex items-center gap-2.5 min-w-0 truncate">
+                  <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-sky-50/50 border border-border">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
                       <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-[#00a6ff] flex items-center justify-center text-[#00a6ff] shadow-sm shrink-0 overflow-hidden">
                         {currentUser?.photoURL ? (
                           <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
@@ -4826,7 +4870,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                           <UserIcon size={17} className="fill-[#00a6ff] text-[#00a6ff]" />
                         )}
                       </div>
-                      <div className="flex flex-col truncate">
+                      <div className="flex flex-col min-w-0 truncate">
                         <span className="text-[13px] font-bold text-foreground leading-tight truncate">
                           {currentUser.displayName || currentUser.email?.split('@')[0]}
                         </span>
@@ -4836,31 +4880,48 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        await logOut();
-                        showToast('Signed out successfully');
-                      }}
-                      className="ml-2 px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                      title="Sign Out"
-                    >
-                      <LogOut size={13} />
-                      <span>Sign Out</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsVoiceSettingsOpen(true);
+                          setIsMobileSidebarOpen(false);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                        title="Voice Settings"
+                        aria-label="Voice Settings"
+                      >
+                        <Settings size={13} className="text-[#00a6ff]" />
+                        <span>Settings</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await logOut();
+                          showToast('Signed out successfully');
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                        title="Sign Out"
+                      >
+                        <LogOut size={13} />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div
                     onClick={handleOpenLogin}
-                    className="flex items-center justify-between px-3 py-2 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-xl transition-colors"
+                    className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-2xl transition-colors"
                     title="Click to sign in"
                   >
-                    <div className="flex items-center gap-2.5 truncate">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
                       <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-zinc-300 flex items-center justify-center text-zinc-600 shrink-0">
                         <UserIcon size={16} />
                       </div>
-                      <div className="flex flex-col truncate">
+                      <div className="flex flex-col min-w-0 truncate">
                         <span className="text-[13px] font-bold text-foreground leading-tight truncate">
                           Guest User
                         </span>
@@ -4870,16 +4931,33 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenLogin();
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
-                    >
-                      Sign In
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsVoiceSettingsOpen(true);
+                          setIsMobileSidebarOpen(false);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                        title="Voice Settings"
+                        aria-label="Voice Settings"
+                      >
+                        <Settings size={13} className="text-[#00a6ff]" />
+                        <span>Settings</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenLogin();
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
+                      >
+                        Sign In
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -5210,6 +5288,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                           rawText={message.text}
                           isStreaming={true}
                           uploadsMap={studioUploadsMap}
+                          userVoiceover={latestUserVoiceover}
                           onOpenPreview={(html, fn) => setFullscreenWebsite({ html, fileName: fn || 'website.html' })}
                           onOpenEditor={handleOpenEditor}
                           onChooseTheme={sendProgrammaticMessage}
@@ -5254,6 +5333,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                               rawText={message.text.replace(/```question[\s\S]*?```/gi, '').trim()}
                               isStreaming={false}
                               uploadsMap={studioUploadsMap}
+                              userVoiceover={latestUserVoiceover}
                               onOpenPreview={(html, fn) => setFullscreenWebsite({ html, fileName: fn || 'website.html' })}
                               onOpenEditor={handleOpenEditor}
                               onChooseTheme={sendProgrammaticMessage}
@@ -5342,6 +5422,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                   htmlCode={section.codeSnippet}
                                   videoPlan={msgVideoPlan}
                                   uploadsMap={studioUploadsMap}
+                                  userVoiceover={latestUserVoiceover}
                                   onOpenFullScreenEditor={(code, fn, lg) => handleOpenEditor(code, fn, lg)}
                                   onTimingDriftReport={(reportJson) => sendProgrammaticMessage(reportJson)}
                                 />
@@ -5434,49 +5515,57 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                           )}
                         </button>
 
-                        {/* Read Aloud with Gemini TTS + Loading / Pause / Exact-Spot Continue */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSpeakMessage(message.id, message.text)}
-                          className={`h-8 px-2.5 rounded-lg border flex items-center gap-1.5 text-[11px] font-bold transition-all cursor-pointer active:scale-95 ${
-                            currentlySpeakingMsgId === message.id
-                              ? 'bg-zinc-950 text-white border-zinc-950'
-                              : pausedSpeakingMsgId === message.id
-                              ? 'bg-sky-50 text-[#0a2a66] border-[#00a6ff]/50'
-                              : synthesizingMsgId === message.id
-                              ? 'bg-sky-50 text-[#0a2a66] border-[#00a6ff]/40'
-                              : 'bg-surface/5 hover:bg-surface/15 border-border/20 text-foreground'
-                          }`}
-                          title={
-                            synthesizingMsgId === message.id
-                              ? 'Preparing Studio voice...'
-                              : currentlySpeakingMsgId === message.id
-                              ? 'Pause at current spot'
-                              : pausedSpeakingMsgId === message.id
-                              ? 'Continue from exact paused spot'
-                              : 'Read aloud'
-                          }
-                          aria-label="Read aloud"
-                        >
-                          {synthesizingMsgId === message.id ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin text-[#00a6ff]" />
-                              <span>Loading voice...</span>
-                            </>
-                          ) : currentlySpeakingMsgId === message.id ? (
-                            <>
-                              <Pause size={13} className="text-white" />
-                              <span>Pause</span>
-                            </>
-                          ) : pausedSpeakingMsgId === message.id ? (
-                            <>
-                              <Play size={13} className="text-[#00a6ff] fill-[#00a6ff]" />
-                              <span>Continue</span>
-                            </>
-                          ) : (
-                            <Volume2 size={13} />
-                          )}
-                        </button>
+                        {/* Read Aloud ONLY when reply is conversational chat text (hidden on generated code, images, or video) */}
+                        {!(/```(?!chart\b|json-chart\b|question\b)[\s\S]*?/i.test(message.text || '') ||
+                          /<div[^>]+id=["']canvas["']|window\.VIDEO|<!DOCTYPE\s+html/i.test(message.text || '') ||
+                          Boolean(
+                            message.structuredContent?.sections?.some(
+                              (s) => s.codeSnippet || s.promptSnippet || s.imageCardSnippet
+                            )
+                          )) && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSpeakMessage(message.id, message.text)}
+                            className={`h-8 px-2.5 rounded-lg border flex items-center gap-1.5 text-[11px] font-bold transition-all cursor-pointer active:scale-95 ${
+                              currentlySpeakingMsgId === message.id
+                                ? 'bg-zinc-950 text-white border-zinc-950'
+                                : pausedSpeakingMsgId === message.id
+                                ? 'bg-sky-50 text-[#0a2a66] border-[#00a6ff]/50'
+                                : synthesizingMsgId === message.id
+                                ? 'bg-sky-50 text-[#0a2a66] border-[#00a6ff]/40'
+                                : 'bg-surface/5 hover:bg-surface/15 border-border/20 text-foreground'
+                            }`}
+                            title={
+                              synthesizingMsgId === message.id
+                                ? 'Preparing Studio voice...'
+                                : currentlySpeakingMsgId === message.id
+                                ? 'Pause at current spot'
+                                : pausedSpeakingMsgId === message.id
+                                ? 'Continue from exact paused spot'
+                                : 'Read aloud'
+                            }
+                            aria-label="Read aloud"
+                          >
+                            {synthesizingMsgId === message.id ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin text-[#00a6ff]" />
+                                <span>Loading voice...</span>
+                              </>
+                            ) : currentlySpeakingMsgId === message.id ? (
+                              <>
+                                <Pause size={13} className="text-white" />
+                                <span>Pause</span>
+                              </>
+                            ) : pausedSpeakingMsgId === message.id ? (
+                              <>
+                                <Play size={13} className="text-[#00a6ff] fill-[#00a6ff]" />
+                                <span>Continue</span>
+                              </>
+                            ) : (
+                              <Volume2 size={13} />
+                            )}
+                          </button>
+                        )}
 
                         {/* Three-Dot Overflow Menu: Summarize, Export to PDF, Retry, Delete, Sources */}
                         <div className="relative">
@@ -5665,6 +5754,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                         key="stt-sound-bar"
                         isTranscribing={isTranscribing}
                         liveText={inputVal}
+                        statusNotification={toastMessage || fileLimitError}
                         onCancel={handleCancelMic}
                         onStopKeepText={handleStopMicKeepText}
                         onConfirm={handleConfirmMic}
@@ -5750,16 +5840,17 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                             <AttachmentGrid files={chatAttachments} onRemove={removeChatAttachment} disabled={isSendLocked || isAiTyping} />
                           )}
 
-                          {/* File Limit Warning Notification */}
+                          {/* In-Prompt Notifications (Toasts & File Limit Warnings) */}
                           <AnimatePresence>
-                            {fileLimitError && (
+                            {(toastMessage || fileLimitError) && (
                               <motion.div
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -4 }}
-                                className="text-xs text-[var(--primary)] font-medium px-1 py-1"
+                                className="flex items-center gap-1.5 text-xs text-[#00a6ff] font-semibold px-1 py-1"
                               >
-                                {fileLimitError}
+                                <CheckCircle2 size={13} className="shrink-0" />
+                                <span>{toastMessage || fileLimitError}</span>
                               </motion.div>
                             )}
                           </AnimatePresence>
@@ -5875,21 +5966,6 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
             })()}
           </div>
         </div>
-
-        {/* Floating Feedback Toast */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: 15, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="fixed bottom-24 right-6 z-[10001] px-4 py-2.5 rounded-xl bg-[var(--surface)]/95 border border-[var(--primary)]/60 shadow-[var(--shadow-neumorphic-soft)] text-foreground text-xs flex items-center gap-2.5 backdrop-blur-md pointer-events-none"
-            >
-              <CheckCircle2 size={15} className="text-[var(--primary)]" />
-              <span className="font-medium tracking-wide">{toastMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Fullscreen Single-File Website Sandbox Modal */}
         {fullscreenWebsite && (

@@ -30,11 +30,88 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
-// Test Firestore connectivity on boot
-async function testConnection() {
+// ============================================================================
+// QUOTA CIRCUIT BREAKER & WRITE DEDUPLICATION
+// Prevents retry storms / free daily write exhaustion while keeping localStorage active
+// ============================================================================
+let firestoreQuotaBlocked = false;
+const lastSyncedThreadSignature = new Map<string, string>();
+const lastSyncedProjectSignature = new Map<string, string>();
+const lastSyncedTemplateSignature = new Map<string, string>();
+
+function getTodayQuotaStorageKey(): string {
+  const d = new Date();
+  return `fs_quota_blocked_${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+}
+
+function hydrateQuotaFlag(): boolean {
+  if (firestoreQuotaBlocked) return true;
   try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(getTodayQuotaStorageKey()) === '1') {
+      firestoreQuotaBlocked = true;
+    }
+  } catch {}
+  return firestoreQuotaBlocked;
+}
+
+export function isFirestoreQuotaBlocked(): boolean {
+  return hydrateQuotaFlag();
+}
+
+export function getFirestoreUpgradeUrl(): string {
+  const pid = (firebaseConfig as any).projectId || '';
+  const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+  return `https://console.firebase.google.com/project/${pid}/firestore/databases/${dbId}/data?openUpgradeDialog=true`;
+}
+
+function isQuotaExhaustedError(err: unknown): boolean {
+  const code = String((err as any)?.code || '').toLowerCase();
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  return (
+    code.includes('resource-exhausted') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('quota limit exceeded') ||
+    msg.includes('free daily write units') ||
+    msg.includes('quota exceeded')
+  );
+}
+
+function tripQuotaBreakerIfNeeded(err: unknown): boolean {
+  if (!isQuotaExhaustedError(err)) return false;
+  if (!firestoreQuotaBlocked) {
+    firestoreQuotaBlocked = true;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(getTodayQuotaStorageKey(), '1');
+      }
+    } catch {}
+    console.warn(
+      `[Firestore] Daily write quota reached. Pausing background Firestore writes for this session (local storage stays active). Quota resets daily or can be upgraded: ${getFirestoreUpgradeUrl()}`
+    );
+  }
+  return true;
+}
+
+function computeThreadSignature(thread: any): string {
+  const msgs = Array.isArray(thread?.messages) ? thread.messages : [];
+  const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+  const lastLen = typeof lastMsg?.text === 'string' ? lastMsg.text.length : 0;
+  return `${thread?.title || ''}|${thread?.promptBanner || ''}|${thread?.activeTab || ''}|${msgs.length}|${lastMsg?.id || ''}|${lastLen}`;
+}
+
+// Lightweight connectivity check (runs at most once per session)
+async function testConnection() {
+  if (hydrateQuotaFlag()) return;
+  try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('fs_conn_checked') === '1') {
+      return;
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('fs_conn_checked', '1');
+    }
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
+    if (tripQuotaBreakerIfNeeded(error)) return;
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.warn('Firestore offline status:', error.message);
     }
@@ -63,7 +140,29 @@ function toUser(u: FbUser | null | undefined): User | null {
 
 let currentUser: User | null = null;
 
-async function recordUserProfile(user: User) {
+async function recordUserProfile(user: User, force = false) {
+  try {
+    localStorage.setItem(
+      'think_creative_user',
+      JSON.stringify({
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+      })
+    );
+  } catch {}
+
+  if (hydrateQuotaFlag()) return;
+
+  // Deduplicate user profile write: only write once per browser session unless explicit sign-in
+  const sessionKey = `fs_profile_synced_${user.uid}`;
+  try {
+    if (!force && typeof sessionStorage !== 'undefined' && sessionStorage.getItem(sessionKey) === '1') {
+      return;
+    }
+  } catch {}
+
   try {
     const userRef = doc(db, 'users', user.uid);
     await setDoc(
@@ -77,17 +176,15 @@ async function recordUserProfile(user: User) {
       },
       { merge: true }
     );
-    localStorage.setItem(
-      'think_creative_user',
-      JSON.stringify({
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-      })
-    );
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(sessionKey, '1');
+      }
+    } catch {}
   } catch (err) {
-    console.warn('User profile sync warning:', err);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      console.warn('User profile sync warning:', err);
+    }
   }
 }
 
@@ -111,7 +208,7 @@ export function subscribeToAuth(callback: (user: User | null) => void): () => vo
     const u = toUser(fbUser);
     currentUser = u;
     if (u && !u.isAnonymous) {
-      recordUserProfile(u);
+      recordUserProfile(u, false);
     } else if (!u) {
       localStorage.removeItem('think_creative_user');
     }
@@ -127,7 +224,7 @@ export async function signInWithGoogle(): Promise<{ success: boolean; user?: Use
     const cred = await signInWithPopup(auth, provider);
     const u = toUser(cred.user);
     currentUser = u;
-    if (u) await recordUserProfile(u);
+    if (u) await recordUserProfile(u, true);
     return { success: true, user: u || undefined };
   } catch (err: any) {
     console.error('Google Sign-In Error:', err);
@@ -146,7 +243,7 @@ export async function signInWithEmail(email: string, pass: string): Promise<{ su
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     const u = toUser(cred.user);
     currentUser = u;
-    if (u) await recordUserProfile(u);
+    if (u) await recordUserProfile(u, true);
     return { success: true, user: u || undefined };
   } catch (err: any) {
     console.error('Email sign in error:', err);
@@ -159,7 +256,7 @@ export async function signUpWithEmail(email: string, pass: string): Promise<{ su
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     const u = toUser(cred.user);
     currentUser = u;
-    if (u) await recordUserProfile(u);
+    if (u) await recordUserProfile(u, true);
     return { success: true, user: u || undefined };
   } catch (err: any) {
     console.error('Email sign up error:', err);
@@ -194,6 +291,7 @@ export async function saveBookingToFirestore(data: {
   selectedDate: string;
   selectedSlot: string;
 }): Promise<string | null> {
+  if (hydrateQuotaFlag()) return null;
   try {
     const id = crypto.randomUUID();
     const bookingRef = doc(db, 'bookings', id);
@@ -210,37 +308,56 @@ export async function saveBookingToFirestore(data: {
     });
     return id;
   } catch (error) {
-    console.error('Failed to save booking:', error);
+    if (!tripQuotaBreakerIfNeeded(error)) {
+      handleFirestoreError(error, 'write', 'bookings');
+    }
     return null;
   }
 }
 
 export async function syncProjectMemoryToFirestore(project: any): Promise<boolean> {
+  if (hydrateQuotaFlag()) return false;
   try {
     const user = await ensureAuth();
-    if (!user || !project?.id) return false;
+    if (!user || user.isAnonymous || !project?.id) return false;
+    const serialized = JSON.stringify(project);
+    const sig = `${serialized.length}:${project?.artifacts?.length || 0}:${project?.updatedAt || ''}`;
+    if (lastSyncedProjectSignature.get(String(project.id)) === sig) {
+      return true;
+    }
     const projectRef = doc(db, 'user_projects', String(project.id));
     await setDoc(
       projectRef,
       {
         id: String(project.id),
         userId: user.uid,
-        data: JSON.parse(JSON.stringify(project)),
+        data: JSON.parse(serialized),
         lastSyncedAt: new Date().toISOString(),
       },
       { merge: true }
     );
+    lastSyncedProjectSignature.set(String(project.id), sig);
     return true;
   } catch (err) {
-    console.warn('Project memory sync warning:', err);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      console.warn('Project memory sync warning:', err);
+    }
     return false;
   }
 }
 
 export async function syncChatThreadToFirestore(thread: any, explicitUserId?: string): Promise<boolean> {
+  if (hydrateQuotaFlag()) return false;
   try {
     const uid = explicitUserId || (await ensureAuth())?.uid;
     if (!uid || !thread?.id) return false;
+
+    const threadId = String(thread.id);
+    const sig = `${uid}|${computeThreadSignature(thread)}`;
+    if (lastSyncedThreadSignature.get(threadId) === sig) {
+      return true;
+    }
+
     const sanitizedMessages = Array.isArray(thread.messages)
       ? thread.messages.map((m: any) => ({
           ...m,
@@ -248,11 +365,11 @@ export async function syncChatThreadToFirestore(thread: any, explicitUserId?: st
           isStreaming: false,
         }))
       : [];
-    const threadRef = doc(db, 'chat_threads', String(thread.id));
+    const threadRef = doc(db, 'chat_threads', threadId);
     await setDoc(
       threadRef,
       {
-        id: String(thread.id),
+        id: threadId,
         userId: uid,
         title: thread.title || thread.name || 'Untitled Thread',
         prompt_banner: thread.promptBanner || '',
@@ -265,9 +382,12 @@ export async function syncChatThreadToFirestore(thread: any, explicitUserId?: st
       },
       { merge: true }
     );
+    lastSyncedThreadSignature.set(threadId, sig);
     return true;
   } catch (err) {
-    console.warn('Chat thread sync warning:', err);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      console.warn('Chat thread sync warning:', err);
+    }
     return false;
   }
 }
@@ -286,24 +406,36 @@ export function subscribeToUserChatThreads(
     (snapshot) => {
       const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       const threads = threadsFromRows(rows);
+      // Seed deduplication map from server snapshot so we never re-write identical server data
+      for (const th of Object.values(threads)) {
+        if (th?.id) {
+          lastSyncedThreadSignature.set(String(th.id), `${userId}|${computeThreadSignature(th)}`);
+        }
+      }
       onUpdate(threads);
     },
     (err) => {
-      console.warn('Chat threads subscription error:', err);
+      if (!tripQuotaBreakerIfNeeded(err)) {
+        console.warn('Chat threads subscription error:', err);
+      }
     }
   );
   return unsubscribe;
 }
 
 export async function deleteChatThreadFromFirestore(threadId: string, explicitUserId?: string): Promise<boolean> {
+  if (hydrateQuotaFlag()) return false;
   try {
     const uid = explicitUserId || (await ensureAuth())?.uid;
     if (!uid) return false;
     const threadRef = doc(db, 'chat_threads', threadId);
     await deleteDoc(threadRef);
+    lastSyncedThreadSignature.delete(threadId);
     return true;
   } catch (err) {
-    console.warn('Failed to delete chat thread:', err);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      console.warn('Failed to delete chat thread:', err);
+    }
     return false;
   }
 }
@@ -311,6 +443,7 @@ export async function deleteChatThreadFromFirestore(threadId: string, explicitUs
 export type FirestoreOperationType = 'create' | 'update' | 'delete' | 'list' | 'get' | 'write';
 
 export function handleFirestoreError(error: unknown, operationType: FirestoreOperationType, path: string | null) {
+  tripQuotaBreakerIfNeeded(error);
   const fbUser = auth.currentUser;
   const errInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -328,11 +461,15 @@ export function handleFirestoreError(error: unknown, operationType: FirestoreOpe
 }
 
 export async function saveCustomTemplateToFirestore(template: any, explicitUserId?: string): Promise<boolean> {
+  if (hydrateQuotaFlag()) return false;
   try {
     const user = await ensureAuth();
     const uid = explicitUserId || user?.uid;
     if (!uid || user?.isAnonymous || !template?.id || !template?.kind) return false;
     const safeId = String(template.id).slice(0, 128);
+    const sig = `${uid}|${safeId}|${JSON.stringify(template).length}`;
+    if (lastSyncedTemplateSignature.get(safeId) === sig) return true;
+
     const tplRef = doc(db, 'custom_templates', safeId);
     const payload = JSON.parse(
       JSON.stringify({
@@ -346,23 +483,30 @@ export async function saveCustomTemplateToFirestore(template: any, explicitUserI
       })
     );
     await setDoc(tplRef, payload, { merge: true });
+    lastSyncedTemplateSignature.set(safeId, sig);
     return true;
   } catch (err) {
-    handleFirestoreError(err, 'write', `custom_templates/${template?.id || ''}`);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      handleFirestoreError(err, 'write', `custom_templates/${template?.id || ''}`);
+    }
     return false;
   }
 }
 
 export async function deleteCustomTemplateFromFirestore(templateId: string, explicitUserId?: string): Promise<boolean> {
+  if (hydrateQuotaFlag()) return false;
   try {
     const user = await ensureAuth();
     const uid = explicitUserId || user?.uid;
     if (!uid || user?.isAnonymous || !templateId) return false;
     const tplRef = doc(db, 'custom_templates', String(templateId).slice(0, 128));
     await deleteDoc(tplRef);
+    lastSyncedTemplateSignature.delete(String(templateId).slice(0, 128));
     return true;
   } catch (err) {
-    handleFirestoreError(err, 'delete', `custom_templates/${templateId}`);
+    if (!tripQuotaBreakerIfNeeded(err)) {
+      handleFirestoreError(err, 'delete', `custom_templates/${templateId}`);
+    }
     return false;
   }
 }
@@ -382,7 +526,9 @@ export function subscribeToCustomTemplates(
       onUpdate(items);
     },
     (err) => {
-      handleFirestoreError(err, 'list', 'custom_templates');
+      if (!tripQuotaBreakerIfNeeded(err)) {
+        handleFirestoreError(err, 'list', 'custom_templates');
+      }
     }
   );
   return unsubscribe;

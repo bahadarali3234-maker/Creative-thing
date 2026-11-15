@@ -1,8 +1,8 @@
 /**
  * Gemini Text-to-Speech (TTS) Client Audio Manager
- * - Exclusively uses Gemini Studio TTS (/api/tts) with persistent backend WAV caching
- * - Progressive 50-word chunked synthesis + lookahead prefetching (Chunk N+1 preloads while Chunk N plays)
- * - Slightly slower 0.90x clear studio playback speed with pitch preservation
+ * - Exclusively uses Gemini Studio TTS (/api/tts & /api/tts/preview) with persistent backend WAV caching
+ * - Immediate 2-word first chunk so voice playback starts as soon as 2 words are generated
+ * - Progressive background prefetching for subsequent chunks + slightly slower 0.90x clear studio speed
  * - Exact-spot Pause/Stop & Continue resume with zero duplicate generation
  */
 
@@ -10,7 +10,8 @@ export type AssistantPersona = 'Zara' | 'Daro';
 export type PrebuiltStudioVoice = 'Kore' | 'Zephyr' | 'Puck' | 'Charon' | 'Fenrir';
 
 export const TTS_PLAYBACK_RATE = 0.90;
-export const TTS_WORDS_PER_CHUNK = 50;
+export const TTS_FIRST_CHUNK_WORDS = 2;
+export const TTS_WORDS_PER_CHUNK = 32;
 
 export interface GeminiVoiceInfo {
   id: string;
@@ -195,6 +196,7 @@ const LEGACY_VOICE_ALIASES: Record<string, string> = {
 const VALID_VOICE_IDS = new Set(GEMINI_TTS_VOICES.map((v) => v.id));
 const STORAGE_KEY_VOICE = 'gemini_tts_active_voice_v1';
 const STORAGE_KEY_AUTOREAD = 'gemini_tts_auto_read_v1';
+const VOICE_PREVIEW_CACHE_NAME = 'studio-voice-previews-v1';
 
 interface TtsSession {
   key: string;
@@ -207,6 +209,7 @@ interface TtsSession {
   currentChunkIndex: number;
   pausedAtTime: number;
   status: 'loading' | 'playing' | 'paused' | 'idle';
+  isStreamingOpen?: boolean;
   audio: HTMLAudioElement | null;
   callbacks: {
     onLoadingStart?: () => void;
@@ -221,8 +224,10 @@ let activeSession: TtsSession | null = null;
 let pausedSessions = new Map<string, TtsSession>();
 let playbackEpoch = 0;
 
-// Persistent browser blob URL cache per voice + chunk text so replays never re-fetch if still open
+// Persistent browser blob URL cache per voice + chunk text & permanent preview cache
 const chunkBlobUrlCache = new Map<string, string>();
+const previewBlobUrlCache = new Map<string, string>();
+const previewInFlight = new Map<string, Promise<string>>();
 
 export function normalizeVoiceId(voiceId?: string | null): string {
   if (!voiceId) return 'zara-classic';
@@ -278,7 +283,8 @@ export function cleanTextForSpeech(raw: string): string {
     }
   });
   return withImageCardSpoken
-    .replace(/```[\s\S]*?```/gi, ' [Code or chart block omitted] ')
+    .replace(/```[\s\S]*?```/gi, ' ')
+    .replace(/```[\s\S]*$/gi, ' ')
     .replace(/`[^`]+`/gi, '')
     .replace(/<[^>]+>/gi, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/gi, '$1')
@@ -289,16 +295,11 @@ export function cleanTextForSpeech(raw: string): string {
 }
 
 /**
- * Splits clean text into progressive ~50-word chunks, snapping near natural sentence/clause endings
- * so Chunk 0 starts playing quickly while Chunk 1..N synthesize in the background.
+ * Splits remaining words (starting at startCursor) into progressive natural sentence/clause chunks.
  */
-export function splitTextIntoWordChunks(cleanText: string, targetWords = TTS_WORDS_PER_CHUNK): string[] {
-  const words = cleanText.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
-  if (words.length <= targetWords + 8) return [words.join(' ')];
-
+function splitWordsSliceIntoChunks(words: string[], startCursor: number, targetWords = TTS_WORDS_PER_CHUNK): string[] {
   const chunks: string[] = [];
-  let cursor = 0;
+  let cursor = startCursor;
 
   while (cursor < words.length) {
     const remaining = words.length - cursor;
@@ -307,14 +308,13 @@ export function splitTextIntoWordChunks(cleanText: string, targetWords = TTS_WOR
       break;
     }
 
-    const minEnd = cursor + Math.max(25, targetWords - 14);
+    const minEnd = cursor + Math.max(14, targetWords - 12);
     const idealEnd = cursor + targetWords;
-    const maxEnd = Math.min(words.length, cursor + targetWords + 10);
+    const maxEnd = Math.min(words.length, cursor + targetWords + 8);
 
     let chosenEnd = idealEnd;
-    // Prefer sentence-ending punctuation close to targetWords
     let foundSentenceBoundary = false;
-    for (let idx = Math.min(maxEnd - 1, idealEnd + 6); idx >= minEnd; idx--) {
+    for (let idx = Math.min(maxEnd - 1, idealEnd + 5); idx >= minEnd; idx--) {
       if (/[.!?؟۔]$/.test(words[idx])) {
         chosenEnd = idx + 1;
         foundSentenceBoundary = true;
@@ -322,7 +322,7 @@ export function splitTextIntoWordChunks(cleanText: string, targetWords = TTS_WOR
       }
     }
     if (!foundSentenceBoundary) {
-      for (let idx = Math.min(maxEnd - 1, idealEnd + 5); idx >= minEnd; idx--) {
+      for (let idx = Math.min(maxEnd - 1, idealEnd + 4); idx >= minEnd; idx--) {
         if (/[,;:—–-]$/.test(words[idx])) {
           chosenEnd = idx + 1;
           break;
@@ -337,15 +337,35 @@ export function splitTextIntoWordChunks(cleanText: string, targetWords = TTS_WOR
   return chunks;
 }
 
-function base64ToWavBlobUrl(base64Data: string, mimeType = 'audio/wav'): string {
+/**
+ * Immediate 2-Word Start Chunking:
+ * Chunk 0 takes strictly the first 2 words so TTS begins speaking immediately (~200ms),
+ * while remaining text streams smoothly in rolling ~32-word chunks in the background.
+ */
+export function splitTextIntoWordChunks(cleanText: string, targetWords = TTS_WORDS_PER_CHUNK): string[] {
+  const words = cleanText.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  if (words.length <= TTS_FIRST_CHUNK_WORDS) {
+    return [words.join(' ')];
+  }
+
+  const firstChunk = words.slice(0, TTS_FIRST_CHUNK_WORDS).join(' ');
+  const restChunks = splitWordsSliceIntoChunks(words, TTS_FIRST_CHUNK_WORDS, targetWords);
+  return [firstChunk, ...restChunks];
+}
+
+function base64ToAudioBlob(base64Data: string, mimeType = 'audio/wav'): Blob {
   const binaryStr = atob(base64Data);
   const len = binaryStr.length;
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) {
     bytes[i] = binaryStr.charCodeAt(i);
   }
-  const blob = new Blob([bytes], { type: mimeType });
-  return URL.createObjectURL(blob);
+  return new Blob([bytes], { type: mimeType });
+}
+
+function base64ToWavBlobUrl(base64Data: string, mimeType = 'audio/wav'): string {
+  return URL.createObjectURL(base64ToAudioBlob(base64Data, mimeType));
 }
 
 function makeSessionKey(messageId: string | undefined, cleanText: string, voiceId: string): string {
@@ -431,6 +451,12 @@ async function playSessionChunk(session: TtsSession, chunkIndex: number, startTi
   if (playbackEpoch !== epoch) return;
 
   if (chunkIndex >= session.chunks.length) {
+    if (session.isStreamingOpen) {
+      // Wait briefly for upcoming streamed words before closing playback
+      session.status = 'loading';
+      session.currentChunkIndex = chunkIndex;
+      return;
+    }
     session.status = 'idle';
     session.currentChunkIndex = 0;
     session.pausedAtTime = 0;
@@ -483,7 +509,7 @@ async function playSessionChunk(session: TtsSession, chunkIndex: number, startTi
     applyStudioPlaybackRate(audio);
     session.status = 'playing';
     session.callbacks.onStart?.();
-    // Immediately prepare next 50-word chunk on backend while current 50 words speak!
+    // Prefetch next chunk immediately while current chunk plays
     prefetchNextChunk(session, chunkIndex + 1);
   };
 
@@ -523,12 +549,305 @@ async function playSessionChunk(session: TtsSession, chunkIndex: number, startTi
 }
 
 /**
+ * Permanently fetch & cache a voice's preview sample in browser CacheStorage + server .cache/voice-previews/
+ */
+async function getOrFetchPermanentPreviewBlobUrl(voice: GeminiVoiceInfo): Promise<string> {
+  const memUrl = previewBlobUrlCache.get(voice.id);
+  if (memUrl) return memUrl;
+
+  const existingFlight = previewInFlight.get(voice.id);
+  if (existingFlight) return existingFlight;
+
+  const flight = (async () => {
+    const cachePath = `/__voice_preview__/${encodeURIComponent(voice.id)}.wav`;
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cache = await caches.open(VOICE_PREVIEW_CACHE_NAME);
+        const cachedResp = await cache.match(cachePath);
+        if (cachedResp) {
+          const blob = await cachedResp.blob();
+          if (blob.size > 100) {
+            const url = URL.createObjectURL(blob);
+            previewBlobUrlCache.set(voice.id, url);
+            return url;
+          }
+        }
+      } catch {}
+    }
+
+    const res = await fetch('/api/tts/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        voiceId: voice.id,
+        text: voice.previewSample,
+        prebuiltVoice: voice.prebuiltVoice,
+        style: voice.style,
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error || `Voice preview unavailable (status ${res.status})`);
+    }
+
+    const data = await res.json();
+    if (!data?.audioData) {
+      throw new Error('Voice preview returned empty audio');
+    }
+
+    const blob = base64ToAudioBlob(data.audioData, data.mimeType || 'audio/wav');
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cache = await caches.open(VOICE_PREVIEW_CACHE_NAME);
+        await cache.put(
+          cachePath,
+          new Response(blob, {
+            headers: {
+              'Content-Type': data.mimeType || 'audio/wav',
+              'X-Voice-Id': voice.id,
+            },
+          })
+        );
+      } catch {}
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    previewBlobUrlCache.set(voice.id, objectUrl);
+    return objectUrl;
+  })();
+
+  previewInFlight.set(voice.id, flight);
+  try {
+    return await flight;
+  } finally {
+    previewInFlight.delete(voice.id);
+  }
+}
+
+export async function playVoicePreviewSample(
+  voiceOrId: GeminiVoiceInfo | string,
+  callbacks?: {
+    onLoadingStart?: () => void;
+    onStart?: () => void;
+    onEnd?: () => void;
+    onError?: (err: any) => void;
+  }
+): Promise<void> {
+  const voice = typeof voiceOrId === 'string' ? getVoiceInfo(voiceOrId) : voiceOrId;
+  stopGeminiTts();
+  const myEpoch = ++playbackEpoch;
+
+  if (!previewBlobUrlCache.has(voice.id)) {
+    callbacks?.onLoadingStart?.();
+  }
+
+  try {
+    const objectUrl = await getOrFetchPermanentPreviewBlobUrl(voice);
+    if (playbackEpoch !== myEpoch) return;
+
+    const audio = new Audio(objectUrl);
+    applyStudioPlaybackRate(audio);
+
+    const previewSession: TtsSession = {
+      key: `preview:${voice.id}`,
+      messageId: `preview:${voice.id}`,
+      voiceId: voice.id,
+      voiceMeta: voice,
+      chunks: [voice.previewSample],
+      chunkUrls: new Map([[0, objectUrl]]),
+      chunkInFlight: new Map(),
+      currentChunkIndex: 0,
+      pausedAtTime: 0,
+      status: 'playing',
+      audio,
+      callbacks: {
+        onStart: callbacks?.onStart,
+        onEnd: callbacks?.onEnd,
+        onError: callbacks?.onError,
+      },
+    };
+    activeSession = previewSession;
+
+    audio.onplay = () => {
+      if (playbackEpoch !== myEpoch) return;
+      applyStudioPlaybackRate(audio);
+      callbacks?.onStart?.();
+    };
+    audio.onended = () => {
+      if (playbackEpoch !== myEpoch) return;
+      if (activeSession?.key === previewSession.key) {
+        activeSession = null;
+      }
+      callbacks?.onEnd?.();
+    };
+    audio.onerror = () => {
+      if (playbackEpoch !== myEpoch) return;
+      if (activeSession?.key === previewSession.key) {
+        activeSession = null;
+      }
+      callbacks?.onError?.('Preview playback failed');
+      callbacks?.onEnd?.();
+    };
+
+    await audio.play();
+    applyStudioPlaybackRate(audio);
+  } catch (err: any) {
+    if (playbackEpoch !== myEpoch) return;
+    callbacks?.onError?.(err?.message || 'Voice preview unavailable right now.');
+    callbacks?.onEnd?.();
+  }
+}
+
+/**
+ * Live Streaming 2-Word Immediate TTS Controller:
+ * Begins speaking Chunk 0 as soon as 2 words arrive during live streaming,
+ * then appends & prefetches subsequent chunks cleanly until stream ends.
+ */
+export interface StreamingTtsController {
+  pushText: (rawSoFar: string) => void;
+  finish: (rawFinal: string) => void;
+  cancel: () => void;
+}
+
+export function createStreamingTtsSession(options: {
+  messageId?: string;
+  voice?: string;
+  onLoadingStart?: () => void;
+  onStart?: () => void;
+  onPause?: () => void;
+  onEnd?: () => void;
+  onError?: (err: any) => void;
+}): StreamingTtsController {
+  const voiceMeta = getVoiceInfo(options.voice || getStoredVoice());
+  const sessionKey = `stream:${options.messageId || Date.now()}:${voiceMeta.id}`;
+  stopGeminiTts();
+  const myEpoch = ++playbackEpoch;
+
+  const session: TtsSession = {
+    key: sessionKey,
+    messageId: options.messageId || sessionKey,
+    voiceId: voiceMeta.id,
+    voiceMeta,
+    chunks: [],
+    chunkUrls: new Map(),
+    chunkInFlight: new Map(),
+    currentChunkIndex: 0,
+    pausedAtTime: 0,
+    status: 'loading',
+    isStreamingOpen: true,
+    audio: null,
+    callbacks: {
+      onLoadingStart: options.onLoadingStart,
+      onStart: options.onStart,
+      onPause: options.onPause,
+      onEnd: options.onEnd,
+      onError: options.onError,
+    },
+  };
+
+  activeSession = session;
+  let committedWordCount = 0;
+  let startedPlayback = false;
+  let cancelled = false;
+
+  const enqueueWordsUpTo = (words: string[], count: number) => {
+    if (count <= committedWordCount) return;
+    const textSlice = words.slice(committedWordCount, count).join(' ');
+    committedWordCount = count;
+    if (!textSlice) return;
+    const newChunkIndex = session.chunks.length;
+    session.chunks.push(textSlice);
+
+    if (!startedPlayback) {
+      startedPlayback = true;
+      playSessionChunk(session, 0, 0, myEpoch);
+    } else if (session.status === 'loading' && session.currentChunkIndex === newChunkIndex && !session.audio) {
+      playSessionChunk(session, newChunkIndex, 0, myEpoch);
+    } else if (newChunkIndex === session.currentChunkIndex + 1) {
+      prefetchNextChunk(session, newChunkIndex);
+    }
+  };
+
+  return {
+    pushText(rawSoFar: string) {
+      if (cancelled || playbackEpoch !== myEpoch) return;
+      const clean = cleanTextForSpeech(rawSoFar);
+      if (!clean) return;
+      const hasTrailingSpace = /\s$/.test(rawSoFar);
+      const words = clean.split(/\s+/).filter(Boolean);
+
+      if (committedWordCount === 0) {
+        // Trigger immediately once 2 full words are generated!
+        const readyTwoWords = words.length >= 3 || (words.length >= TTS_FIRST_CHUNK_WORDS && hasTrailingSpace);
+        if (readyTwoWords) {
+          enqueueWordsUpTo(words, TTS_FIRST_CHUNK_WORDS);
+        }
+        return;
+      }
+
+      // Queue subsequent ~24-word chunks smoothly while live text continues streaming
+      const completeWordsCount = hasTrailingSpace ? words.length : Math.max(0, words.length - 1);
+      while (completeWordsCount - committedWordCount >= 24) {
+        enqueueWordsUpTo(words, committedWordCount + 24);
+      }
+    },
+
+    finish(rawFinal: string) {
+      if (cancelled || playbackEpoch !== myEpoch) return;
+      session.isStreamingOpen = false;
+      const clean = cleanTextForSpeech(rawFinal);
+      const words = clean ? clean.split(/\s+/).filter(Boolean) : [];
+
+      if (words.length === 0) {
+        if (activeSession?.key === session.key) activeSession = null;
+        options.onEnd?.();
+        return;
+      }
+
+      if (committedWordCount === 0) {
+        const chunks = splitTextIntoWordChunks(clean, TTS_WORDS_PER_CHUNK);
+        session.chunks.push(...chunks);
+        committedWordCount = words.length;
+        startedPlayback = true;
+        playSessionChunk(session, 0, 0, myEpoch);
+        return;
+      }
+
+      if (committedWordCount < words.length) {
+        const tailChunks = splitWordsSliceIntoChunks(words, committedWordCount, TTS_WORDS_PER_CHUNK);
+        const firstNewIdx = session.chunks.length;
+        session.chunks.push(...tailChunks);
+        committedWordCount = words.length;
+
+        if (session.status === 'loading' && session.currentChunkIndex === firstNewIdx && !session.audio) {
+          playSessionChunk(session, firstNewIdx, 0, myEpoch);
+        } else if (firstNewIdx === session.currentChunkIndex + 1) {
+          prefetchNextChunk(session, firstNewIdx);
+        }
+      } else if (session.status === 'loading' && session.currentChunkIndex >= session.chunks.length && !session.audio) {
+        playSessionChunk(session, session.chunks.length, 0, myEpoch);
+      }
+    },
+
+    cancel() {
+      cancelled = true;
+      session.isStreamingOpen = false;
+      if (activeSession?.key === session.key) {
+        stopGeminiTts();
+      }
+    },
+  };
+}
+
+/**
  * Pauses active Gemini TTS playback at the exact second without losing chunk buffers or resume position.
  */
 export function pauseGeminiTts(): boolean {
   if (!activeSession) return false;
   playbackEpoch++;
   const session = activeSession;
+  session.isStreamingOpen = false;
   if (session.audio) {
     try {
       session.pausedAtTime = session.audio.currentTime || session.pausedAtTime || 0;
@@ -557,6 +876,7 @@ export function stopGeminiTts(): void {
     activeSession.audio = null;
   }
   if (activeSession) {
+    activeSession.isStreamingOpen = false;
     activeSession.status = 'idle';
     activeSession.currentChunkIndex = 0;
     activeSession.pausedAtTime = 0;
@@ -589,7 +909,8 @@ export interface SpeakOptions {
 
 /**
  * Speaks text strictly using high-definition Studio Gemini TTS (/api/tts WAV output):
- * - Progressive 50-word chunking with background prefetching
+ * - Starts speaking at the first 2 words immediately
+ * - Progressive background prefetching for remaining chunks
  * - Slightly slower 0.90x natural studio pace
  * - Resumes from exact paused spot if paused earlier on the same message & voice
  */
@@ -621,7 +942,6 @@ export async function speakWithGeminiTts(
 
   // Stop any *other* currently active playback cleanly
   if (activeSession && activeSession.key !== sessionKey) {
-    // If another message was actively playing, pause it cleanly so user could even return to it, or stop its audio
     pauseGeminiTts();
   }
 
@@ -637,7 +957,6 @@ export async function speakWithGeminiTts(
     if (resumable.audio) {
       applyStudioPlaybackRate(resumable.audio);
       resumable.status = 'playing';
-      // Ensure callbacks reflect active epoch
       const resumedChunk = resumable.currentChunkIndex;
       resumable.audio.onplay = () => {
         if (playbackEpoch !== myEpoch) return;
