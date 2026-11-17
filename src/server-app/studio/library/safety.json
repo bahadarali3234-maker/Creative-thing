@@ -1,0 +1,37 @@
+{
+ "blockedQueryTerms": [
+  "nude",
+  "naked",
+  "nsfw",
+  "porn",
+  "xxx",
+  "sex tape",
+  "leaked",
+  "onlyfans",
+  "gore",
+  "beheading",
+  "corpse",
+  "dead body",
+  "suicide method",
+  "child abuse",
+  "lynching"
+ ],
+ "people": {
+  "allowed": "public figures (actors, athletes, politicians, musicians, authors, scientists, business leaders, spiritual leaders, historical figures) for neutral portraits/event photos.",
+  "blocked": [
+   "private individuals",
+   "anyone under 18",
+   "sexualised/humiliating depictions",
+   "face-swap / impersonation / fake endorsements",
+   "identifying a person from an uploaded photo"
+  ]
+ },
+ "contentRules": [
+  "Never invent prices, discounts, statistics, dates, names or quotes that the user did not supply.",
+  "Do not reproduce copyrighted characters, logos or brand marks as the main subject; create an original look instead.",
+  "Do not put real people's photos into misleading contexts (fake news, fake ads, fake testimonials).",
+  "Web photos are third-party property: keep source domain in the job result for attribution."
+ ],
+ "maxSearchAssets": 4,
+ "maxTotalAssets": 6
+}

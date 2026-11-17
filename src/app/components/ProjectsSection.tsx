@@ -61,15 +61,8 @@ const StickyProjectCard: React.FC<StickyCardProps> = ({
         }}
         id={`project-card-${project.id}`}
         onClick={() => onSelectProject(project)}
-        className="backdrop-blur-3xl border rounded-[28px] sm:rounded-[36px] p-5 sm:p-7 lg:p-9 transition-all duration-300 group cursor-pointer overflow-hidden relative"
+        className="border rounded-[28px] sm:rounded-[36px] p-5 sm:p-7 lg:p-9 transition-all duration-300 group cursor-pointer overflow-hidden relative"
       >
-        {/* Subtle accent glow behind card */}
-        <div
-          className="absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 transition-all duration-500"
-          style={{
-            backgroundColor: isLight ? 'rgba(77, 163, 255, 0.12)' : 'rgba(255, 23, 68, 0.12)',
-          }}
-        />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-10 items-center">
           {/* Left Column: Information, Tags, & Action */}

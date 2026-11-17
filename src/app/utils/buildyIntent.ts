@@ -39,13 +39,16 @@ export function isWebsiteOrAppUiBuildRequest(text: string, attachments: any[] = 
     );
   if (isTimetable) return false;
 
-  // Allow Creative Studio tasks (thumbnails, posters, banners, quote cards, infographics,
-  // logo graphics, motion/documentary videos, reels, shorts, background removal, template management)
-  const isCreativeStudioRequest =
-    /\b(thumbnail|thumbnails|poster|posters|banner|quote\s*card|insta\s*quote|instagram\s*post|story\s*cover|reel\s*cover|infographic|wordmark|logo\s*(graphic|type|card)|short\s*video|reel\b|explainer\s*video|motion\s*graphic|documentary(\s*video)?|video\s*(banao|bana|create|make|generate|export|par|on)|background\s*(remove|hata|cutout)|remove\s*background|cutout|save\s*template|list\s*templates|custom\s*template)\b/i.test(
+  // Allow Image Studio & Web Photo Search tasks without redirecting them to Buildy
+  const isImageStudioRequest =
+    (/\b(png|as\s*png|thumbnail|thumbnails|poster|posters|banner|quote\s*card|insta\s*quote|instagram\s*post|story\s*cover|reel\s*cover|infographic|wordmark|logo(\s*(graphic|type|card|design))?|background\s*(remove|hata|cutout)|remove\s*background|cutout|save\s*template|list\s*templates|custom\s*template)\b/i.test(
       normalized
-    ) && !/\b(website|web\s*site|landing\s*page|web\s*app|webapp|dashboard\s*ui|mobile\s*app\s*ui)\b/i.test(normalized);
-  if (isCreativeStudioRequest) return false;
+    ) ||
+      /\b(create|make|generate|design|draw|banao|bana\s*do|find|search|show\s*me|dikhao|dhundo)\b.{0,45}\b(image|images|photo|photos|pic|pics|picture|pictures|png|artwork|illustration|graphic|visual|wallpaper|tasveer)\b/i.test(
+        normalized
+      )) &&
+    !/\b(website|web\s*site|landing\s*page|web\s*app|webapp|dashboard\s*ui|mobile\s*app\s*ui)\b/i.test(normalized);
+  if (isImageStudioRequest) return false;
 
   // Allow explicit requests asking only for a prompt, specification, explanation, or non-web programming language
   const isExplicitPromptOnlyRequest =

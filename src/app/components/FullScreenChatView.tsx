@@ -41,7 +41,6 @@ import {
   Scan,
   Locate,
   ListTree,
-  Image as ImageIcon,
   Maximize2,
   HelpCircle,
   FolderGit2,
@@ -70,6 +69,9 @@ import {
   Wand2,
   Pause,
   Play,
+  KeyRound,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -93,21 +95,61 @@ import { useTheme } from '../context/ThemeContext';
 import { AttachedFile, QuestionBlock, ProjectMemory } from '../types';
 import { AttachmentGrid } from './AttachmentGrid';
 import { detectAndExtractCode, sniffCodeLanguage } from '../utils/codeAttachment';
-import { mergeChatThreads } from '../utils/chatThreads';
+import {
+  mergeChatThreads,
+  getUserStorageScope,
+  loadChatThreadsFromStorage,
+  saveChatThreadsToStorage,
+  loadActiveTopicFromStorage,
+  saveActiveTopicToStorage,
+  getLocalDraftInputKey,
+} from '../utils/chatThreads';
 import { WebsitePreviewModal } from './WebsitePreviewModal';
 import { FullScreenCodeEditorModal } from './FullScreenCodeEditorModal';
 import { ProjectMemoryDrawer } from './ProjectMemoryDrawer';
 import { TimetableImageCard, TimetableSlot } from './TimetableImageCard';
 import { ThemeOptionsCard } from './ThemeOptionsCard';
-import { BuildyExpandableCard, BUILDY_URL } from './BuildyExpandableCard';
+import { BuildyExpandableCard } from './BuildyExpandableCard';
+import { BuildyWorkspaceModal } from './BuildyWorkspaceModal';
+import { AiApiSettingsModal } from './AiApiSettingsModal';
+import { buildWorkspaceAuthHeaders } from '../utils/workspaceSession';
+import {
+  CompactGeneratedImageCard,
+  ImageErrorNoticeCard,
+  IMAGE_STYLE_OPTIONS,
+  DEFAULT_IMAGE_OPTIONS,
+  ImageGenerationOptions,
+  ImageStyleOption,
+  GeneratedImageData,
+} from './CompactMediaLightbox';
+import {
+  StudioPopupSpec,
+  StudioQuestion,
+  StudioThinkingLogStep,
+  StudioJobResult,
+  StudioAttachmentMeta,
+  studioApi,
+  watchStudioJob,
+  createProgressDisplay,
+  analyzeVideoSource,
+  analyzeImageDataUrl,
+} from '../utils/studioClient';
+import {
+  StudioConfirmDialog,
+  StudioQuestionsDialog,
+} from './StudioConfirmationAndSetupModals';
+import {
+  StudioCompositionBox,
+  StudioFullscreenModal,
+  StudioJobState,
+} from './StudioCompositionBox';
 import { isWebsiteOrAppUiBuildRequest } from '../utils/buildyIntent';
 import { StudentLiveQuizCard } from './StudentLiveQuizCard';
 import { parseStudentContent } from '../utils/studentQuizParser';
 import { LiveVoiceCallModal } from './LiveVoiceCallModal';
 import { ExploreGptsModal, AiSkillItem } from './ExploreGptsModal';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
-import { CreativeStudioModal } from './CreativeStudioModal';
-import { StudioImageCard, StudioVideoPlayerCard, StudioToolBadge } from './StudioRenderCards';
+import { StudioImageCard, StudioToolBadge } from './StudioRenderCards';
 import { ImageCardBlock } from './ImageCardBlock';
 import {
   StudioUploadEntry,
@@ -115,7 +157,6 @@ import {
   catalogForPrompt,
   classifyStudioHtmlBlock,
   extractStudioToolCall,
-  extractVideoPlan,
   getImageDimensions,
   initMythoriaWindowBridge,
   removeBackground,
@@ -143,6 +184,7 @@ import {
   deleteChatThreadFromFirestore,
   isFirestoreQuotaBlocked,
   getCurrentUser,
+  getFirebaseIdToken,
   logOut,
 } from '../firebase';
 
@@ -285,7 +327,12 @@ export interface ThoughtSummaryMeta {
   groundedUsed: boolean;
   sourcesCount: number;
   summary: string;
-  steps: Array<{ title: string; desc: string }>;
+  steps: Array<{
+    title: string;
+    desc: string;
+    screenshotLabel?: string;
+    screenshotDataUrl?: string;
+  }>;
 }
 
 export interface SectionItem {
@@ -312,11 +359,18 @@ export interface ChatMessage {
   attachments?: AttachedFile[];
   previousVersions?: string[];
   futureVersions?: string[];
-  provider?: 'gemini' | 'groq';
+  provider?: 'gemini' | 'groq' | 'openai';
   showLibraryRecommendation?: boolean;
   libraryRecommendationLang?: 'ur' | 'roman-urdu' | 'en' | 'hi';
   sources?: SourceCitation[];
   thoughtSummary?: ThoughtSummaryMeta;
+  generatedImage?: GeneratedImageData;
+  imageError?: { message: string; code?: string };
+  isImageLoading?: boolean;
+  imageStatusText?: string;
+  studioJob?: StudioJobState;
+  tweakChips?: string[];
+  feedback?: 'up' | 'down' | null;
   structuredContent?: {
     mainTitle?: string | { white: string; red: string };
     intro?: string;
@@ -352,6 +406,8 @@ export function parseAIText(raw: string): {
   // Strip out any raw HTML <img> tags, markdown image links, or leaked image markup so text is purely clean
   const cleanedRaw = normalizeMarkdownFences(raw)
     .replace(/```question[\s\S]*?```/gi, '')
+    .replace(/```thinking-summary[\s\S]*?```/gi, '')
+    .replace(/```studio-request[\s\S]*?```/gi, '')
     .replace(/<img[^>]*>/gi, '')
     .replace(/!\[[^\]]*\]\([^)]*\)/gi, '')
     .trim();
@@ -468,7 +524,7 @@ export function parseAIText(raw: string): {
         }
         currentSection = {
           title: isImageCardBlock
-            ? 'Web Photographs'
+            ? ''
             : isChartBlock
             ? 'Interactive Visual Chart'
             : isPromptBlock
@@ -1518,13 +1574,18 @@ export const LiveMessageStreamRenderer: React.FC<{
   if (!rawTextProp) return null;
 
   const normalizedRaw = React.useMemo(() => normalizeMarkdownFences(rawTextProp), [rawTextProp]);
-  const videoPlan = React.useMemo(() => extractVideoPlan(normalizedRaw), [normalizedRaw]);
   const studioTool = React.useMemo(() => extractStudioToolCall(normalizedRaw), [normalizedRaw]);
+
+  // Strip internal control/summary JSON blocks before rendering prose & code cards
+  const strippedControlRaw = normalizedRaw
+    .replace(/```thinking-summary[\s\S]*?(?:```|$)/gi, '')
+    .replace(/```studio-request[\s\S]*?(?:```|$)/gi, '')
+    .trim();
 
   // v2 website designer: parse the **Option N - Name** theme blocks into an
   // interactive swatch card and hide the raw markdown from the message text.
-  const themeParsed = parseThemeOptions(normalizedRaw);
-  const rawText = themeParsed ? themeParsed.cleanedText : normalizedRaw;
+  const themeParsed = parseThemeOptions(strippedControlRaw);
+  const rawText = themeParsed ? themeParsed.cleanedText : strippedControlRaw;
 
   // Robust regex for code/chart/prompt fences: ```[lang] [attributes]\n[code...] (```|$ )
   const fenceRegex = /```([a-zA-Z0-9_.-]+)?([^\n]*)\n([\s\S]*?)(?:```|$)/g;
@@ -1632,30 +1693,24 @@ export const LiveMessageStreamRenderer: React.FC<{
                 />
               );
             }
-            if (videoPlan && seg.content.includes('"segments"') && seg.content.includes('"scenes"')) {
-              return isLastSegStreaming ? (
-                <div key={`seg-plan-${idx}`} className="px-3.5 py-2.5 rounded-xl bg-[#F4F8FC] border border-[#00A6FF]/35 text-xs font-bold text-[#0A2A66] flex items-center gap-2">
-                  <Loader2 size={14} className="animate-spin text-[#00A6FF]" />
-                  <span>Preparing video storyboard &amp; narration cues...</span>
-                </div>
-              ) : null;
+            if (seg.content.includes('"scenes"')) {
+              return null;
             }
           }
 
-          if (seg.type === 'code' && (langLower === 'html' || /<div[^>]+id=["']canvas["']|window\.VIDEO/i.test(seg.content))) {
+          if (
+            seg.type === 'code' &&
+            (langLower === 'html' || /<div[^>]+id=["']canvas["']|window\.VIDEO|<canvas[\s\S]*requestAnimationFrame/i.test(seg.content))
+          ) {
             const studioKind = classifyStudioHtmlBlock(seg.content);
-            if (studioKind === 'video' && videoPlan) {
+            if (studioKind === 'video') {
               return (
-                <StudioVideoPlayerCard
-                  key={`seg-studio-vid-${idx}`}
-                  htmlCode={seg.content}
-                  videoPlan={videoPlan}
-                  uploadsMap={uploadsMap}
-                  userVoiceover={userVoiceover}
-                  isStreaming={isLastSegStreaming}
-                  onOpenFullScreenEditor={onOpenEditor}
-                  onTimingDriftReport={onTimingDriftReport}
-                />
+                <div
+                  key={`seg-video-off-${idx}`}
+                  className="px-4 py-3 rounded-2xl neu-raise text-xs font-semibold text-muted-foreground"
+                >
+                  Video generation is currently turned off in this app. Try generating an image, thumbnail, or poster instead.
+                </div>
               );
             }
             if (studioKind === 'image') {
@@ -1831,8 +1886,8 @@ export const SttSoundBar: React.FC<SttSoundBarProps> = ({
             type="button"
             onClick={onConfirm}
             disabled={isTranscribing}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-zinc-950 hover:bg-black text-white flex items-center justify-center shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95 shrink-0 disabled:opacity-50"
-            title="Send voice message now"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-zinc-950 hover:bg-black text-white flex items-center justify-center shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95 shrink-0 disabled:cursor-wait"
+            title={isTranscribing ? 'Transcribing speech...' : 'Send voice message now'}
             aria-label="Send voice message"
           >
             {isTranscribing ? (
@@ -1892,19 +1947,19 @@ export const CompactThinkingPanel: React.FC<CompactThinkingPanelProps> = ({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 15, scale: 0.98 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="w-full bg-surface text-foreground rounded-[28px] sm:rounded-[32px] px-5 sm:px-6 py-4 shadow-[var(--shadow-neumorphic-soft)] border border-border/90 max-h-64 flex flex-col overflow-hidden"
+      className="w-full neu-glass text-foreground rounded-[28px] sm:rounded-[32px] px-5 sm:px-6 py-4 border border-[var(--gb)] max-h-72 flex flex-col overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-2.5 border-b border-border shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-5 h-5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center shrink-0">
+          <div className="w-5 h-5 rounded-full bg-[var(--primary)]/15 text-[var(--primary-light)] flex items-center justify-center shrink-0">
             <Check size={12} strokeWidth={3} />
           </div>
           <span className="text-xs sm:text-sm font-extrabold text-foreground tracking-tight truncate">
             Thought for {duration}s
           </span>
           {meta && (
-            <span className="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0a2a66] border border-[#00a6ff]/30 shrink-0">
+            <span className="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--primary)]/12 text-[var(--primary-light)] border border-[var(--primary)]/30 shrink-0">
               {meta.detectedLanguage} · {meta.scriptMode}
             </span>
           )}
@@ -1912,7 +1967,7 @@ export const CompactThinkingPanel: React.FC<CompactThinkingPanelProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="w-6 h-6 rounded-full hover:bg-zinc-100 text-foreground flex items-center justify-center transition-colors cursor-pointer shrink-0"
+          className="w-6 h-6 rounded-full neu-raise text-foreground flex items-center justify-center transition-colors cursor-pointer shrink-0"
           title="Close overview"
           aria-label="Close"
         >
@@ -1922,21 +1977,35 @@ export const CompactThinkingPanel: React.FC<CompactThinkingPanelProps> = ({
 
       {/* Dynamic Summary Banner */}
       {meta?.summary && (
-        <div className="mt-2 px-3 py-2 rounded-xl bg-sky-50/60 border border-[#00a6ff]/20 text-[11px] font-bold text-[#0a2a66] shrink-0">
+        <div className="mt-2 px-3 py-2 rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/25 text-[11px] font-bold text-foreground shrink-0">
           {meta.summary}
         </div>
       )}
 
-      {/* Query-Specific Steps */}
+      {/* Query-Specific Steps (including visual verification screenshots when available) */}
       <div className="flex-1 overflow-y-auto pr-1 pt-2.5 space-y-2.5 text-xs text-foreground font-sans">
         {steps.map((st, idx) => (
           <div key={idx} className="flex items-start gap-2.5">
-            <div className="w-5 h-5 rounded-full bg-zinc-100 text-zinc-900 flex items-center justify-center shrink-0 mt-0.5">
+            <div className="w-5 h-5 rounded-full neu-raise text-[var(--primary-light)] flex items-center justify-center shrink-0 mt-0.5">
               <Check size={11} strokeWidth={2.5} />
             </div>
-            <div>
+            <div className="min-w-0 flex-1 space-y-1">
               <span className="font-extrabold text-foreground block text-xs">{st.title}</span>
-              <span className="text-zinc-600 text-[11px] leading-snug font-medium">{st.desc}</span>
+              <span className="text-muted-foreground text-[11px] leading-snug font-medium block">{st.desc}</span>
+              {st.screenshotDataUrl && (
+                <div className="mt-1.5 rounded-xl border border-border bg-surface-soft/70 p-2 inline-block max-w-full">
+                  {st.screenshotLabel && (
+                    <span className="block text-[10px] font-bold text-[var(--primary-light)] mb-1">
+                      {st.screenshotLabel}
+                    </span>
+                  )}
+                  <img
+                    src={st.screenshotDataUrl}
+                    alt={st.screenshotLabel || st.title}
+                    className="max-h-24 rounded-lg border border-border object-contain"
+                  />
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -2216,28 +2285,28 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 40 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="w-full h-[52vh] sm:h-[56vh] max-h-[580px] bg-white border border-border rounded-t-[32px] sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden text-foreground"
+      className="w-full h-[52vh] sm:h-[56vh] max-h-[580px] neu-glass rounded-t-[32px] sm:rounded-[32px] shadow-2xl flex flex-col overflow-hidden text-foreground"
     >
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border bg-white/95 backdrop-blur-md shrink-0">
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/15 bg-surface shrink-0">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full border border-border hover:bg-zinc-100 flex items-center justify-center text-foreground transition-colors cursor-pointer active:scale-95"
+            className="w-8 h-8 rounded-full border border-border/20 hover:bg-surface/40 flex items-center justify-center text-foreground transition-colors cursor-pointer active:scale-95"
             title="Minimize timeline"
           >
             <ArrowLeft size={16} />
           </button>
 
-          <div className="flex items-center bg-zinc-100 border border-border rounded-full p-0.5 text-xs font-medium">
+          <div className="flex items-center bg-surface/50 border border-border/20 rounded-full p-0.5 text-xs font-medium">
             <button
               type="button"
               onClick={() => setActiveTab('timeline')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all cursor-pointer ${
                 activeTab === 'timeline'
-                  ? 'bg-white text-foreground font-bold shadow-sm'
-                  : 'text-zinc-600 hover:text-foreground'
+                  ? 'bg-background text-foreground font-bold shadow-sm'
+                  : 'text-foreground/65 hover:text-foreground'
               }`}
             >
               <ListTree size={13} />
@@ -2248,8 +2317,8 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
               onClick={() => setActiveTab('changes')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all cursor-pointer ${
                 activeTab === 'changes'
-                  ? 'bg-white text-foreground font-bold shadow-sm'
-                  : 'text-zinc-600 hover:text-foreground'
+                  ? 'bg-background text-foreground font-bold shadow-sm'
+                  : 'text-foreground/65 hover:text-foreground'
               }`}
             >
               <Globe size={13} />
@@ -2261,20 +2330,20 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="text-xs font-semibold text-zinc-600 hover:text-foreground transition-colors px-2 py-1 rounded cursor-pointer"
+          className="text-xs font-semibold text-foreground/65 hover:text-foreground transition-colors px-2 py-1 rounded cursor-pointer"
         >
           Close
         </button>
       </div>
 
       {/* Real Query Telemetry Strip */}
-      <div className="flex items-center justify-between px-5 sm:px-8 py-2 bg-sky-50/60 border-b border-border text-[11px] sm:text-xs font-bold text-[#0a2a66] shrink-0">
+      <div className="flex items-center justify-between px-5 sm:px-8 py-2 bg-sky-500/10 border-b border-border/15 text-[11px] sm:text-xs font-bold text-foreground shrink-0">
         <div className="flex items-center gap-1.5">
-          <Clock size={13} />
+          <Clock size={13} className="text-sky-400" />
           <span>Duration: {durationLabel}</span>
         </div>
         <div className="flex items-center gap-1.5 truncate">
-          <Globe size={13} />
+          <Globe size={13} className="text-sky-400" />
           <span>{meta ? `${meta.detectedLanguage} · ${meta.scriptMode}` : 'Auto Language · Romanized'}</span>
         </div>
       </div>
@@ -2282,9 +2351,9 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
       {/* Main Body Content Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans text-xs sm:text-sm">
         {activeTab === 'timeline' ? (
-          <div className="relative pl-6 sm:pl-8 border-l border-border ml-3 sm:ml-4 space-y-5">
+          <div className="relative pl-6 sm:pl-8 border-l border-border/20 ml-3 sm:ml-4 space-y-5">
             {meta?.summary && (
-              <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-[#00a6ff]/25 text-xs font-bold text-[#0a2a66]">
+              <div className="p-3.5 rounded-2xl bg-sky-500/10 border border-sky-400/25 text-xs font-bold text-foreground">
                 {meta.summary}
               </div>
             )}
@@ -2307,13 +2376,25 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
                 ]
             ).map((step, sIdx) => (
               <div key={sIdx} className="relative">
-                <div className="absolute -left-[33px] sm:-left-[41px] top-1 w-5 h-5 rounded-full bg-sky-50 border border-[#00a6ff]/40 flex items-center justify-center text-[#00a6ff]">
+                <div className="absolute -left-[33px] sm:-left-[41px] top-1 w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-sky-400">
                   <Check size={11} strokeWidth={2.8} />
                 </div>
                 <div className="pl-1 space-y-1">
                   <div className="text-foreground font-extrabold text-xs sm:text-sm">{step.title}</div>
-                  <div className="p-3 rounded-xl bg-zinc-50 border border-border text-xs font-medium text-zinc-700">
-                    {step.desc}
+                  <div className="p-3 rounded-xl bg-surface/50 border border-border/15 text-xs font-medium text-foreground/80">
+                    <p>{step.desc}</p>
+                    {step.screenshotDataUrl && (
+                      <div className="mt-2.5 flex items-center gap-2.5 pt-2 border-t border-border/15">
+                        <img
+                          src={step.screenshotDataUrl}
+                          alt={step.screenshotLabel || 'Verification snapshot'}
+                          className="w-16 h-12 rounded-lg object-cover border border-border/20 shadow-sm shrink-0"
+                        />
+                        <span className="text-[11px] font-semibold text-foreground/65">
+                          {step.screenshotLabel || 'Step verification snapshot'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2321,23 +2402,23 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
 
             {attachedImage && (
               <div className="relative">
-                <div className="absolute -left-[33px] sm:-left-[41px] top-1 w-5 h-5 rounded-full bg-blue-50 border border-blue-300 flex items-center justify-center text-blue-600">
+                <div className="absolute -left-[33px] sm:-left-[41px] top-1 w-5 h-5 rounded-full bg-blue-500/15 border border-blue-400/40 flex items-center justify-center text-blue-400">
                   <Scan size={12} />
                 </div>
                 <div className="pl-1 space-y-1">
                   <div className="text-foreground font-bold text-xs sm:text-sm">Visual Context Verified</div>
-                  <div className="mt-2 p-3 rounded-xl bg-zinc-50 border border-border flex items-center gap-3">
+                  <div className="mt-2 p-3 rounded-xl bg-surface/50 border border-border/15 flex items-center gap-3">
                     {imagePreview && (
                       <img
                         src={imagePreview}
                         alt={imageName}
                         referrerPolicy="no-referrer"
-                        className="w-12 h-12 object-cover rounded-lg border border-border shadow-sm"
+                        className="w-12 h-12 object-cover rounded-lg border border-border/20 shadow-sm"
                       />
                     )}
                     <div>
                       <div className="font-mono text-xs text-foreground font-semibold">{imageName}</div>
-                      <div className="text-[11px] text-zinc-600">Analyzed with multimodal vision context</div>
+                      <div className="text-[11px] text-foreground/65">Analyzed with multimodal vision context</div>
                     </div>
                   </div>
                 </div>
@@ -2346,36 +2427,36 @@ export const ThinkingTimelineDrawer: React.FC<ThinkingTimelineDrawerProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-border flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-surface/50 border border-border/15 flex items-center justify-between">
               <div>
                 <div className="font-bold text-foreground text-xs sm:text-sm">Language & Script</div>
-                <div className="text-[11px] text-zinc-600">
+                <div className="text-[11px] text-foreground/65">
                   {meta ? `${meta.detectedLanguage} (${meta.scriptMode})` : 'Auto-detected'}
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#0a2a66]">Verified</span>
+              <span className="text-xs font-bold text-sky-400">Verified</span>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-border flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-surface/50 border border-border/15 flex items-center justify-between">
               <div>
                 <div className="font-bold text-foreground text-xs sm:text-sm">Research Sources</div>
-                <div className="text-[11px] text-zinc-600">
+                <div className="text-[11px] text-foreground/65">
                   {message?.sources?.length || meta?.sourcesCount || 0} grounded citation(s) collected
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#0a2a66]">
+              <span className="text-xs font-bold text-sky-400">
                 {meta?.groundedUsed ? 'Web Grounded' : 'Model Synthesis'}
               </span>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-zinc-50 border border-border flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-surface/50 border border-border/15 flex items-center justify-between">
               <div>
                 <div className="font-bold text-foreground text-xs sm:text-sm">Active Creative Skill</div>
-                <div className="text-[11px] text-zinc-600">
+                <div className="text-[11px] text-foreground/65">
                   {meta?.skillName || 'General Intelligence Mode'}
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#0a2a66]">
+              <span className="text-xs font-bold text-sky-400">
                 {message?.text ? `${message.text.length} chars` : 'Streaming'}
               </span>
             </div>
@@ -2453,24 +2534,37 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
     return getCurrentUser();
   });
 
-  const [chatThreads, setChatThreads] = useState<Record<string, ChatThread>>({});
+  const initialScope = getUserStorageScope(currentUser);
+  const [chatThreads, setChatThreads] = useState<Record<string, ChatThread>>(() =>
+    loadChatThreadsFromStorage(initialScope)
+  );
   const [activeTopic, setActiveTopic] = useState<string>(() => {
-    return selectedRecentTopic || GUEST_TOPIC;
+    if (selectedRecentTopic) return selectedRecentTopic;
+    const savedTopic = loadActiveTopicFromStorage(initialScope);
+    if (savedTopic) return savedTopic;
+    const stored = loadChatThreadsFromStorage(initialScope);
+    const firstKey = Object.keys(stored)[0];
+    return firstKey || GUEST_TOPIC;
   });
 
   const prevUidRef = useRef<string | undefined>(currentUser?.uid);
 
-  // Track Firebase Auth state continuously and handle user transition
+  // Track Firebase Auth state continuously and hydrate browser storage per scope
   useEffect(() => {
     const unsub = subscribeToAuth((user) => {
-      // If user changed (login or logout), reset state completely
       if (user?.uid !== prevUidRef.current) {
         prevUidRef.current = user?.uid;
-        setChatThreads({});
-        if (user && !user.isAnonymous) {
-          setActiveTopic('');
+        const nextScope = getUserStorageScope(user);
+        const storedThreads = loadChatThreadsFromStorage(nextScope);
+        setChatThreads(storedThreads);
+        const savedTopic = loadActiveTopicFromStorage(nextScope);
+        const storedKeys = Object.keys(storedThreads);
+        if (savedTopic && storedThreads[savedTopic]) {
+          setActiveTopic(savedTopic);
+        } else if (user && !user.isAnonymous) {
+          setActiveTopic(storedKeys[0] || '');
         } else {
-          setActiveTopic(GUEST_TOPIC);
+          setActiveTopic(storedKeys[0] || GUEST_TOPIC);
         }
       }
       setCurrentUser(user);
@@ -2497,8 +2591,11 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
     return () => unsub();
   }, [currentUser?.uid]);
 
-  // Synchronize completed messages strictly to Firestore for authenticated user:
+  // Persist chats + activeTopic to browser localStorage and sync completed threads to Firestore
   useEffect(() => {
+    const scope = getUserStorageScope(currentUser);
+    saveChatThreadsToStorage(scope, chatThreads);
+
     if (!activeTopic || !chatThreads[activeTopic]) return;
     if (isFirestoreQuotaBlocked()) return;
     const currentThread = chatThreads[activeTopic];
@@ -2516,11 +2613,39 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [chatThreads, activeTopic, currentUser?.uid]);
+  }, [chatThreads, activeTopic, currentUser?.uid, currentUser?.isAnonymous]);
 
-  const [inputVal, setInputVal] = useState<string>('');
+  useEffect(() => {
+    const scope = getUserStorageScope(currentUser);
+    if (activeTopic) {
+      saveActiveTopicToStorage(scope, activeTopic);
+    }
+  }, [activeTopic, currentUser?.uid, currentUser?.isAnonymous]);
+
+  const [inputVal, setInputVal] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem(getLocalDraftInputKey(initialScope)) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const key = getLocalDraftInputKey(getUserStorageScope(currentUser));
+      if (inputVal) {
+        localStorage.setItem(key, inputVal);
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch {}
+  }, [inputVal, currentUser?.uid, currentUser?.isAnonymous]);
+
   const [isAiTyping, setIsAiTyping] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
   const [selectedModel, setSelectedModel] = useState<string>('GPT-4o');
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
@@ -2545,23 +2670,80 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   const pendingVaguePromptRef = useRef<string>('');
   const answeredQuestionsRef = useRef<Record<string, string>>({});
 
-  // Slide-out modal & persona states for Daro & Zara, Explore Creative Skills, Creative Studio, and Voices
+  // Slide-out modal & persona states for Daro & Zara, Explore Creative Skills, Buildy, and API/Voice Settings
   const [isVoiceCallOpen, setIsVoiceCallOpen] = useState<boolean>(false);
   const [isExploreGptsOpen, setIsExploreGptsOpen] = useState<boolean>(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState<boolean>(false);
-  const [isCreativeStudioOpen, setIsCreativeStudioOpen] = useState<boolean>(false);
+  const [isApiSettingsOpen, setIsApiSettingsOpen] = useState<boolean>(false);
+  const [apiSettingsTab, setApiSettingsTab] = useState<'api-keys' | 'voices'>('voices');
+  const [isBuildyOpen, setIsBuildyOpen] = useState<boolean>(false);
+  const [buildyInitialPrompt, setBuildyInitialPrompt] = useState<string | undefined>(undefined);
+  const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('tc_image_options_v1');
+        if (raw) return { ...DEFAULT_IMAGE_OPTIONS, ...JSON.parse(raw) };
+      } catch {}
+    }
+    return DEFAULT_IMAGE_OPTIONS;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('tc_image_options_v1', JSON.stringify(imageOptions));
+    } catch {}
+  }, [imageOptions]);
   const [activePersona, setActivePersona] = useState<'Zara' | 'Daro'>(() => getActiveAssistantPersona());
   const [currentlySpeakingMsgId, setCurrentlySpeakingMsgId] = useState<string | null>(null);
   const [synthesizingMsgId, setSynthesizingMsgId] = useState<string | null>(null);
   const [pausedSpeakingMsgId, setPausedSpeakingMsgId] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<AiSkillItem | null>(externalActiveSkill ?? null);
 
-  // Creative Studio (MythoriaLib) Upload Registry & Automated Tool Execution Loop
+  useEffect(() => {
+    const onOpenBuildy = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setBuildyInitialPrompt(detail?.initialPrompt || undefined);
+      setIsBuildyOpen(true);
+    };
+    window.addEventListener('open-buildy-workspace', onOpenBuildy as EventListener);
+    return () => window.removeEventListener('open-buildy-workspace', onOpenBuildy as EventListener);
+  }, []);
+
+  // Creative Studio (MythoriaLib + HTML/Canvas Backend) Upload Registry & Modals
   const [studioUploads, setStudioUploads] = useState<StudioUploadEntry[]>([]);
   const [latestUserVoiceover, setLatestUserVoiceover] = useState<{ url: string; name: string } | null>(null);
   const studioUploadsRef = useRef<StudioUploadEntry[]>([]);
   const studioUploadCounterRef = useRef<number>(1);
   const studioToolDepthRef = useRef<number>(0);
+  const uploadedAssetsMapRef = useRef<Record<string, { dataUrl: string; name: string }>>({});
+  const uploadedVideoFileMapRef = useRef<Record<string, File>>({});
+
+  const [pendingStudioConfirm, setPendingStudioConfirm] = useState<{
+    topicKey: string;
+    aiMsgId: string;
+    messageText: string;
+    attachments: AttachedFile[];
+    facts: any[];
+    popup: StudioPopupSpec;
+    recipe?: string | null;
+    intentOverride?: string | null;
+    previousPlan?: any;
+    isLoadingQuestions?: boolean;
+  } | null>(null);
+
+  const [pendingStudioQuestions, setPendingStudioQuestions] = useState<{
+    topicKey: string;
+    aiMsgId: string;
+    messageText: string;
+    attachments: AttachedFile[];
+    facts: any[];
+    questions: StudioQuestion[];
+    recipe?: string | null;
+    intentOverride?: string | null;
+    previousPlan?: any;
+  } | null>(null);
+
+  const [fullscreenStudioJob, setFullscreenStudioJob] = useState<StudioJobState | null>(null);
 
   useEffect(() => {
     studioUploadsRef.current = studioUploads;
@@ -2582,9 +2764,15 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   const registerStudioUpload = React.useCallback(async (dataUrl: string, name: string, mimeType = 'image/png', explicitId?: string) => {
     if (!dataUrl || !dataUrl.startsWith('data:image/')) return null;
     const existing = studioUploadsRef.current.find((u) => u.dataUrl === dataUrl);
-    if (existing) return existing;
+    if (existing) {
+      if (explicitId) {
+        uploadedAssetsMapRef.current[explicitId] = { dataUrl: existing.dataUrl, name: existing.name };
+      }
+      return existing;
+    }
     const dims = await getImageDimensions(dataUrl);
     const id = explicitId || `img_${studioUploadCounterRef.current++}`;
+    uploadedAssetsMapRef.current[id] = { dataUrl, name };
     const entry: StudioUploadEntry = {
       id,
       name,
@@ -2831,12 +3019,16 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
 
-  // MediaRecorder Ref & Speech-to-Text via Groq Whisper + Web Speech live interim
+  // MediaRecorder Ref & Speech-to-Text via Groq Whisper / Gemini STT + Web Speech live interim
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
   const micBaseInputRef = useRef<string>('');
   const sttProducedTextRef = useRef<boolean>(false);
+  const sttLiveTextRef = useRef<string>('');
+  const micSessionGenRef = useRef<number>(0);
+  const micMimeTypeRef = useRef<string>('audio/webm');
+  const recorderStopResolverRef = useRef<((blob: Blob | null) => void) | null>(null);
   const isMicActiveRef = useRef<boolean>(false);
   const suppressSttFallbackRef = useRef<boolean>(false);
 
@@ -2923,6 +3115,8 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
         ? thread.messages[userMsgIndex + 1]
         : null;
 
+    const userAttachments = userMsgIndex !== -1 ? thread.messages[userMsgIndex].attachments || [] : [];
+
     let targetAiId = '';
 
     if (nextMsg && nextMsg.sender === 'ai') {
@@ -2945,6 +3139,10 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
                   futureVersions: [],
                   text: '',
                   isStreaming: true,
+                  isImageLoading: false,
+                  imageError: undefined,
+                  studioJob: undefined,
+                  tweakChips: undefined,
                   structuredContent: undefined,
                 };
               }
@@ -2978,7 +3176,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
       });
     }
 
-    startGeminiStream(activeTopic, targetAiId, newText);
+    dispatchChatOrStudioTurn(activeTopic, targetAiId, newText, userAttachments);
     showToast('Regenerating response with updated query...');
   };
 
@@ -3013,6 +3211,10 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
                   futureVersions: [],
                   text: '',
                   isStreaming: true,
+                  isImageLoading: false,
+                  imageError: undefined,
+                  studioJob: undefined,
+                  tweakChips: undefined,
                   structuredContent: undefined,
                 };
               }
@@ -3044,7 +3246,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
       });
     }
 
-    startGeminiStream(activeTopic, targetAiId, msg.text, msg.attachments || []);
+    dispatchChatOrStudioTurn(activeTopic, targetAiId, msg.text, msg.attachments || []);
     showToast('Regenerating response for prompt...');
   };
 
@@ -3182,6 +3384,9 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
       promptToUse = thread.promptBanner || 'Regenerate response';
     }
 
+    const isLegacyGeneratedImage = Boolean(aiMsg.generatedImage?.url);
+    const prevStudioJob = aiMsg.studioJob;
+
     // Save current version into previousVersions for revert
     setChatThreads((prev) => {
       const t = prev[activeTopic];
@@ -3198,6 +3403,11 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
                   futureVersions: [],
                   text: '',
                   isStreaming: true,
+                  isImageLoading: isLegacyGeneratedImage,
+                  imageError: undefined,
+                  generatedImage: isLegacyGeneratedImage ? undefined : m.generatedImage,
+                  studioJob: prevStudioJob ? undefined : m.studioJob,
+                  tweakChips: undefined,
                   structuredContent: undefined,
                 }
               : m
@@ -3214,7 +3424,18 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
     setPausedSpeakingMsgId((curr) => (curr === aiMsg.id ? null : curr));
     setSynthesizingMsgId((curr) => (curr === aiMsg.id ? null : curr));
 
-    startGeminiStream(activeTopic, aiMsg.id, promptToUse, attachmentsToUse);
+    if (isLegacyGeneratedImage && aiMsg.generatedImage) {
+      executeImageGenerationOrEdit(activeTopic, aiMsg.id, promptToUse, {
+        mode: 'regenerate',
+        sourceImage: aiMsg.generatedImage,
+      });
+    } else if (prevStudioJob) {
+      launchStudioJob(activeTopic, aiMsg.id, prevStudioJob.prompt || promptToUse, attachmentsToUse, [], {}, {
+        recipeOverride: prevStudioJob.recipe || null,
+      });
+    } else {
+      dispatchChatOrStudioTurn(activeTopic, aiMsg.id, promptToUse, attachmentsToUse);
+    }
     showToast('Regenerating response...');
   };
 
@@ -3320,8 +3541,8 @@ ${answersList}`;
 
       if (isBuildyTask) {
         fullExecutionPrompt += `\n\nIMPORTANT PRODUCT RULE:
-This workspace does NOT build HTML/CSS/JS websites or App UIs.
-1. Tell the user clearly: "Go to Buildy (https://fluorescent-code-vault-flow.base44.app) to create App or Web UI."
+This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
+1. Tell the user clearly to open the integrated Buildy Studio in the app sidebar to create App or Web UI.
 2. NEVER generate a complete <!DOCTYPE html>...</html> website.
 3. Provide a detailed, copy-ready Buildy UI specification prompt inside a \`\`\`prompt code block tailored to their specifications above.`;
       } else if (isTimetable) {
@@ -3534,6 +3755,907 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
   }, []);
 
   /**
+   * Computes factual, grounded metadata from uploaded image/video attachments before calling /api/chat or /api/studio/*
+   * Videos are sampled into ONE 12-frame labeled JPEG contact sheet (raw video base64 is never sent to /api/chat).
+   */
+  const computeAttachmentFacts = async (
+    atts: AttachedFile[]
+  ): Promise<{
+    facts: any[];
+    chatAttachmentsPayload: Array<{ name: string; type: string; preview?: string; codeContent?: string }>;
+  }> => {
+    if (!atts || atts.length === 0) return { facts: [], chatAttachmentsPayload: [] };
+    const facts: any[] = [];
+    const chatAttachmentsPayload: Array<{ name: string; type: string; preview?: string; codeContent?: string }> = [];
+
+    for (const att of atts) {
+      if (att.isImage && att.preview && att.preview.startsWith('data:image/')) {
+        uploadedAssetsMapRef.current[att.id] = { dataUrl: att.preview, name: att.name };
+        try {
+          const info = await analyzeImageDataUrl(att.preview, att.name);
+          facts.push(info);
+        } catch {
+          facts.push({ name: att.name, kind: 'image' });
+        }
+        chatAttachmentsPayload.push({
+          name: att.name,
+          type: att.type,
+          preview: att.preview,
+          codeContent: att.codeContent,
+        });
+      } else if (att.isVideo || att.type.startsWith('video/') || /\.(mp4|webm|mov|ogg)$/i.test(att.name)) {
+        const videoSource = uploadedVideoFileMapRef.current[att.id] || att.preview;
+        const analyzed = videoSource ? await analyzeVideoSource(videoSource, att.name, 12, 4) : null;
+        if (analyzed) {
+          facts.push(analyzed.facts);
+          chatAttachmentsPayload.push({
+            name: `${att.name}-contact-sheet.jpg`,
+            type: 'image/jpeg',
+            preview: analyzed.contactSheetDataUrl,
+          });
+        } else {
+          facts.push({ name: att.name, kind: 'video', mimeType: att.type });
+        }
+      } else {
+        if (att.codeContent) {
+          facts.push({ name: att.name, kind: 'text', language: att.language, size: att.size });
+        } else {
+          facts.push({ name: att.name, kind: att.type || 'file', size: att.size });
+        }
+        chatAttachmentsPayload.push({
+          name: att.name,
+          type: att.type,
+          preview: att.isImage ? att.preview : undefined,
+          codeContent: att.codeContent,
+        });
+      }
+    }
+    return { facts, chatAttachmentsPayload };
+  };
+
+  const buildStudioAttachmentsMeta = (atts: AttachedFile[], facts: any[]): StudioAttachmentMeta[] => {
+    const out: StudioAttachmentMeta[] = [];
+    const seen = new Set<string>();
+    for (const att of atts || []) {
+      if (att.isImage && att.preview && att.preview.startsWith('data:image/')) {
+        uploadedAssetsMapRef.current[att.id] = { dataUrl: att.preview, name: att.name };
+        seen.add(att.id);
+        out.push({
+          id: att.id,
+          name: att.name,
+          type: att.type || 'image/png',
+          facts: facts.find((f) => f?.name === att.name) || undefined,
+        });
+      }
+    }
+    for (const u of studioUploadsRef.current.slice(-3)) {
+      if (!seen.has(u.id)) {
+        uploadedAssetsMapRef.current[u.id] = { dataUrl: u.dataUrl, name: u.name };
+        out.push({
+          id: u.id,
+          name: u.name,
+          type: u.mimeType || 'image/png',
+          facts: { name: u.name, kind: 'image', width: u.width, height: u.height, hasAlpha: u.has_transparency },
+        });
+      }
+    }
+    return out;
+  };
+
+  const resolveUploadDataUrl = (uploadId: string): { dataUrl: string; name: string } | null => {
+    if (uploadedAssetsMapRef.current[uploadId]) {
+      return uploadedAssetsMapRef.current[uploadId];
+    }
+    const found = studioUploadsRef.current.find((u) => u.id === uploadId);
+    if (found) return { dataUrl: found.dataUrl, name: found.name };
+    const firstKey = Object.keys(uploadedAssetsMapRef.current)[0];
+    return firstKey ? uploadedAssetsMapRef.current[firstKey] : null;
+  };
+
+  const removePendingPlaceholder = (topicKey: string, aiMsgId: string) => {
+    setChatThreads((prev) => {
+      const t = prev[topicKey];
+      if (!t) return prev;
+      const target = t.messages.find((m) => m.id === aiMsgId);
+      if (target && !target.text && !target.studioJob && !target.generatedImage) {
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.filter((m) => m.id !== aiMsgId),
+          },
+        };
+      }
+      return {
+        ...prev,
+        [topicKey]: {
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, isStreaming: false, isImageLoading: false } : m
+          ),
+        },
+      };
+    });
+  };
+
+  const fetchStudioRecap = async (
+    topicKey: string,
+    aiMsgId: string,
+    promptText: string,
+    res: StudioJobResult
+  ) => {
+    const defaultChips = ['Bigger headline', 'Darker version', 'Change style', 'Regenerate'];
+    try {
+      const token = await getFirebaseIdToken().catch(() => null);
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildWorkspaceAuthHeaders(token),
+        },
+        body: JSON.stringify({
+          prompt: promptText,
+          model: selectedModel,
+          history: [],
+          studio_result: {
+            styleName: res.styleName || res.plan?.styleName || '',
+            recipe: res.plan?.recipe || 'generic',
+            width: res.width,
+            height: res.height,
+            summary: res.summary || [],
+            sources: (res.sources || []).map((s) => s.domain || s.url).filter(Boolean),
+          },
+        }),
+      });
+      if (!r.ok || !r.body) throw new Error('recap failed');
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buf = '';
+      let recapAcc = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(trimmed.slice(6));
+            if (evt.text) {
+              recapAcc += evt.text;
+              const cleaned = recapAcc
+                .replace(/```[\s\S]*?(?:```|$)/gi, '')
+                .trim();
+              if (cleaned) {
+                setChatThreads((prev) => {
+                  const t = prev[topicKey];
+                  if (!t) return prev;
+                  return {
+                    ...prev,
+                    [topicKey]: {
+                      ...t,
+                      messages: t.messages.map((m) =>
+                        m.id === aiMsgId ? { ...m, text: cleaned } : m
+                      ),
+                    },
+                  };
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      setChatThreads((prev) => {
+        const t = prev[topicKey];
+        if (!t) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text:
+                      m.text.trim() ||
+                      `Created your ${res.plan?.recipe || 'design'} (${res.width}×${res.height}). Tap it to download PNG or cut background.`,
+                    tweakChips: defaultChips,
+                  }
+                : m
+            ),
+          },
+        };
+      });
+    } catch {
+      setChatThreads((prev) => {
+        const t = prev[topicKey];
+        if (!t) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text:
+                      m.text.trim() ||
+                      `Created your ${res.plan?.recipe || 'design'} (${res.width}×${res.height}). Tap it to download PNG or cut background.`,
+                    tweakChips: defaultChips,
+                  }
+                : m
+            ),
+          },
+        };
+      });
+    }
+  };
+
+  const launchStudioJob = async (
+    topicKey: string,
+    aiMsgId: string,
+    messageText: string,
+    attachments: AttachedFile[],
+    facts: any[],
+    answers: Record<string, string>,
+    opts?: { recipeOverride?: string | null; intentOverride?: string | null; previousPlan?: any }
+  ) => {
+    setIsAiTyping(true);
+    setIsSendLocked(true);
+    setThinkingTimer(0);
+    thinkingTimerRef.current = 0;
+    setActiveThinkingMsgId(aiMsgId);
+
+    const initialJob: StudioJobState = {
+      jobId: '',
+      status: 'running',
+      prompt: messageText,
+      recipe: opts?.recipeOverride || opts?.previousPlan?.recipe || undefined,
+      percent: 0,
+      elapsedSec: 0,
+      stageLabel: 'Starting studio...',
+      width: opts?.previousPlan?.size?.w || 1280,
+      height: opts?.previousPlan?.size?.h || 720,
+    };
+
+    setChatThreads((prev) => {
+      const t = prev[topicKey];
+      if (!t) return prev;
+      return {
+        ...prev,
+        [topicKey]: {
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  text: '',
+                  isStreaming: true,
+                  isImageLoading: false,
+                  imageError: undefined,
+                  studioJob: initialJob,
+                  tweakChips: undefined,
+                }
+              : m
+          ),
+        },
+      };
+    });
+
+    const progressDisp = createProgressDisplay(({ percent, seconds }) => {
+      setChatThreads((prev) => {
+        const t = prev[topicKey];
+        if (!t) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === aiMsgId && m.studioJob && m.studioJob.status === 'running'
+                ? { ...m, studioJob: { ...m.studioJob, percent, elapsedSec: seconds } }
+                : m
+            ),
+          },
+        };
+      });
+    });
+
+    try {
+      const token = await getFirebaseIdToken().catch(() => null);
+      const studioAtts = buildStudioAttachmentsMeta(attachments, facts);
+      const { jobId } = await studioApi.startJob(
+        {
+          message: messageText,
+          answers,
+          attachments: studioAtts,
+          previousPlan: opts?.previousPlan || null,
+          recipeOverride: opts?.recipeOverride || null,
+          intentOverride: opts?.intentOverride || null,
+        },
+        token
+      );
+
+      setChatThreads((prev) => {
+        const t = prev[topicKey];
+        if (!t) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === aiMsgId && m.studioJob
+                ? { ...m, studioJob: { ...m.studioJob, jobId } }
+                : m
+            ),
+          },
+        };
+      });
+
+      const collectedSteps: Array<{
+        title: string;
+        desc: string;
+        screenshotDataUrl?: string;
+        screenshotLabel?: string;
+      }> = [];
+
+      watchStudioJob(
+        jobId,
+        {
+          onProgress(e) {
+            if (typeof e.percent === 'number') progressDisp.set(e.percent);
+            if (e.label) {
+              setChatThreads((prev) => {
+                const t = prev[topicKey];
+                if (!t) return prev;
+                return {
+                  ...prev,
+                  [topicKey]: {
+                    ...t,
+                    messages: t.messages.map((m) =>
+                      m.id === aiMsgId && m.studioJob
+                        ? { ...m, studioJob: { ...m.studioJob, stageLabel: e.label } }
+                        : m
+                    ),
+                  },
+                };
+              });
+            }
+          },
+          onStep(step: StudioThinkingLogStep) {
+            collectedSteps.push({
+              title: step.file ? `${step.kind} · ${step.file}` : step.kind,
+              desc: step.text,
+              ...(step.screenshotDataUrl ? { screenshotDataUrl: step.screenshotDataUrl } : {}),
+              ...(step.screenshotLabel ? { screenshotLabel: step.screenshotLabel } : {}),
+            });
+            setChatThreads((prev) => {
+              const t = prev[topicKey];
+              if (!t) return prev;
+              return {
+                ...prev,
+                [topicKey]: {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.id === aiMsgId
+                      ? {
+                          ...m,
+                          thoughtSummary: {
+                            detectedLanguage: 'auto',
+                            scriptMode: 'Creative Studio',
+                            groundedUsed: collectedSteps.some((s) => s.title.startsWith('search')),
+                            sourcesCount: m.studioJob?.sources?.length || 0,
+                            summary: 'Creative Studio pipeline steps',
+                            steps: [...collectedSteps],
+                          },
+                        }
+                      : m
+                  ),
+                },
+              };
+            });
+          },
+          onResult(res) {
+            progressDisp.finish();
+            const durSec = Math.max(1, Math.round((res.elapsedMs || (thinkingTimerRef.current || 1) * 1000) / 1000));
+            const finalSteps =
+              Array.isArray(res.summary) && res.summary.length > 0
+                ? res.summary.map((s) => ({
+                    title: s.file ? `${s.kind} · ${s.file}` : s.kind,
+                    desc: s.text,
+                    ...(s.screenshotDataUrl ? { screenshotDataUrl: s.screenshotDataUrl } : {}),
+                    ...(s.screenshotLabel ? { screenshotLabel: s.screenshotLabel } : {}),
+                  }))
+                : collectedSteps;
+
+            setChatThreads((prev) => {
+              const t = prev[topicKey];
+              if (!t) return prev;
+              return {
+                ...prev,
+                [topicKey]: {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.id === aiMsgId
+                      ? {
+                          ...m,
+                          isStreaming: false,
+                          thoughtDuration: durSec,
+                          thoughtSummary: {
+                            detectedLanguage: 'auto',
+                            scriptMode: 'Creative Studio',
+                            groundedUsed: (res.sources || []).length > 0,
+                            sourcesCount: (res.sources || []).length,
+                            summary: `${res.styleName || res.plan?.recipe || 'Design'} · ${res.width}×${res.height}`,
+                            steps: finalSteps,
+                          },
+                          studioJob: {
+                            jobId,
+                            status: 'done',
+                            prompt: messageText,
+                            recipe: res.plan?.recipe || opts?.recipeOverride || undefined,
+                            percent: 100,
+                            elapsedSec: durSec,
+                            width: res.width,
+                            height: res.height,
+                            html: res.html,
+                            summary: res.summary,
+                            sources: res.sources,
+                            warnings: res.warnings,
+                            styleName: res.styleName || res.plan?.styleName,
+                            plan: res.plan,
+                          },
+                        }
+                      : m
+                  ),
+                },
+              };
+            });
+
+            setIsAiTyping(false);
+            setActiveThinkingMsgId(null);
+            setIsSendLocked(false);
+            fetchStudioRecap(topicKey, aiMsgId, messageText, res);
+          },
+          onRefused(e) {
+            progressDisp.stop();
+            setChatThreads((prev) => {
+              const t = prev[topicKey];
+              if (!t) return prev;
+              return {
+                ...prev,
+                [topicKey]: {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.id === aiMsgId
+                      ? {
+                          ...m,
+                          isStreaming: false,
+                          text: e.reason,
+                          studioJob: {
+                            ...(m.studioJob || initialJob),
+                            status: 'refused',
+                            refusalReason: e.reason,
+                          },
+                        }
+                      : m
+                  ),
+                },
+              };
+            });
+            setIsAiTyping(false);
+            setActiveThinkingMsgId(null);
+            setIsSendLocked(false);
+          },
+          onError(e) {
+            progressDisp.stop();
+            setChatThreads((prev) => {
+              const t = prev[topicKey];
+              if (!t) return prev;
+              return {
+                ...prev,
+                [topicKey]: {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.id === aiMsgId
+                      ? {
+                          ...m,
+                          isStreaming: false,
+                          studioJob: {
+                            ...(m.studioJob || initialJob),
+                            status: 'error',
+                            errorMessage: e.message || 'Creative Studio encountered an error.',
+                          },
+                        }
+                      : m
+                  ),
+                },
+              };
+            });
+            setIsAiTyping(false);
+            setActiveThinkingMsgId(null);
+            setIsSendLocked(false);
+          },
+        },
+        resolveUploadDataUrl,
+        token
+      );
+    } catch (err: any) {
+      progressDisp.stop();
+      setChatThreads((prev) => {
+        const t = prev[topicKey];
+        if (!t) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    studioJob: {
+                      ...initialJob,
+                      status: 'error',
+                      errorMessage: err?.message || 'Unable to start Creative Studio.',
+                    },
+                  }
+                : m
+            ),
+          },
+        };
+      });
+      setIsAiTyping(false);
+      setActiveThinkingMsgId(null);
+      setIsSendLocked(false);
+    }
+  };
+
+  const requestStudioFlow = (
+    topicKey: string,
+    aiMsgId: string,
+    messageText: string,
+    attachments: AttachedFile[],
+    facts: any[],
+    intentRes: { intent: string; recipe: string | null; lang: string; popup?: StudioPopupSpec },
+    opts?: { recipeOverride?: string | null; intentOverride?: string | null; previousPlan?: any }
+  ) => {
+    setIsSendLocked(false);
+    setChatThreads((prev) => {
+      const t = prev[topicKey];
+      if (!t) return prev;
+      return {
+        ...prev,
+        [topicKey]: {
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, isStreaming: false, isImageLoading: false } : m
+          ),
+        },
+      };
+    });
+    setPendingStudioConfirm({
+      topicKey,
+      aiMsgId,
+      messageText,
+      attachments,
+      facts,
+      popup: intentRes.popup || {
+        title: 'Generate an image?',
+        body: 'Do you agree to generate this image?',
+        yes: 'Generate',
+        no: 'Cancel',
+      },
+      recipe: opts?.recipeOverride || intentRes.recipe,
+      intentOverride: opts?.intentOverride || (intentRes.intent === 'edit' ? 'edit' : null),
+      previousPlan: opts?.previousPlan,
+    });
+  };
+
+  const handleStudioTweakOrRegen = (job: StudioJobState, instruction: string, isRegen = false) => {
+    if (isSendLocked || isAiTyping || !activeTopic) return;
+    setIsSendLocked(true);
+    const uId = `user-${Date.now()}`;
+    const aiId = `ai-${Date.now() + 1}`;
+    const uMsg: ChatMessage = {
+      id: uId,
+      sender: 'user',
+      text: isRegen ? 'Regenerate design' : instruction,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    const aiPlaceholder: ChatMessage = {
+      id: aiId,
+      sender: 'ai',
+      text: '',
+      isStreaming: true,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatThreads((prev) => {
+      const t = prev[activeTopic];
+      if (!t) return prev;
+      return {
+        ...prev,
+        [activeTopic]: { ...t, messages: [...t.messages, uMsg, aiPlaceholder] },
+      };
+    });
+    launchStudioJob(
+      activeTopic,
+      aiId,
+      isRegen ? job.prompt : instruction,
+      [],
+      [],
+      {},
+      {
+        recipeOverride: job.recipe || job.plan?.recipe || null,
+        intentOverride: isRegen ? null : 'edit',
+        previousPlan: isRegen ? null : job.plan,
+      }
+    );
+  };
+
+  const dispatchChatOrStudioTurn = async (
+    topicKey: string,
+    aiMsgId: string,
+    messageText: string,
+    atts: AttachedFile[] = []
+  ) => {
+    const isSimple = isSimpleMessage(messageText);
+    const { facts, chatAttachmentsPayload } = isSimple
+      ? { facts: [], chatAttachmentsPayload: [] }
+      : await computeAttachmentFacts(atts);
+
+    const isVideoRequest = /\b(video|videos|reel|reels|short\s*film|animation\s*video|explainer\s*video|documentary\s*video|movie|trailer|mp4|webm|clip|montage)\b/i.test(
+      messageText
+    );
+
+    if (!isSimple && !isVideoRequest) {
+      try {
+        const token = await getFirebaseIdToken().catch(() => null);
+        const intentRes = await studioApi.intent(
+          {
+            message: messageText,
+            attachments: buildStudioAttachmentsMeta(atts, facts),
+          },
+          token
+        );
+        if (
+          (intentRes.intent === 'generate' || intentRes.intent === 'edit') &&
+          intentRes.confidence >= 0.6
+        ) {
+          requestStudioFlow(topicKey, aiMsgId, messageText, atts, facts, intentRes);
+          return;
+        }
+      } catch {}
+    }
+
+    startGeminiStream(topicKey, aiMsgId, messageText, atts, {
+      facts,
+      chatAttachmentsPayload,
+    });
+  };
+
+  /**
+   * Detects real AI Image Generation / Editing intent (explicitly excluding Video requests, Buildy UI builds, and web-photo search queries).
+   */
+  const detectImageStudioAction = (
+    promptText: string,
+    attachments: AttachedFile[],
+    threadMessages: ChatMessage[]
+  ): {
+    mode: 'generate' | 'edit' | 'regenerate';
+    sourceImage?: GeneratedImageData;
+    attachedImage?: AttachedFile;
+  } | null => {
+    const clean = (promptText || '').trim();
+    if (!clean) return null;
+
+    // 1. Video generation is permanently OFF -> let backend /api/chat deliver polite notice
+    if (/\b(video|videos|reel|reels|short\s*film|animation\s*video|explainer\s*video|documentary\s*video|movie|trailer|mp4|webm|clip|montage)\b/i.test(clean)) {
+      return null;
+    }
+
+    // 2. Website / App UI requests belong to Buildy
+    if (isWebsiteOrAppUiBuildRequest(clean, attachments)) {
+      return null;
+    }
+
+    // 3. Explicit web photograph lookup ("find/show photos of Imran Khan", "find the ...") stays on zero-AI search
+    const isWebPhotoLookup =
+      (/^\s*(?:please\s+|can\s+you\s+)?(?:find|for\s*nd|search|dhundo|dhoondo)\s+(?:the\s+)?/i.test(clean) &&
+        !/\b(generate|create|make|draw|paint|render|design|illustrate|edit|modify|change|banao|bana\s*do|code|python|typescript|react|function|value|sum|area|bug|error|video|reel)\b/i.test(clean)) ||
+      (/\b(find|for\s*nd|search|show|get|give|dikhao|bhejo|dhundo|dhoondo|fetch)\b.{0,35}\b(photo|photos|picture|pictures|pics|pic|image|images|wallpaper|wallpapers|tasveer|tasveerein)\b/i.test(clean) &&
+        !/\b(generate|create|make|draw|paint|render|design|illustrate|edit|modify|change|banao|bana\s*do|poster|banner|logo)\b/i.test(clean));
+    if (isWebPhotoLookup) {
+      return null;
+    }
+
+    // 4. Editing an attached image
+    const attachedImg = attachments.find((a) => a.isImage && a.preview);
+    if (
+      attachedImg &&
+      /\b(edit|modify|change|remove\s+background|bg\s+remove|cutout|replace|add|make\s+it|style|turn|convert|enhance|fix|recolor|upscale|background|thumbnail|poster|banner|cover)\b/i.test(clean)
+    ) {
+      return { mode: 'edit', attachedImage: attachedImg };
+    }
+
+    // 5. Follow-up edit on the last generated AI image in conversation
+    const lastGeneratedMsg = [...(threadMessages || [])]
+      .reverse()
+      .find((m) => m.sender === 'ai' && m.generatedImage?.url);
+    if (lastGeneratedMsg?.generatedImage) {
+      const isFollowUpRegen = /^(regenerate|retry|try again|make another|another one|variation)\b/i.test(clean);
+      if (isFollowUpRegen) {
+        return { mode: 'regenerate', sourceImage: lastGeneratedMsg.generatedImage };
+      }
+      const looksLikeImageEditFollowUp =
+        /\b(make\s+it|change\s+the|edit\s+the|modify|update\s+the|add\s+a|remove\s+the|replace\s+the|turn\s+it|put\s+a|different\s+background|sunset|night|dark|brighter|more\s+cinematic|less\s+|instead\s+of|in\s+4k|aspect\s+ratio)\b/i.test(clean) &&
+        !/\b(code|python|typescript|react|function|bug|error|explain|what is|how does)\b/i.test(clean);
+      if (looksLikeImageEditFollowUp) {
+        return { mode: 'edit', sourceImage: lastGeneratedMsg.generatedImage };
+      }
+    }
+
+    // 6. Direct image generation request (English + Roman Urdu/Hindi)
+    const explicitCreateMatch =
+      /\b(create|generate|make|draw|paint|render|design|illustrate|sketch|craft|produce|banao|bana\s*do|tasveer\s*banao|image\s*banao)\b.{0,45}\b(image|images|picture|pictures|pic|pics|photo|photos|art|artwork|illustration|logo|icon|avatar|wallpaper|poster|banner|thumbnail|cover|portrait|character|scene|concept\s*art|diagram|visual|sticker|emblem|mascot|png|jpeg|webp)\b/i.test(clean) ||
+      /^(draw|paint|illustrate|sketch|render|generate\s+an?\s+image|create\s+an?\s+image|make\s+an?\s+image|create\s+image|generate\s+image|image\s+of|picture\s+of|a\s+thumbnail\s+on|thumbnail\s+of|logo\s+for|poster\s+for)\b/i.test(clean) ||
+      /\b(dall-?e|gpt-image|text-to-image|ai\s*image|ai\s*art)\b/i.test(clean);
+
+    if (explicitCreateMatch) {
+      return { mode: 'generate' };
+    }
+
+    return null;
+  };
+
+  /**
+   * Executes real GPT Image API generation / editing / regeneration and stores verification steps + compact preview card.
+   */
+  const executeImageGenerationOrEdit = async (
+    topicKey: string,
+    aiMsgId: string,
+    promptText: string,
+    action: {
+      mode: 'generate' | 'edit' | 'regenerate';
+      sourceImage?: GeneratedImageData;
+      attachedImage?: AttachedFile;
+      styleOverride?: ImageStyleOption;
+      sizeOverride?: ImageGenerationOptions['size'];
+    }
+  ) => {
+    setIsAiTyping(true);
+    setThinkingTimer(0);
+    thinkingTimerRef.current = 0;
+    setActiveThinkingMsgId(aiMsgId);
+
+    const effectiveOpts: ImageGenerationOptions = {
+      ...imageOptions,
+      style: action.styleOverride || imageOptions.style,
+      size: action.sizeOverride || imageOptions.size,
+    };
+
+    try {
+      const token = await getFirebaseIdToken();
+      const endpoint =
+        action.mode === 'edit'
+          ? '/api/image/edit'
+          : action.mode === 'regenerate'
+          ? '/api/image/regenerate'
+          : '/api/image/generate';
+
+      const payload: Record<string, any> = {
+        prompt: promptText,
+        style: effectiveOpts.style,
+        size: effectiveOpts.size,
+        quality: effectiveOpts.quality,
+        outputFormat: effectiveOpts.outputFormat,
+        model: effectiveOpts.model,
+      };
+
+      if (action.mode === 'edit') {
+        if (action.attachedImage?.preview) {
+          payload.sourceImageBase64 = action.attachedImage.preview;
+        } else if (action.sourceImage) {
+          payload.sourceImageUrl = action.sourceImage.url;
+          payload.parentImageId = action.sourceImage.id;
+        }
+      } else if (action.mode === 'regenerate' && action.sourceImage) {
+        payload.parentImageId = action.sourceImage.id;
+        payload.prompt = action.sourceImage.originalPrompt || promptText;
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const finalDuration = Math.max(1, thinkingTimerRef.current || 1);
+
+      setChatThreads((prev) => {
+        const thread = prev[topicKey];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...thread,
+            messages: thread.messages.map((m) => {
+              if (m.id !== aiMsgId) return m;
+              if (!res.ok || !data?.image) {
+                return {
+                  ...m,
+                  isStreaming: false,
+                  isImageLoading: false,
+                  thoughtDuration: finalDuration,
+                  provider: 'openai' as const,
+                  text: '',
+                  imageError: {
+                    message: data?.error || `Image generation failed (status ${res.status}).`,
+                    code: data?.code,
+                  },
+                };
+              }
+              return {
+                ...m,
+                isStreaming: false,
+                isImageLoading: false,
+                thoughtDuration: finalDuration,
+                provider: 'openai' as const,
+                text: data.caption || '',
+                generatedImage: data.image as GeneratedImageData,
+                imageError: undefined,
+                thoughtSummary: {
+                  detectedLanguage: 'en',
+                  scriptMode: 'Visual Studio',
+                  groundedUsed: false,
+                  sourcesCount: 0,
+                  summary: `Generated ${data.image.size} ${data.image.style} image via ${data.image.model}`,
+                  steps: Array.isArray(data.thinkingSteps) ? data.thinkingSteps : [],
+                },
+              };
+            }),
+          },
+        };
+      });
+    } catch (err: any) {
+      const finalDuration = Math.max(1, thinkingTimerRef.current || 1);
+      setChatThreads((prev) => {
+        const thread = prev[topicKey];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...thread,
+            messages: thread.messages.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    isImageLoading: false,
+                    thoughtDuration: finalDuration,
+                    text: '',
+                    imageError: {
+                      message: err?.message || 'Network error while generating image.',
+                    },
+                  }
+                : m
+            ),
+          },
+        };
+      });
+    } finally {
+      setIsAiTyping(false);
+      setActiveThinkingMsgId(null);
+      setIsSendLocked(false);
+    }
+  };
+
+  /**
    * AI Streaming Engine: Groq Primary / Gemini Fallback
    * Captures SSE data.meta (sources, thoughtSummary, provider) cleanly alongside live streaming.
    */
@@ -3541,7 +4663,11 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
     topicKey: string,
     aiMsgId: string,
     promptText: string,
-    attachmentsToPass: AttachedFile[] = []
+    attachmentsToPass: AttachedFile[] = [],
+    precomputed?: {
+      facts?: any[];
+      chatAttachmentsPayload?: Array<{ name: string; type: string; preview?: string; codeContent?: string }>;
+    }
   ) => {
     const isSimple = isSimpleMessage(promptText);
 
@@ -3587,23 +4713,44 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
             text: m.text,
           }));
 
-        // Semantic memory retrieval across long-term project vault & past conversation context
-        const contextPackage = isSimple
-          ? null
-          : memoryManager.buildContextPackage(promptText, topicKey, historyPayload);
+        // Detect fresh Creative Studio generation vs explicit follow-up edit so prior videos never hijack new images
+        const isFreshStudioGeneration =
+          (/\b(png|as\s*png|thumbnail|thumbnails|poster|posters|banner|quote\s*card|insta\s*quote|instagram\s*post|story\s*cover|reel\s*cover|infographic|wordmark|short\s*video|reel\b|explainer\s*video|motion\s*graphic|animated\s*video|documentary)\b/i.test(promptText) ||
+            /\b(create|make|generate|design|draw|banao|bana\s*do)\b.{0,45}\b(image|images|picture|pic|photo|png|artwork|illustration|graphic|video|clip|animation)\b/i.test(promptText)) &&
+          !/\b(change|edit|modify|update|tweak|previous|last\s+one)\b/i.test(promptText);
 
-        const isWebsite = /website|landing\s*page|web\s*app|single-file|html/i.test(promptText);
+        // Semantic memory retrieval across long-term project vault & past conversation context
+        const contextPackage =
+          isSimple || isFreshStudioGeneration
+            ? null
+            : memoryManager.buildContextPackage(promptText, topicKey, historyPayload);
+
+        const isWebsite = !isFreshStudioGeneration && /website|landing\s*page|web\s*app|single-file|html/i.test(promptText);
+        const computedFactsAndPayloads =
+          isSimple
+            ? { facts: [], chatAttachmentsPayload: [] }
+            : precomputed?.facts && precomputed?.chatAttachmentsPayload
+              ? { facts: precomputed.facts, chatAttachmentsPayload: precomputed.chatAttachmentsPayload }
+              : await computeAttachmentFacts(attachmentsToPass);
+        const attachmentFacts = computedFactsAndPayloads.facts;
+        const chatAttachmentsPayload = computedFactsAndPayloads.chatAttachmentsPayload;
+        const token = await getFirebaseIdToken().catch(() => null);
+
         const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildWorkspaceAuthHeaders(token),
+          },
           body: JSON.stringify({
             prompt: promptText,
+            model: selectedModel,
             isSimple,
             isWebsite,
             history: isSimple ? [] : historyPayload.slice(-6),
             contextPackage,
-            conversationSummary: runningChatSummary,
-            activeCode: latestActiveCode,
+            conversationSummary: isFreshStudioGeneration ? '' : runningChatSummary,
+            activeCode: isFreshStudioGeneration ? '' : latestActiveCode,
             activeSkill: activeSkill
               ? {
                   id: activeSkill.id,
@@ -3619,14 +4766,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
               height: u.height || 0,
               has_transparency: Boolean(u.has_transparency),
             })),
-            attachments: isSimple
-              ? []
-              : attachmentsToPass.map((a) => ({
-                  name: a.name,
-                  type: a.type,
-                  preview: a.preview,
-                  codeContent: a.codeContent,
-                })),
+            attachment_facts: attachmentFacts,
+            attachments: isSimple ? [] : chatAttachmentsPayload,
           }),
         });
 
@@ -3684,7 +4825,10 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                   accumulatedText = data.error;
                 } else if (data.text) {
                   accumulatedText += data.text;
-                  const currentCleanText = accumulatedText.replace(/```question[\s\S]*?```/gi, '');
+                  const currentCleanText = accumulatedText
+                    .replace(/```question[\s\S]*?(?:```|$)/gi, '')
+                    .replace(/```thinking-summary[\s\S]*?(?:```|$)/gi, '')
+                    .replace(/```studio-request[\s\S]*?(?:```|$)/gi, '');
 
                   if (!hasTriggeredStartVibration) {
                     hasTriggeredStartVibration = true;
@@ -3837,7 +4981,49 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
         setTimeout(() => setVibratingMsgId((curr) => (curr === aiMsgId ? null : curr)), 500);
 
         const fullAnswer = accumulatedText || 'Response ready.';
-        const cleanFullAnswer = sanitizeImageMarkupFromText(fullAnswer.replace(/```question[\s\S]*?```/gi, '').trim());
+
+        // Extract optional ```thinking-summary``` JSON emitted by model (supports {kind, file?, text} & {title, desc})
+        const thoughtMatch = fullAnswer.match(/```thinking-summary\s*([\s\S]*?)```/i);
+        if (thoughtMatch && thoughtMatch[1]) {
+          try {
+            const parsedSummary = JSON.parse(thoughtMatch[1].trim());
+            const extraSteps = Array.isArray(parsedSummary?.steps)
+              ? parsedSummary.steps.map((s: any) => ({
+                  title: s?.file
+                    ? `${String(s?.kind || s?.title || 'analysis')} · ${s.file}`
+                    : String(s?.title || s?.kind || s?.name || 'Analysis'),
+                  desc: String(s?.text || s?.desc || s?.detail || ''),
+                }))
+              : [];
+            if (extraSteps.length > 0) {
+              streamThoughtSummary = {
+                detectedLanguage: streamThoughtSummary?.detectedLanguage || 'auto',
+                scriptMode: streamThoughtSummary?.scriptMode || 'Auto',
+                groundedUsed: Boolean(streamThoughtSummary?.groundedUsed),
+                sourcesCount: streamThoughtSummary?.sourcesCount || 0,
+                summary: String(parsedSummary?.summary || streamThoughtSummary?.summary || 'Analysis Summary'),
+                steps: extraSteps,
+              };
+            }
+          } catch {}
+        }
+
+        // Safety-net: Extract ```studio-request``` JSON emitted when /api/chat detects image generation/edit intent
+        let studioRequestMeta: { kind?: string; action?: string; recipe?: string; prompt?: string; lang?: string; style?: string } | null = null;
+        const studioReqMatch = fullAnswer.match(/```studio-request\s*([\s\S]*?)```/i);
+        if (studioReqMatch && studioReqMatch[1]) {
+          try {
+            studioRequestMeta = JSON.parse(studioReqMatch[1].trim());
+          } catch {}
+        }
+
+        const cleanFullAnswer = sanitizeImageMarkupFromText(
+          fullAnswer
+            .replace(/```question[\s\S]*?```/gi, '')
+            .replace(/```thinking-summary[\s\S]*?```/gi, '')
+            .replace(/```studio-request[\s\S]*?```/gi, '')
+            .trim()
+        );
         fullGeneratedTextMap.current[aiMsgId] = cleanFullAnswer;
         const parsed = parseAIText(cleanFullAnswer);
 
@@ -3911,11 +5097,12 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
             messages: finalMessages,
           };
 
-          // Preserve any generated code in active state for subsequent turns (User spec)
+          // Preserve non-Studio code in active state for subsequent coding turns
+          const isStudioOutput = /id=["']canvas["']|window\.VIDEO\s*=/i.test(cleanFullAnswer);
           const codeMatch =
             cleanFullAnswer.match(/```(?:html|css|javascript|js|typescript|ts|tsx)?\s*([\s\S]*?)```/i) ||
             cleanFullAnswer.match(/(<!DOCTYPE html[\s\S]*?<\/html>)/i);
-          if (codeMatch && codeMatch[1]) {
+          if (codeMatch && codeMatch[1] && !isStudioOutput) {
             setLatestActiveCode(codeMatch[1].trim());
           }
 
@@ -3930,6 +5117,41 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
             [topicKey]: updatedThread,
           };
         });
+
+        // If /api/chat emitted a ```studio-request``` safety-net, open the confirmation popup + quick-setup flow
+        if (
+          studioRequestMeta &&
+          (studioRequestMeta.kind === 'generate' ||
+            studioRequestMeta.kind === 'edit' ||
+            studioRequestMeta.action === 'generate_image' ||
+            studioRequestMeta.action === 'edit_image')
+        ) {
+          const isEdit = studioRequestMeta.kind === 'edit' || studioRequestMeta.action === 'edit_image';
+          requestStudioFlow(
+            topicKey,
+            aiMsgId,
+            studioRequestMeta.prompt || promptText,
+            attachmentsToPass,
+            precomputed?.facts || [],
+            {
+              intent: isEdit ? 'edit' : 'generate',
+              confidence: 0.95,
+              recipe: studioRequestMeta.recipe || 'generic',
+              lang: studioRequestMeta.lang || 'en',
+              popup: {
+                title: 'Generate an image?',
+                body: 'Do you agree to generate this image?',
+                yes: 'Generate',
+                no: 'Cancel',
+              },
+            },
+            {
+              recipeOverride: studioRequestMeta.recipe || null,
+              intentOverride: isEdit ? 'edit' : 'generate',
+            }
+          );
+          return;
+        }
 
         // Automatically flush 2-word live Gemini TTS session if enabled & conversational (no code/generated media)
         if (getAutoReadAloud() && cleanFullAnswer && !containsCodeOrStudioMedia(cleanFullAnswer)) {
@@ -4028,11 +5250,25 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       const reader = new FileReader();
       const attachmentId = `chat-file-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      if (isImg || isVideo || isAudio) {
+      if (isVideo) {
+        uploadedVideoFileMapRef.current[attachmentId] = file;
+        const objUrl = URL.createObjectURL(file);
+        const newAttachment: AttachedFile = {
+          id: attachmentId,
+          name: file.name,
+          size: file.size,
+          type: file.type || 'video/mp4',
+          isImage: false,
+          isVideo: true,
+          preview: objUrl,
+        };
+        setChatAttachments((prev) => [...prev, newAttachment]);
+      } else if (isImg || isAudio) {
         reader.onload = (ev) => {
           const base64Data = ev.target?.result as string;
           if (isImg && base64Data) {
-            registerStudioUpload(base64Data, file.name, file.type || 'image/png');
+            uploadedAssetsMapRef.current[attachmentId] = { dataUrl: base64Data, name: file.name };
+            registerStudioUpload(base64Data, file.name, file.type || 'image/png', attachmentId);
           }
           if (isAudio && base64Data) {
             setLatestUserVoiceover({ url: base64Data, name: file.name });
@@ -4097,10 +5333,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       consumedInitialPromptRef.current = initialPrompt;
       setIsSendLocked(true);
       const trimmed = initialPrompt.trim();
-      const isAuth = Boolean(currentUser && !currentUser.isAnonymous);
-      const targetTopic = isAuth
-        ? (trimmed.length > 25 ? `${trimmed.slice(0, 25)}...` : trimmed)
-        : GUEST_TOPIC;
+      const targetTopic = trimmed.length > 25 ? `${trimmed.slice(0, 25)}...` : trimmed;
 
       const userMsgId = `msg-user-${Date.now()}`;
       const aiMsgId = `msg-ai-${Date.now()}`;
@@ -4138,22 +5371,22 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       });
 
       setActiveTopic(targetTopic);
-      if (onSelectRecentTopic && isAuth) {
+      if (onSelectRecentTopic) {
         onSelectRecentTopic(targetTopic);
       }
 
       onClearInitialPrompt?.();
 
-      // Register any initial image attachments into MythoriaLib upload registry, then stream
       (async () => {
         if (initialAttachments && initialAttachments.length > 0) {
           for (const att of initialAttachments) {
             if (att.isImage && att.preview) {
-              await registerStudioUpload(att.preview, att.name, att.type || 'image/png');
+              uploadedAssetsMapRef.current[att.id] = { dataUrl: att.preview, name: att.name };
+              await registerStudioUpload(att.preview, att.name, att.type || 'image/png', att.id);
             }
           }
         }
-        startGeminiStream(targetTopic, aiMsgId, trimmed, initialAttachments || []);
+        await dispatchChatOrStudioTurn(targetTopic, aiMsgId, trimmed, initialAttachments || []);
       })();
     }
   }, [initialPrompt]);
@@ -4297,20 +5530,22 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
     setShowScrollBottomBtn(false);
     scrollToBottom(true);
 
-    const isAuth = Boolean(currentUser && !currentUser.isAnonymous);
-    const targetTopic = isAuth
-      ? (activeTopic || `Chat ${Object.keys(chatThreads).length + 1}`)
-      : GUEST_TOPIC;
+    const targetTopic =
+      activeTopic && activeTopic !== GUEST_TOPIC
+        ? activeTopic
+        : messageText.length > 25
+        ? `${messageText.slice(0, 25)}...`
+        : messageText || `Chat ${Object.keys(chatThreads).length + 1}`;
 
     if (activeTopic !== targetTopic) {
       setActiveTopic(targetTopic);
-      if (onSelectRecentTopic && isAuth) onSelectRecentTopic(targetTopic);
+      if (onSelectRecentTopic) onSelectRecentTopic(targetTopic);
     }
 
     // Check if user is asking to create/build a Website or App UI (handled exclusively by Buildy)
     const isBuildyUiRequest = isWebsiteOrAppUiBuildRequest(messageText, currentAtts);
 
-    // Website / App UI creation request -> Expand Prompt Box Upward with Buildy Card (NO HTML/CSS/JS building in-app)
+    // Website / App UI creation request -> Expand Prompt Box Upward with in-app Buildy Studio Card
     if (isBuildyUiRequest) {
       setIsSendLocked(false);
       setIsThinkingPanelOpen(false);
@@ -4319,7 +5554,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       const aiBuildyMsg: ChatMessage = {
         id: `ai-buildy-${Date.now()}`,
         sender: 'ai',
-        text: `### Go to Buildy to create App or Web UI\n\nThis workspace does not build HTML/CSS/JS websites or App UIs directly. Open **[Buildy](${BUILDY_URL})** to generate and customize your website or app interface.\n\nIf you want a detailed **Buildy UI prompt**, architecture plan, or coding help in **Python, TypeScript, C++, Java, or SQL**, click **Write Detailed Buildy Prompt** below or ask right here.`,
+        text: `### Open Buildy Studio inside the app\n\nThis chat tab handles conversations, coding logic, and AI image generation. Use the integrated **Buildy** button below (or from the left menu) to design interactive Websites and App UIs directly inside the app.\n\nIf you want a detailed **Buildy UI prompt** or backend architecture first, click **Write Detailed Prompt** below.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -4341,7 +5576,6 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       return;
     }
 
-    // Immediate maximum-quality execution (Clarification Gate removed per user preference)
     setIsSendLocked(true);
     const aiMsgId = `ai-${Date.now()}`;
     const aiPlaceholder: ChatMessage = {
@@ -4368,24 +5602,16 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       };
     });
 
-    startGeminiStream(targetTopic, aiMsgId, messageText, currentAtts);
+    dispatchChatOrStudioTurn(targetTopic, aiMsgId, messageText, currentAtts);
   };
 
   const handleSelectRecentChat = (topic: string) => {
-    if (!currentUser || currentUser.isAnonymous) {
-      onOpenLogin?.();
-      return;
-    }
     setActiveTopic(topic);
     if (onSelectRecentTopic) onSelectRecentTopic(topic);
     setIsMobileSidebarOpen(false);
   };
 
   const handleNewChat = () => {
-    if (!currentUser || currentUser.isAnonymous) {
-      onOpenLogin?.();
-      return;
-    }
     const newId = `Chat ${Object.keys(chatThreads).length + 1}`;
     const newThread: ChatThread = {
       id: `thread-${Date.now()}`,
@@ -4403,32 +5629,128 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
     setIsMobileSidebarOpen(false);
   };
 
+  const stopMicHardwareAndCollectBlob = async (collectBlob: boolean): Promise<Blob | null> => {
+    isMicActiveRef.current = false;
+
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.onresult = null;
+        speechRecognitionRef.current.onend = null;
+        speechRecognitionRef.current.onerror = null;
+        speechRecognitionRef.current.stop();
+      } catch {}
+      speechRecognitionRef.current = null;
+    }
+
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      mediaRecorderRef.current = null;
+      if (!collectBlob) {
+        audioChunksRef.current = [];
+        return null;
+      }
+      if (audioChunksRef.current.length === 0) return null;
+      return new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' });
+    }
+
+    if (!collectBlob) {
+      suppressSttFallbackRef.current = true;
+      audioChunksRef.current = [];
+      recorderStopResolverRef.current = null;
+      try {
+        recorder.stop();
+      } catch {}
+      mediaRecorderRef.current = null;
+      return null;
+    }
+
+    suppressSttFallbackRef.current = false;
+    return new Promise<Blob | null>((resolve) => {
+      let settled = false;
+      const finish = (blob: Blob | null) => {
+        if (settled) return;
+        settled = true;
+        recorderStopResolverRef.current = null;
+        resolve(blob);
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        const fallbackBlob =
+          audioChunksRef.current.length > 0
+            ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+            : null;
+        finish(fallbackBlob);
+      }, 1500);
+
+      recorderStopResolverRef.current = (blob) => {
+        window.clearTimeout(timeoutId);
+        finish(blob);
+      };
+
+      try {
+        recorder.stop();
+      } catch {
+        window.clearTimeout(timeoutId);
+        finish(
+          audioChunksRef.current.length > 0
+            ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+            : null
+        );
+      }
+    });
+  };
+
+  const transcribeBlobWithApi = async (audioBlob: Blob, sessionGen: number): Promise<string> => {
+    if (!audioBlob || audioBlob.size < 120) return '';
+    if (sessionGen !== micSessionGenRef.current) return '';
+
+    const base64Audio = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(audioBlob);
+    });
+
+    if (!base64Audio || sessionGen !== micSessionGenRef.current) return '';
+
+    try {
+      const token = await getFirebaseIdToken().catch(() => null);
+      if (sessionGen !== micSessionGenRef.current) return '';
+      const sttRes = await fetch('/api/stt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildWorkspaceAuthHeaders(token),
+        },
+        body: JSON.stringify({
+          audio: base64Audio,
+          mimeType: audioBlob.type || micMimeTypeRef.current || 'audio/webm',
+        }),
+      });
+      const sttData = await sttRes.json().catch(() => ({}));
+      if (sessionGen !== micSessionGenRef.current) return '';
+      return typeof sttData?.text === 'string' ? sttData.text.trim() : '';
+    } catch (sttErr) {
+      console.warn('STT transcription error:', sttErr);
+      return '';
+    }
+  };
+
   const toggleMic = async () => {
     if (isMicActive) {
-      isMicActiveRef.current = false;
-      setIsMicActive(false);
-      showToast('Microphone stopped');
-      if (speechRecognitionRef.current) {
-        try {
-          speechRecognitionRef.current.stop();
-        } catch {}
-        speechRecognitionRef.current = null;
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch {}
-      }
+      await handleStopMicKeepText();
       return;
     }
 
+    const sessionGen = ++micSessionGenRef.current;
     suppressSttFallbackRef.current = false;
     isMicActiveRef.current = true;
     setIsMicActive(true);
     setIsTranscribing(false);
-    // Save existing text before voice input starts
     micBaseInputRef.current = inputVal;
     sttProducedTextRef.current = false;
+    sttLiveTextRef.current = '';
+    audioChunksRef.current = [];
     showToast('Listening... Speak now (Live transcription active)');
 
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -4443,6 +5765,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
         recognition.lang = navigator.language || 'en-US';
 
         recognition.onresult = (event: any) => {
+          if (!isMicActiveRef.current || sessionGen !== micSessionGenRef.current) return;
           let interim = '';
           let finalChunk = '';
           for (let i = 0; i < event.results.length; ++i) {
@@ -4453,11 +5776,13 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
               interim += (interim ? ' ' : '') + res[0].transcript.trim();
             }
           }
-          if (finalChunk || interim) {
+          const spokenOnly = [finalChunk, interim].filter(Boolean).join(' ').trim();
+          if (spokenOnly) {
             sttProducedTextRef.current = true;
+            sttLiveTextRef.current = spokenOnly;
           }
-          const base = micBaseInputRef.current;
-          const liveCombined = [base, finalChunk, interim].filter(Boolean).join(' ');
+          const base = micBaseInputRef.current.trim();
+          const liveCombined = [base, spokenOnly].filter(Boolean).join(' ');
           setInputVal(liveCombined);
         };
 
@@ -4471,8 +5796,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
         };
 
         recognition.onend = () => {
-          // Re-arm recognition if user is still actively recording
-          if (isMicActiveRef.current) {
+          if (isMicActiveRef.current && sessionGen === micSessionGenRef.current) {
             try {
               recognition.start();
             } catch {}
@@ -4487,52 +5811,47 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
       }
     }
 
-    // Audio stream & MediaRecorder for Groq Whisper backend fallback
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
+        if (!isMicActiveRef.current || sessionGen !== micSessionGenRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const preferredMime =
+          typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
+            ? 'audio/webm;codecs=opus'
+            : typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.('audio/webm')
+              ? 'audio/webm'
+              : '';
+        const mediaRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
+        micMimeTypeRef.current = mediaRecorder.mimeType || preferredMime || 'audio/webm';
         audioChunksRef.current = [];
 
         mediaRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
+          if (event.data && event.data.size > 0 && sessionGen === micSessionGenRef.current) {
             audioChunksRef.current.push(event.data);
           }
         };
 
-        mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = () => {
           stream.getTracks().forEach((track) => track.stop());
-          if (suppressSttFallbackRef.current) return;
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          mediaRecorderRef.current = null;
+          const resolver = recorderStopResolverRef.current;
+          recorderStopResolverRef.current = null;
 
-          if (audioBlob.size < 50) return;
+          if (suppressSttFallbackRef.current || sessionGen !== micSessionGenRef.current) {
+            audioChunksRef.current = [];
+            if (resolver) resolver(null);
+            return;
+          }
 
-          // If speech recognition didn't yield text, fallback to Groq Whisper /api/stt
-          if (!startedSpeechRecognition || !sttProducedTextRef.current) {
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            reader.onloadend = async () => {
-              const base64Audio = reader.result as string;
-              try {
-                setIsTranscribing(true);
-                showToast('Transcribing audio input...');
-                const sttRes = await fetch('/api/stt', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ audio: base64Audio, mimeType: 'audio/webm' }),
-                });
-                const sttData = await sttRes.json();
-                if (sttData.text && sttData.text.trim()) {
-                  setInputVal((prev) => (prev ? `${prev} ${sttData.text.trim()}` : sttData.text.trim()));
-                  showToast('Transcribed audio');
-                }
-              } catch (sttErr) {
-                console.warn('Groq STT transcription error:', sttErr);
-                showToast('Transcription service unavailable');
-              } finally {
-                setIsTranscribing(false);
-              }
-            };
+          const blob =
+            audioChunksRef.current.length > 0
+              ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+              : null;
+          if (resolver) {
+            resolver(blob);
           }
         };
 
@@ -4549,67 +5868,101 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
     }
   };
 
+  // Cross (X): Cuts everything spoken and leaves ZERO spoken words in the prompt box
   const handleCancelMic = () => {
+    micSessionGenRef.current += 1;
     suppressSttFallbackRef.current = true;
-    isMicActiveRef.current = false;
+    sttProducedTextRef.current = false;
+    sttLiveTextRef.current = '';
+    audioChunksRef.current = [];
+    void stopMicHardwareAndCollectBlob(false);
     setIsMicActive(false);
     setIsTranscribing(false);
-    if (speechRecognitionRef.current) {
-      try {
-        speechRecognitionRef.current.stop();
-      } catch {}
-      speechRecognitionRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-    }
     setInputVal(micBaseInputRef.current);
-    showToast('Voice recording cancelled');
+    showToast('Voice recording cut & discarded');
   };
 
-  const handleStopMicKeepText = () => {
-    suppressSttFallbackRef.current = false;
-    isMicActiveRef.current = false;
+  // Pause (Square): Transcribes recorded speech and places it ONLY in the prompt box
+  const handleStopMicKeepText = async () => {
+    if (isTranscribing) return;
+    const sessionGen = micSessionGenRef.current;
+    const base = micBaseInputRef.current.trim();
+    const audioBlob = await stopMicHardwareAndCollectBlob(true);
+    if (sessionGen !== micSessionGenRef.current) return;
+
+    const liveSpoken = sttLiveTextRef.current.trim();
+    if (liveSpoken) {
+      setIsMicActive(false);
+      setIsTranscribing(false);
+      setInputVal([base, liveSpoken].filter(Boolean).join(' '));
+      showToast('Stopped listening — text kept in prompt box');
+      return;
+    }
+
+    if (audioBlob && audioBlob.size >= 120) {
+      setIsMicActive(false);
+      setIsTranscribing(true);
+      showToast('Converting speech to text...');
+      const transcript = await transcribeBlobWithApi(audioBlob, sessionGen);
+      if (sessionGen !== micSessionGenRef.current) return;
+      setIsTranscribing(false);
+      if (transcript) {
+        setInputVal([base, transcript].filter(Boolean).join(' '));
+        showToast('Transcribed to prompt box');
+      } else {
+        setInputVal(micBaseInputRef.current);
+        showToast('Could not recognize speech');
+      }
+      return;
+    }
+
     setIsMicActive(false);
     setIsTranscribing(false);
-    if (speechRecognitionRef.current) {
-      try {
-        speechRecognitionRef.current.stop();
-      } catch {}
-      speechRecognitionRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-    }
     showToast('Stopped listening — text kept in prompt box');
   };
 
-  const handleConfirmMic = () => {
-    suppressSttFallbackRef.current = true;
-    isMicActiveRef.current = false;
+  // Forward (Black ArrowUp): Stays solid black, transcribes audio if needed, then auto-forwards immediately
+  const handleConfirmMic = async () => {
+    if (isTranscribing) return;
+    const sessionGen = micSessionGenRef.current;
+    const base = micBaseInputRef.current.trim();
+    const preLive = sttLiveTextRef.current.trim();
+    const currentTyped = inputVal.trim();
+
+    if (preLive || (currentTyped && currentTyped !== base)) {
+      const immediateText = preLive ? [base, preLive].filter(Boolean).join(' ').trim() : currentTyped;
+      void stopMicHardwareAndCollectBlob(false);
+      setIsMicActive(false);
+      setIsTranscribing(false);
+      if (immediateText) {
+        setInputVal('');
+        sendProgrammaticMessage(immediateText);
+        return;
+      }
+    }
+
+    // Keep bar active & Forward button solid black with spinner while finishing transcription
     setIsMicActive(false);
+    setIsTranscribing(true);
+    showToast('Transcribing & forwarding...');
+
+    const audioBlob = await stopMicHardwareAndCollectBlob(true);
+    if (sessionGen !== micSessionGenRef.current) return;
+
+    const lateLive = sttLiveTextRef.current.trim();
+    const apiTranscript = lateLive ? '' : audioBlob ? await transcribeBlobWithApi(audioBlob, sessionGen) : '';
+    if (sessionGen !== micSessionGenRef.current) return;
+
     setIsTranscribing(false);
-    if (speechRecognitionRef.current) {
-      try {
-        speechRecognitionRef.current.stop();
-      } catch {}
-      speechRecognitionRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-    }
-    const latestText = inputVal.trim();
-    if (latestText) {
+    const spokenResult = (lateLive || apiTranscript).trim();
+    const finalText = [base, spokenResult].filter(Boolean).join(' ').trim();
+
+    if (finalText) {
       setInputVal('');
-      sendProgrammaticMessage(latestText);
+      sendProgrammaticMessage(finalText);
     } else {
-      showToast('No speech detected to send');
+      setInputVal(micBaseInputRef.current);
+      showToast('Could not recognize speech — please speak clearly');
     }
   };
 
@@ -4618,18 +5971,11 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
   const isLight = themeMode === 'light';
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.98 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className={`fixed inset-0 z-[10000] flex overflow-hidden font-sans select-none transition-colors duration-300 ${
-          isLight ? 'chat-workspace bg-background text-foreground' : 'chat-workspace bg-background text-foreground'
-        }`}
+      <div
+        className="fixed inset-0 z-[10000] flex overflow-hidden font-sans select-none transition-colors duration-300 chat-workspace bg-background text-foreground"
       >
         {/* ------------------------------------------------------------- */}
-        {/* LEFT CURVED-BOX MENU: Exact Welcome Screen Curved Menu Parity */}
+        {/* LEFT CURVED-BOX MENU: Obsidian Black Curved Menu */}
         {/* ------------------------------------------------------------- */}
         {(() => {
           const renderCurvedMenuCard = (isMobileOverlay: boolean) => (
@@ -4637,327 +5983,276 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
               onClick={(e) => e.stopPropagation()}
               className={`relative w-full ${
                 isMobileOverlay ? 'max-w-[345px] sm:max-w-[365px] h-[92vh] max-h-[820px]' : 'w-[325px] lg:w-[348px] h-full'
-              } rounded-[38px] border-2 p-6 flex flex-col justify-between overflow-hidden select-none transition-colors duration-300`}
+              } rounded-[34px] bg-[#0b0b10] border border-white/15 p-6 flex flex-col justify-between overflow-hidden select-none text-white`}
               style={{
-                backgroundColor: 'var(--surface)',
-                borderColor: 'var(--primary)',
-                boxShadow: '0 10px 40px rgba(71, 105, 135, 0.16)',
-                color: 'var(--text)',
+                boxShadow: '0 22px 52px rgba(0,0,0,0.48)',
               }}
             >
-              {/* Atmospheric subtle nebula corner accents matching Welcome menu */}
-              <div
-                className="absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-20"
-                style={{ backgroundColor: 'var(--primary)' }}
-              />
-              <div
-                className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-20"
-                style={{ backgroundColor: 'var(--primary)' }}
-              />
-
-              {/* TOP FIXED SECTION: BMW ///M Crest + Mobile Close */}
+              {/* TOP FIXED SECTION: BMW ///M Crest + Styled Close Button */}
               <div className="shrink-0 relative z-10">
                 <div className="flex items-center justify-between pt-1 pb-1">
                   <div className="flex items-center gap-2 select-none">
                     <div className="flex items-center gap-1.5 -skew-x-[18deg]">
-                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px] shadow-[0_0_12px_rgba(0,130,202,0.7)]" />
+                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px]" />
                       <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#17205a] rounded-[1px]" />
-                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px] shadow-[0_0_16px_rgba(226,27,35,0.9)]" />
+                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px]" />
                     </div>
-                    <span className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 text-foreground">
+                    <span className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 text-white">
                       M
                     </span>
                   </div>
 
-                  {isMobileOverlay && (
-                    <button
-                      type="button"
-                      onClick={() => setIsMobileSidebarOpen(false)}
-                      className="p-2 rounded-full hover:bg-black/5 text-zinc-700 cursor-pointer"
-                      aria-label="Close menu"
-                    >
-                      <X size={20} />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => (isMobileOverlay ? setIsMobileSidebarOpen(false) : setIsDesktopSidebarOpen(false))}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                    aria-label="Close menu"
+                    title="Close menu"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
               </div>
 
-              {/* GUEST MODE OR AUTHENTICATED CONTENT */}
-              {!currentUser || currentUser.isAnonymous ? (
-                <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 text-center my-auto relative z-10">
-                  <div className="w-14 h-14 rounded-2xl bg-sky-50 border border-[#00a6ff]/40 flex items-center justify-center text-[#00a6ff] shadow-[0_0_20px_rgba(0,166,255,0.2)] mb-3">
-                    <Lock size={24} />
+              {/* Navigation + Saved Chats (Works with Browser Storage + Firestore) */}
+              <>
+                <div className="shrink-0 space-y-4 pt-3 relative z-10">
+                  {/* + New Chat Pill Button */}
+                  <button
+                    type="button"
+                    onClick={handleNewChat}
+                    className="w-full py-3 px-4 rounded-[20px] bg-[#11131b] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between hover:bg-[#161a25] transition-all cursor-pointer active:scale-98 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
+                      <span className="text-white tracking-wide">New Chat</span>
+                    </div>
+                    <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Navigation Items: Daro & Zara, Explore Creative Skills, Buildy */}
+                  <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileSidebarOpen(false);
+                        setIsVoiceCallOpen(true);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <AudioLines size={19} strokeWidth={1.9} className="text-[#38bdf8]" />
+                        <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold uppercase tracking-wider">
+                        {activePersona}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileSidebarOpen(false);
+                        setIsExploreGptsOpen(true);
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
+                        activeSkill
+                          ? 'bg-[#0a7cf0]/20 text-white font-semibold'
+                          : 'hover:bg-white/10 text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <Wand2 size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#38bdf8]' : 'text-zinc-400'} />
+                        <span className="tracking-wide">Explore Creative Skills</span>
+                      </div>
+                      {activeSkill && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0] text-white font-bold">
+                          Active
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileSidebarOpen(false);
+                        setBuildyInitialPrompt(undefined);
+                        setIsBuildyOpen(true);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <Hammer size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
+                        <span className="tracking-wide font-semibold">Buildy</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold">
+                        UI Studio
+                      </span>
+                    </button>
                   </div>
-                  <h3 className="text-foreground text-base font-extrabold tracking-tight mb-1.5">
-                    Sign in required
-                  </h3>
-                  <p className="text-xs text-zinc-600 leading-relaxed max-w-[210px] mb-5">
-                    Sign in to access your chats, projects and memory.
-                  </p>
+                </div>
+
+                {/* ONLY RECENT SECTION SCROLLABLE */}
+                <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
+                  <span className="text-[13px] font-semibold text-zinc-400 px-3 tracking-wide mb-2 shrink-0">
+                    Recent
+                  </span>
+
+                  <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
+                    {Object.keys(chatThreads).length === 0 ? (
+                      <div className="px-3 py-6 text-center text-xs text-zinc-500">
+                        No saved chats yet. Start a new conversation!
+                      </div>
+                    ) : (
+                      Object.values(chatThreads).map((thread) => {
+                        const topic = thread.title || thread.id;
+                        return (
+                          <div
+                            key={thread.id || topic}
+                            className={`w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
+                              topic === activeTopic
+                                ? 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
+                                : 'hover:bg-white/10 text-zinc-300 border-transparent'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleSelectRecentChat(topic)}
+                              className="flex items-center gap-3 truncate text-left flex-1 min-w-0 cursor-pointer"
+                            >
+                              <MessageSquare
+                                size={17}
+                                strokeWidth={1.8}
+                                className={topic === activeTopic ? 'text-[#38bdf8] shrink-0' : 'text-zinc-500 shrink-0'}
+                              />
+                              <span className="truncate text-[14px]">
+                                {topic}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (currentUser?.uid && !currentUser.isAnonymous && thread.id) {
+                                  await deleteChatThreadFromFirestore(thread.id, currentUser.uid).catch(() => {});
+                                }
+                                setChatThreads((prev) => {
+                                  const next = { ...prev };
+                                  delete next[topic];
+                                  return next;
+                                });
+                                if (activeTopic === topic) {
+                                  const remaining = Object.keys(chatThreads).filter((k) => k !== topic);
+                                  setActiveTopic(remaining[0] || '');
+                                }
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-400 transition-opacity ml-1 shrink-0 cursor-pointer"
+                              title="Delete chat"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </>
+
+              {/* BOTTOM ACTIONS: ← Welcome + Icon-Only Settings on Right + Account Card */}
+              <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-white/10">
+                <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
                       setIsMobileSidebarOpen(false);
-                      handleOpenLogin();
+                      onClose();
                     }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(0,166,255,0.45)] cursor-pointer active:scale-95"
+                    className="flex-1 py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 bg-[#0a7cf0] hover:bg-[#096dd4]"
                   >
-                    Sign In
+                    <ArrowLeft size={17} className="text-white" />
+                    <span>Welcome</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApiSettingsTab('voices');
+                      setIsApiSettingsOpen(true);
+                      setIsMobileSidebarOpen(false);
+                    }}
+                    className="w-11 h-11 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0"
+                    title="Settings"
+                    aria-label="Settings"
+                  >
+                    <Settings size={18} />
                   </button>
                 </div>
-              ) : (
-                <>
-                  {/* Authenticated Mode: New Chat + Navigation */}
-                  <div className="shrink-0 space-y-4 pt-3 relative z-10">
-                    {/* + New Chat Pill Button */}
-                    <button
-                      type="button"
-                      onClick={handleNewChat}
-                      className="w-full py-3 px-4 rounded-[20px] bg-[#0c0204] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between shadow-[0_0_18px_rgba(0,166,255,0.35)] hover:shadow-[0_0_24px_rgba(0,166,255,0.55)] transition-all cursor-pointer active:scale-98 group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
-                        <span className="text-white tracking-wide">New Chat</span>
-                      </div>
-                      <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-
-                    {/* Navigation Items: Daro & Zara, Explore Creative Skills, Buildy */}
-                    <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-foreground">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMobileSidebarOpen(false);
-                          setIsVoiceCallOpen(true);
-                        }}
-                        className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center justify-between text-foreground transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <AudioLines size={19} strokeWidth={1.9} className="text-[#00a6ff]" />
-                          <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
-                        </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#00a6ff]/15 text-[#0a2a66] font-bold uppercase tracking-wider">
-                          {activePersona}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMobileSidebarOpen(false);
-                          setIsExploreGptsOpen(true);
-                        }}
-                        className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
-                          activeSkill
-                            ? 'bg-[#00a6ff]/12 text-[#0a2a66] font-semibold'
-                            : 'hover:bg-sky-50 text-foreground'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <Wand2 size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#00a6ff]' : 'text-zinc-600'} />
-                          <span className="tracking-wide">Explore Creative Skills</span>
-                        </div>
-                        {activeSkill && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#00a6ff] text-white font-bold">
-                            Active
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMobileSidebarOpen(false);
-                          window.open(BUILDY_URL, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center gap-3.5 text-foreground transition-all cursor-pointer"
-                      >
-                        <Hammer size={19} strokeWidth={1.8} className="text-zinc-600" />
-                        <span className="tracking-wide">Buildy</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ONLY RECENT SECTION SCROLLABLE */}
-                  <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
-                    <span className="text-[13px] font-semibold text-zinc-500 px-3 tracking-wide mb-2 shrink-0">
-                      Recent
-                    </span>
-
-                    <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
-                      {Object.keys(chatThreads).length === 0 ? (
-                        <div className="px-3 py-6 text-center text-xs text-zinc-500">
-                          No saved chats yet. Start a new conversation!
-                        </div>
-                      ) : (
-                        Object.values(chatThreads).map((thread) => {
-                          const topic = thread.title || thread.id;
-                          return (
-                            <div
-                              key={thread.id || topic}
-                              className={`w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
-                                topic === activeTopic
-                                  ? 'bg-sky-50 text-[#0a2a66] border-[#00a6ff]/35 font-semibold'
-                                  : 'hover:bg-sky-50/60 text-foreground border-transparent'
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleSelectRecentChat(topic)}
-                                className="flex items-center gap-3 truncate text-left flex-1 min-w-0 cursor-pointer"
-                              >
-                                <MessageSquare
-                                  size={17}
-                                  strokeWidth={1.8}
-                                  className={topic === activeTopic ? 'text-[#00a6ff] shrink-0' : 'text-zinc-500 shrink-0'}
-                                />
-                                <span className="truncate text-[14px]">
-                                  {topic}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (currentUser?.uid && thread.id) {
-                                    await deleteChatThreadFromFirestore(thread.id, currentUser.uid);
-                                    setChatThreads((prev) => {
-                                      const next = { ...prev };
-                                      delete next[topic];
-                                      return next;
-                                    });
-                                    if (activeTopic === topic) {
-                                      const remaining = Object.keys(chatThreads).filter((k) => k !== topic);
-                                      setActiveTopic(remaining[0] || '');
-                                    }
-                                  }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-500 transition-opacity ml-1 shrink-0 cursor-pointer"
-                                title="Delete chat"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* BOTTOM ACTIONS: ← Welcome + Spaced Account Row with Settings (Voices) Button */}
-              <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileSidebarOpen(false);
-                    onClose();
-                  }}
-                  className="w-full py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 theme-button-primary"
-                >
-                  <ArrowLeft size={17} className="text-white" />
-                  <span>Welcome</span>
-                </button>
 
                 {currentUser && !currentUser.isAnonymous ? (
-                  <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-sky-50/50 border border-border">
+                  <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-[#14141d] border border-white/10">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                      <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-[#00a6ff] flex items-center justify-center text-[#00a6ff] shadow-sm shrink-0 overflow-hidden">
+                      <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-[#0a7cf0] flex items-center justify-center text-[#38bdf8] shrink-0 overflow-hidden">
                         {currentUser?.photoURL ? (
                           <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                          <UserIcon size={17} className="fill-[#00a6ff] text-[#00a6ff]" />
+                          <UserIcon size={17} className="fill-[#0a7cf0] text-[#0a7cf0]" />
                         )}
                       </div>
                       <div className="flex flex-col min-w-0 truncate">
-                        <span className="text-[13px] font-bold text-foreground leading-tight truncate">
+                        <span className="text-[13px] font-bold text-white leading-tight truncate">
                           {currentUser.displayName || currentUser.email?.split('@')[0]}
                         </span>
-                        <span className="text-[11px] text-zinc-500 truncate">
+                        <span className="text-[11px] text-zinc-400 truncate">
                           {currentUser.email || 'Cloud Account'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsVoiceSettingsOpen(true);
-                          setIsMobileSidebarOpen(false);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                        title="Voice Settings"
-                        aria-label="Voice Settings"
-                      >
-                        <Settings size={13} className="text-[#00a6ff]" />
-                        <span>Settings</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await logOut();
-                          showToast('Signed out successfully');
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                        title="Sign Out"
-                      >
-                        <LogOut size={13} />
-                        <span>Sign Out</span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await logOut();
+                        showToast('Signed out successfully');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/25 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                      title="Sign Out"
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
                 ) : (
                   <div
                     onClick={handleOpenLogin}
-                    className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-2xl transition-colors"
+                    className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer bg-[#14141d] border border-white/10 hover:border-white/20 rounded-2xl transition-colors"
                     title="Click to sign in"
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                      <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-zinc-300 flex items-center justify-center text-zinc-600 shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-white/20 flex items-center justify-center text-zinc-300 shrink-0">
                         <UserIcon size={16} />
                       </div>
                       <div className="flex flex-col min-w-0 truncate">
-                        <span className="text-[13px] font-bold text-foreground leading-tight truncate">
+                        <span className="text-[13px] font-bold text-white leading-tight truncate">
                           Guest User
                         </span>
-                        <span className="text-[11px] text-zinc-500 truncate">
-                          Session Active
+                        <span className="text-[11px] text-zinc-400 truncate">
+                          Saved in Browser
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsVoiceSettingsOpen(true);
-                          setIsMobileSidebarOpen(false);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                        title="Voice Settings"
-                        aria-label="Voice Settings"
-                      >
-                        <Settings size={13} className="text-[#00a6ff]" />
-                        <span>Settings</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenLogin();
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
-                      >
-                        Sign In
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenLogin();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#0a7cf0] hover:bg-[#096dd4] text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                    >
+                      Sign In
+                    </button>
                   </div>
                 )}
               </div>
@@ -4966,12 +6261,14 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
 
           return (
             <>
-              {/* Desktop Floating Curved-Box Sidebar */}
-              <div className="hidden md:flex md:p-4 md:pr-2 h-full shrink-0 z-20">
-                {renderCurvedMenuCard(false)}
-              </div>
+              {/* Desktop Floating Curved-Box Sidebar (Closable for Full-Screen Chat) */}
+              {isDesktopSidebarOpen && (
+                <div className="hidden md:flex md:p-4 md:pr-2 h-full shrink-0 z-20">
+                  {renderCurvedMenuCard(false)}
+                </div>
+              )}
 
-              {/* Mobile Floating Curved-Box Modal Overlay (Identical to Welcome Screen) */}
+              {/* Mobile Floating Curved-Box Modal Overlay */}
               <AnimatePresence>
                 {isMobileSidebarOpen && (
                   <motion.div
@@ -4979,7 +6276,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => setIsMobileSidebarOpen(false)}
-                    className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-start p-2 sm:p-6 md:hidden"
+                    className="fixed inset-0 bg-black/65 z-50 flex items-center justify-start p-2 sm:p-6 md:hidden"
                   >
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95, x: -40 }}
@@ -5001,25 +6298,27 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
         {/* RIGHT MAIN CHAT AREA */}
         {/* ------------------------------------------------------------- */}
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* Top Header Row for Desktop & Mobile */}
-          <div className={`flex items-center justify-between px-4 sm:px-8 py-3 border-b z-30 transition-colors ${
-            isLight
-              ? 'bg-[var(--surface)]/90 border-border/80 backdrop-blur-md text-foreground shadow-[var(--shadow-neumorphic-soft)]'
-              : 'bg-surface/60 border-border/10 backdrop-blur-md text-foreground'
-          }`}>
+          {/* Top Header Row for Desktop & Mobile (Solid surface, no blur, no Settings/API button) */}
+          <div className="flex items-center justify-between px-4 sm:px-8 py-3 bg-surface border-b border-border/60 z-30 transition-colors text-foreground">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setIsMobileSidebarOpen(true)}
-                className={`md:hidden p-2 rounded-xl flex items-center gap-2 text-sm ${
-                  isLight
-                    ? 'bg-surface text-foreground border border-border shadow-sm'
-                    : 'bg-surface text-foreground'
-                }`}
+                className="md:hidden p-2 rounded-xl neu-raise flex items-center gap-2 text-sm text-foreground cursor-pointer"
               >
                 <Menu size={18} />
                 <span>Menu</span>
               </button>
+              {!isDesktopSidebarOpen && (
+                <button
+                  type="button"
+                  onClick={() => setIsDesktopSidebarOpen(true)}
+                  className="hidden md:flex p-2 px-3 rounded-xl neu-raise items-center gap-2 text-sm text-foreground cursor-pointer"
+                >
+                  <Menu size={18} />
+                  <span>Menu</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -5027,21 +6326,12 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                 <button
                   type="button"
                   onClick={() => setIsExploreGptsOpen(true)}
-                  className="px-2.5 py-1 rounded-full bg-[#00a6ff]/10 border border-[#00a6ff]/30 text-[11px] font-bold text-[#0a2a66] flex items-center gap-1.5 cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-[var(--primary)]/12 border border-[var(--primary)]/35 text-[11px] font-bold text-foreground flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                 >
-                  <Wand2 size={12} className="text-[#00a6ff]" />
+                  <Wand2 size={12} className="text-[var(--primary-light)]" />
                   <span>{activeSkill.name}</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setIsVoiceCallOpen(true)}
-                className="px-3 py-1.5 rounded-full bg-zinc-950 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                title={`Open ${activePersona} Voice & Camera Assistant`}
-              >
-                <AudioLines size={13} className="text-[#38bdf8]" />
-                <span>{activePersona}</span>
-              </button>
             </div>
           </div>
 
@@ -5268,6 +6558,119 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                     </div>
                   )}
 
+                  {/* Creative Studio HTML/Canvas Composition Box */}
+                  {message.studioJob && (
+                    <StudioCompositionBox
+                      studioJob={message.studioJob}
+                      onOpenFullscreen={(job) => setFullscreenStudioJob(job)}
+                    />
+                  )}
+
+                  {/* Loaded Image Loading Skeleton, Generated Image Card, or Image Error Notice */}
+                  {message.isImageLoading && (
+                    <div className="my-2 max-w-[340px] w-full rounded-2xl neu-raise p-3 space-y-2.5">
+                      <div className="w-full h-56 rounded-xl bg-[var(--primary)]/10 animate-pulse flex flex-col items-center justify-center gap-2 border border-[var(--primary)]/25">
+                        <Loader2 size={22} className="animate-spin text-[var(--primary-light)]" />
+                        <span className="text-xs font-bold text-foreground">
+                          Analyzing prompt &amp; rendering real AI image...
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {message.generatedImage && !message.isImageLoading && (
+                    <CompactGeneratedImageCard
+                      image={message.generatedImage}
+                      isBusy={isSendLocked || isAiTyping}
+                      onRegenerate={(img) => {
+                        if (isSendLocked || isAiTyping) return;
+                        setIsSendLocked(true);
+                        const aiId = `ai-${Date.now()}`;
+                        const placeholder: ChatMessage = {
+                          id: aiId,
+                          sender: 'ai',
+                          text: '',
+                          isStreaming: true,
+                          isImageLoading: true,
+                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        };
+                        setChatThreads((prev) => {
+                          const t = prev[activeTopic];
+                          if (!t) return prev;
+                          return { ...prev, [activeTopic]: { ...t, messages: [...t.messages, placeholder] } };
+                        });
+                        executeImageGenerationOrEdit(activeTopic, aiId, img.originalPrompt || 'Regenerate image', {
+                          mode: 'regenerate',
+                          sourceImage: img,
+                        });
+                      }}
+                      onEditSubmit={(img, instruction) => {
+                        if (isSendLocked || isAiTyping) return;
+                        setIsSendLocked(true);
+                        const uId = `user-${Date.now()}`;
+                        const aiId = `ai-${Date.now() + 1}`;
+                        const uMsg: ChatMessage = {
+                          id: uId,
+                          sender: 'user',
+                          text: instruction,
+                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        };
+                        const placeholder: ChatMessage = {
+                          id: aiId,
+                          sender: 'ai',
+                          text: '',
+                          isStreaming: true,
+                          isImageLoading: true,
+                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        };
+                        setChatThreads((prev) => {
+                          const t = prev[activeTopic];
+                          if (!t) return prev;
+                          return { ...prev, [activeTopic]: { ...t, messages: [...t.messages, uMsg, placeholder] } };
+                        });
+                        executeImageGenerationOrEdit(activeTopic, aiId, instruction, {
+                          mode: 'edit',
+                          sourceImage: img,
+                        });
+                      }}
+                      onVariation={(img) => {
+                        if (isSendLocked || isAiTyping) return;
+                        setIsSendLocked(true);
+                        const aiId = `ai-${Date.now()}`;
+                        const placeholder: ChatMessage = {
+                          id: aiId,
+                          sender: 'ai',
+                          text: '',
+                          isStreaming: true,
+                          isImageLoading: true,
+                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        };
+                        setChatThreads((prev) => {
+                          const t = prev[activeTopic];
+                          if (!t) return prev;
+                          return { ...prev, [activeTopic]: { ...t, messages: [...t.messages, placeholder] } };
+                        });
+                        executeImageGenerationOrEdit(
+                          activeTopic,
+                          aiId,
+                          `Create a creative visual variation while keeping core subject: ${img.originalPrompt}`,
+                          { mode: 'edit', sourceImage: img }
+                        );
+                      }}
+                    />
+                  )}
+
+                  {message.imageError && !message.isImageLoading && (
+                    <ImageErrorNoticeCard
+                      errorText={message.imageError.message}
+                      code={message.imageError.code}
+                      onOpenSettings={() => {
+                        setApiSettingsTab('api-keys');
+                        setIsApiSettingsOpen(true);
+                      }}
+                    />
+                  )}
+
                   {/* Loaded Answer Content with typing animation and tactile vibration */}
                   {message.text && (
                     <motion.div
@@ -5352,18 +6755,34 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                     </div>
                   )}
 
-                  {/* Sections with high-contrast bold prose, interactive tables, Recharts, and Creative Studio Image/Video Cards */}
+                  {/* Sections with high-contrast bold prose, interactive tables, Recharts, and Creative Studio Image Cards */}
                   {(() => {
-                    const msgVideoPlan = extractVideoPlan(message.text);
                     const msgStudioTool = extractStudioToolCall(message.text);
-                    return message.structuredContent?.sections?.map((section, sIdx) => (
+                    return message.structuredContent?.sections?.map((section, sIdx) => {
+                      const codeLang = (section.codeLanguage || '').toLowerCase();
+                      const isHiddenVideoPlanJson =
+                        Boolean(section.codeSnippet) &&
+                        codeLang === 'json' &&
+                        Boolean(section.codeSnippet?.includes('"scenes"'));
+                      const isStudioMediaSection =
+                        Boolean(section.codeSnippet) &&
+                        (codeLang === 'html' || /<div[^>]+id=["']canvas["']|window\.VIDEO|<canvas[\s\S]*requestAnimationFrame/i.test(section.codeSnippet || '')) &&
+                        classifyStudioHtmlBlock(section.codeSnippet || '') !== null;
+
+                      if (isHiddenVideoPlanJson) {
+                        return null;
+                      }
+
+                      return (
                       <div key={sIdx} className="space-y-3.5 pt-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-1.5 h-5 bg-[var(--primary)] rounded-full shrink-0" />
-                          <h3 className="text-lg sm:text-2xl font-extrabold text-foreground tracking-[-0.015em] leading-[1.3]">
-                            {section.title}
-                          </h3>
-                        </div>
+                        {!isStudioMediaSection && !section.imageCardSnippet && Boolean(section.title) && (
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-1.5 h-5 bg-[var(--primary)] rounded-full shrink-0" />
+                            <h3 className="text-lg sm:text-2xl font-extrabold text-foreground tracking-[-0.015em] leading-[1.3]">
+                              {section.title}
+                            </h3>
+                          </div>
+                        )}
 
                         {section.description && (
                           <div className="text-foreground text-sm sm:text-base md:text-[17px] leading-relaxed font-bold">
@@ -5410,22 +6829,20 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                             if (msgStudioTool && section.codeSnippet.includes('"tool"')) {
                               return <StudioToolBadge toolCall={msgStudioTool} />;
                             }
-                            if (msgVideoPlan && section.codeSnippet.includes('"segments"') && section.codeSnippet.includes('"scenes"')) {
+                            if (section.codeSnippet.includes('"scenes"')) {
                               return null;
                             }
                           }
-                          if (codeLang === 'html' || /<div[^>]+id=["']canvas["']|window\.VIDEO/i.test(section.codeSnippet)) {
+                          if (
+                            codeLang === 'html' ||
+                            /<div[^>]+id=["']canvas["']|window\.VIDEO|<canvas[\s\S]*requestAnimationFrame/i.test(section.codeSnippet)
+                          ) {
                             const studioKind = classifyStudioHtmlBlock(section.codeSnippet);
-                            if (studioKind === 'video' && msgVideoPlan) {
+                            if (studioKind === 'video') {
                               return (
-                                <StudioVideoPlayerCard
-                                  htmlCode={section.codeSnippet}
-                                  videoPlan={msgVideoPlan}
-                                  uploadsMap={studioUploadsMap}
-                                  userVoiceover={latestUserVoiceover}
-                                  onOpenFullScreenEditor={(code, fn, lg) => handleOpenEditor(code, fn, lg)}
-                                  onTimingDriftReport={(reportJson) => sendProgrammaticMessage(reportJson)}
-                                />
+                                <div className="px-4 py-3 rounded-2xl neu-raise text-xs font-semibold text-muted-foreground">
+                                  Video generation is currently turned off in this app. Try generating an image, thumbnail, or poster instead.
+                                </div>
                               );
                             }
                             if (studioKind === 'image') {
@@ -5456,7 +6873,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                           );
                         })()}
                       </div>
-                    ));
+                      );
+                    });
                   })()}
 
                   {/* Visual Timetable Card with 1-Click PNG Download */}
@@ -5484,6 +6902,32 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                     }
                     return null;
                   })()}
+
+                  {/* Post-Generation Studio Tweak Chips */}
+                  {!message.isStreaming &&
+                    message.studioJob?.status === 'done' &&
+                    message.tweakChips &&
+                    message.tweakChips.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {message.tweakChips.map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            disabled={isSendLocked || isAiTyping}
+                            onClick={() =>
+                              handleStudioTweakOrRegen(
+                                message.studioJob!,
+                                chip,
+                                chip.toLowerCase() === 'regenerate'
+                              )
+                            }
+                            className="h-8 px-3 rounded-xl neu-raise text-xs font-semibold text-foreground/85 hover:text-foreground transition-all cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                   {/* Bottom Action Bar: Revert, Copy, Read Aloud (with Loading), Sources Pill, Three-Dot Menu (Summarize, Export PDF, Retry, Delete, Sources) */}
                   {!message.isStreaming && typingAnimationMsgId !== message.id && (
@@ -5567,6 +7011,63 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                           </button>
                         )}
 
+                        {/* Feedback Buttons: Thumbs Up / Thumbs Down */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatThreads((prev) => {
+                              const t = prev[activeTopic];
+                              if (!t) return prev;
+                              return {
+                                ...prev,
+                                [activeTopic]: {
+                                  ...t,
+                                  messages: t.messages.map((m) =>
+                                    m.id === message.id ? { ...m, feedback: m.feedback === 'up' ? null : 'up' } : m
+                                  ),
+                                },
+                              };
+                            });
+                          }}
+                          className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                            message.feedback === 'up'
+                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                              : 'bg-surface/5 hover:bg-surface/15 border-border/20 text-foreground'
+                          }`}
+                          title="Good response"
+                          aria-label="Thumbs up"
+                        >
+                          <ThumbsUp size={13} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatThreads((prev) => {
+                              const t = prev[activeTopic];
+                              if (!t) return prev;
+                              return {
+                                ...prev,
+                                [activeTopic]: {
+                                  ...t,
+                                  messages: t.messages.map((m) =>
+                                    m.id === message.id ? { ...m, feedback: m.feedback === 'down' ? null : 'down' } : m
+                                  ),
+                                },
+                              };
+                            });
+                          }}
+                          className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                            message.feedback === 'down'
+                              ? 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                              : 'bg-surface/5 hover:bg-surface/15 border-border/20 text-foreground'
+                          }`}
+                          title="Needs improvement"
+                          aria-label="Thumbs down"
+                        >
+                          <ThumbsDown size={13} />
+                        </button>
+
                         {/* Three-Dot Overflow Menu: Summarize, Export to PDF, Retry, Delete, Sources */}
                         <div className="relative">
                           <button
@@ -5576,7 +7077,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                             }
                             className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
                               moreMenuMsgId === message.id
-                                ? 'bg-zinc-950 text-white border-zinc-950'
+                                ? 'theme-button-primary border-[var(--primary)]'
                                 : 'bg-surface/5 hover:bg-surface/15 border-border/20 text-foreground'
                             }`}
                             title="More actions"
@@ -5591,7 +7092,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                 initial={{ opacity: 0, y: 8, scale: 0.96 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
-                                className="absolute left-0 bottom-full mb-2 w-52 rounded-2xl bg-white border border-border shadow-2xl p-1.5 z-50 text-xs"
+                                className="absolute left-0 bottom-full mb-2 w-52 rounded-2xl neu-glass border border-[var(--gb)] shadow-2xl p-1.5 z-50 text-xs text-foreground"
                               >
                                 <button
                                   type="button"
@@ -5684,7 +7185,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                 exit={{ opacity: 0, y: 10, scale: 0.9 }}
                 type="button"
                 onClick={() => scrollToBottom(true)}
-                className="absolute bottom-28 sm:bottom-28 right-6 sm:right-12 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-surface/95 hover:bg-surface text-foreground border border-border/80 hover:border-border shadow-[var(--shadow-neumorphic-soft)] text-xs font-bold tracking-wide backdrop-blur-xl transition-all cursor-pointer pointer-events-auto group active:scale-95"
+                className="absolute bottom-28 sm:bottom-28 right-6 sm:right-12 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-surface hover:bg-surface text-foreground border border-border/80 hover:border-border shadow-[var(--shadow-neumorphic-soft)] text-xs font-bold tracking-wide transition-all cursor-pointer pointer-events-auto group active:scale-95"
               >
                 <div className="w-5 h-5 rounded-full bg-surface border border-border flex items-center justify-center text-foreground shrink-0 group-hover:bg-surface transition-colors">
                   <ArrowDown size={13} className="text-foreground group-hover:translate-y-0.5 transition-transform" />
@@ -5741,6 +7242,11 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                         variant="chat"
                         requestText={buildyRedirectRequest!}
                         onClose={() => setBuildyRedirectRequest(null)}
+                        onOpenBuildy={(reqText) => {
+                          setBuildyRedirectRequest(null);
+                          setBuildyInitialPrompt(reqText);
+                          setIsBuildyOpen(true);
+                        }}
                         onDraftPrompt={(reqText) => {
                           setBuildyRedirectRequest(null);
                           sendProgrammaticMessage(
@@ -5780,12 +7286,12 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                               processChatFiles(e.dataTransfer.files);
                             }
                           }}
-                          className={`fixed-prompt-box relative rounded-[28px] sm:rounded-[32px] bg-surface text-foreground px-5 pt-4 pb-3 shadow-[var(--shadow-neumorphic-soft)] border transition-all ${
+                          className={`fixed-prompt-box relative rounded-[28px] sm:rounded-[32px] bg-white text-zinc-900 px-5 pt-4 pb-3 border transition-all ${
                             isDraggingOver
                               ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/30'
                               : activeSkill
-                              ? 'border-[#00a6ff] ring-2 ring-[#00a6ff]/20'
-                              : 'border-border/90'
+                              ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/25'
+                              : 'border-zinc-200/90'
                           }`}
                         >
                           {/* Active AI Skill Chip */}
@@ -5832,7 +7338,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                               }
                             }}
                             onPaste={handleChatPaste}
-                            className="w-full bg-transparent text-foreground text-sm sm:text-base font-normal placeholder:text-foreground focus:outline-none pb-2.5 tracking-wide disabled:opacity-60"
+                            className="w-full bg-transparent text-zinc-900 text-sm sm:text-base font-normal placeholder:text-zinc-500 focus:outline-none pb-2.5 tracking-wide disabled:opacity-60"
                           />
 
                           {/* Attached Files Strip (Only image shown for images, no name pill) */}
@@ -5864,7 +7370,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                   type="button"
                                   disabled={isSendLocked || isAiTyping}
                                   onClick={() => chatFileInputRef.current?.click()}
-                                  className="w-8 h-8 rounded-full hover:bg-surface text-foreground flex items-center justify-center transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  className="w-8 h-8 rounded-full hover:bg-zinc-100 text-zinc-800 flex items-center justify-center transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                                   title="Attach files (Max 10)"
                                   aria-label="Attach files (Max 10)"
                                 >
@@ -5875,7 +7381,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                   type="button"
                                   disabled={isSendLocked || isAiTyping}
                                   onClick={toggleMic}
-                                  className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-surface text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                                  className="w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-zinc-100 text-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
                                   title="Voice Input (STT with Live Animation)"
                                 >
                                   <Mic size={19} />
@@ -5890,14 +7396,14 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                     type="button"
                                     disabled={isSendLocked || isAiTyping}
                                     onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface hover:bg-surface text-foreground border border-border/90 text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-zinc-50 text-zinc-900 border border-zinc-200 text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                                   >
                                     <span>{selectedModel === 'Gemini 2.5' ? 'AI Studio 2.5' : selectedModel}</span>
-                                    <ChevronDown size={14} className="text-foreground" />
+                                    <ChevronDown size={14} className="text-zinc-600" />
                                   </button>
 
                                   {isModelDropdownOpen && !isSendLocked && !isAiTyping && (
-                                    <div className="absolute bottom-11 right-0 w-38 bg-surface text-foreground rounded-2xl shadow-2xl border border-border/90 p-1.5 z-50 text-xs space-y-0.5">
+                                    <div className="absolute bottom-11 right-0 w-38 bg-white text-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 p-1.5 z-50 text-xs space-y-0.5">
                                       {['GPT-4o', 'GPT-4o mini', 'AI Studio 2.5', 'Claude 3.7'].map((model) => (
                                         <button
                                           key={model}
@@ -5908,8 +7414,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                                           }}
                                           className={`w-full text-left px-3 py-2 rounded-xl transition-all font-medium ${
                                             selectedModel === model
-                                              ? 'bg-[var(--primary)] text-foreground shadow-md font-semibold'
-                                              : 'hover:bg-surface text-foreground'
+                                              ? 'bg-[var(--primary)] text-white shadow-md font-semibold'
+                                              : 'hover:bg-zinc-100 text-zinc-800'
                                           }`}
                                         >
                                           {model}
@@ -5952,9 +7458,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center justify-between pt-1 px-1 text-[11px] text-foreground font-medium">
+                            <div className="flex items-center justify-between pt-1 px-1 text-[11px] text-zinc-700 font-medium">
                               <span>Discovery question active above</span>
-                              <span className="text-foreground">Select an option to proceed</span>
+                              <span className="text-zinc-600">Select an option to proceed</span>
                             </div>
                           )}
                         </div>
@@ -6030,7 +7536,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[10002] bg-black/35 backdrop-blur-xs flex items-end justify-center p-0 sm:p-4"
+              className="fixed inset-0 z-[10002] bg-black/50 flex items-end justify-center p-0 sm:p-4"
               onClick={() => setActiveSourcesMsg(null)}
             >
               <motion.div
@@ -6128,17 +7634,30 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
           }}
         />
 
-        {/* Creative Studio (Thumbnails, Images, Video Templates, Voices, Cutouts) */}
-        <CreativeStudioModal
-          isOpen={isCreativeStudioOpen}
-          onClose={() => setIsCreativeStudioOpen(false)}
-          onLaunchPromptInChat={async (prompt, attachedFile) => {
-            setIsCreativeStudioOpen(false);
-            if (attachedFile?.preview && attachedFile.isImage) {
-              await registerStudioUpload(attachedFile.preview, attachedFile.name, attachedFile.type || 'image/png');
-            }
-            sendProgrammaticMessage(prompt);
+        {/* Buildy Embedded HTML Workspace Modal */}
+        <BuildyWorkspaceModal
+          isOpen={isBuildyOpen}
+          onClose={() => {
+            setIsBuildyOpen(false);
+            setBuildyInitialPrompt(undefined);
           }}
+          initialPrompt={buildyInitialPrompt}
+          onOpenSettings={() => {
+            setIsBuildyOpen(false);
+            setApiSettingsTab('api-keys');
+            setIsApiSettingsOpen(true);
+          }}
+        />
+
+        {/* AI API Key Management & Image Defaults + Voices Modal */}
+        <AiApiSettingsModal
+          isOpen={isApiSettingsOpen}
+          onClose={() => setIsApiSettingsOpen(false)}
+          initialTab={apiSettingsTab}
+          onVoiceChanged={() => setActivePersona(getActiveAssistantPersona())}
+          onOpenLogin={handleOpenLogin}
+          imageOptions={imageOptions}
+          onImageOptionsChange={setImageOptions}
         />
 
         {/* Explore Creative Skills Modal (Built-In Skills Only) */}
@@ -6158,7 +7677,108 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs.
           onClose={() => setIsVoiceSettingsOpen(false)}
           onVoiceChanged={() => setActivePersona(getActiveAssistantPersona())}
         />
-      </motion.div>
-    </AnimatePresence>
+
+        {/* Creative Studio Confirmation Popup */}
+        <StudioConfirmDialog
+          isOpen={Boolean(pendingStudioConfirm)}
+          popup={
+            pendingStudioConfirm?.popup || {
+              title: 'Generate an image?',
+              body: 'Do you agree to generate this image?',
+              yes: 'Generate',
+              no: 'Cancel',
+            }
+          }
+          promptPreview={pendingStudioConfirm?.messageText || ''}
+          recipe={pendingStudioConfirm?.recipe}
+          isLoadingQuestions={Boolean(pendingStudioConfirm?.isLoadingQuestions)}
+          onCancel={() => {
+            if (pendingStudioConfirm) {
+              removePendingPlaceholder(pendingStudioConfirm.topicKey, pendingStudioConfirm.aiMsgId);
+            }
+            setPendingStudioConfirm(null);
+            setIsSendLocked(false);
+          }}
+          onConfirm={async () => {
+            if (!pendingStudioConfirm) return;
+            const ctx = pendingStudioConfirm;
+            setPendingStudioConfirm((curr) => (curr ? { ...curr, isLoadingQuestions: true } : null));
+            try {
+              const token = await getFirebaseIdToken().catch(() => null);
+              const qRes = await studioApi.questions(
+                {
+                  message: ctx.messageText,
+                  attachments: buildStudioAttachmentsMeta(ctx.attachments, ctx.facts),
+                  recipeOverride: ctx.recipe || null,
+                  intentOverride: ctx.intentOverride || null,
+                },
+                token
+              );
+              setPendingStudioConfirm(null);
+              if (qRes.questions && qRes.questions.length > 0) {
+                setPendingStudioQuestions({
+                  ...ctx,
+                  questions: qRes.questions,
+                });
+              } else {
+                launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, {}, {
+                  recipeOverride: ctx.recipe || null,
+                  intentOverride: ctx.intentOverride || null,
+                  previousPlan: ctx.previousPlan,
+                });
+              }
+            } catch {
+              setPendingStudioConfirm(null);
+              launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, {}, {
+                recipeOverride: ctx.recipe || null,
+                intentOverride: ctx.intentOverride || null,
+                previousPlan: ctx.previousPlan,
+              });
+            }
+          }}
+        />
+
+        {/* Creative Studio Quick-Setup Questions Dialog */}
+        <StudioQuestionsDialog
+          isOpen={Boolean(pendingStudioQuestions)}
+          questions={pendingStudioQuestions?.questions || []}
+          recipe={pendingStudioQuestions?.recipe}
+          onCancel={() => {
+            if (pendingStudioQuestions) {
+              removePendingPlaceholder(pendingStudioQuestions.topicKey, pendingStudioQuestions.aiMsgId);
+            }
+            setPendingStudioQuestions(null);
+            setIsSendLocked(false);
+          }}
+          onGenerateNow={(answers) => {
+            if (!pendingStudioQuestions) return;
+            const ctx = pendingStudioQuestions;
+            setPendingStudioQuestions(null);
+            launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, answers, {
+              recipeOverride: ctx.recipe || null,
+              intentOverride: ctx.intentOverride || null,
+              previousPlan: ctx.previousPlan,
+            });
+          }}
+          onSubmit={(answers) => {
+            if (!pendingStudioQuestions) return;
+            const ctx = pendingStudioQuestions;
+            setPendingStudioQuestions(null);
+            launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, answers, {
+              recipeOverride: ctx.recipe || null,
+              intentOverride: ctx.intentOverride || null,
+              previousPlan: ctx.previousPlan,
+            });
+          }}
+        />
+
+        {/* Creative Studio Fullscreen Viewer (Cut, Download PNG, Cross, Tweak) */}
+        <StudioFullscreenModal
+          studioJob={fullscreenStudioJob}
+          onClose={() => setFullscreenStudioJob(null)}
+          onRegenerate={(job) => handleStudioTweakOrRegen(job, job.prompt, true)}
+          onEditInstruction={(job, instruction) => handleStudioTweakOrRegen(job, instruction, false)}
+        />
+      </div>
   );
 };

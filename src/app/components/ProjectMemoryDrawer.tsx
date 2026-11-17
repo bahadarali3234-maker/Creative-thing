@@ -111,7 +111,7 @@ export const ProjectMemoryDrawer: React.FC<ProjectMemoryDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/70">
       <motion.div
         initial={{ opacity: 0, x: 380 }}
         animate={{ opacity: 1, x: 0 }}
@@ -120,7 +120,7 @@ export const ProjectMemoryDrawer: React.FC<ProjectMemoryDrawerProps> = ({
         className="w-full max-w-2xl h-full bg-[#0a0a0c] border-l border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
       >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/80 backdrop-blur">
+        <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-950">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-red-950/40 border border-red-800/40 flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(255,24,40,0.25)]">
               <FolderGit2 className="w-5 h-5" />

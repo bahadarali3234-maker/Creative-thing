@@ -66,7 +66,7 @@ export const ReferenceDisplayCard: React.FC<ReferenceDisplayCardProps> = ({
         {selectedImage && (
           <div
             onClick={() => setSelectedImage(null)}
-            className="fixed inset-0 z-[10002] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-[10002] flex items-center justify-center p-4 bg-black/80"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}

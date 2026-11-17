@@ -1,0 +1,658 @@
+[
+ {
+  "id": "thumbnail",
+  "name": "YouTube thumbnail",
+  "defaultSize": "yt-thumbnail",
+  "altSizes": [
+   "x-post",
+   "fb-post"
+  ],
+  "stylePrefs": [
+   "bold-yt-thumbnail",
+   "neon-cyberpunk",
+   "pop-art-comic",
+   "cinematic-poster",
+   "anime-glow"
+  ],
+  "layoutPrefs": [
+   "text-left-subject-right",
+   "subject-left-text-right",
+   "split-diagonal",
+   "versus-split"
+  ],
+  "textRules": "3-5 words, huge, max 2 lines; one keyword in accent colour; no full sentences.",
+  "mustHave": [
+   "one clear focal subject",
+   "strong contrast",
+   "text readable at 120px width",
+   "bottom-right 12% free"
+  ],
+  "avoid": [
+   "small text",
+   "more than 3 colours",
+   "busy background behind text"
+  ],
+  "checklist": [
+   "Title <= 5 words",
+   "Contrast ratio >= 4.5",
+   "Subject occupies >= 35% height",
+   "Nothing important in bottom-right 12%"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "poster",
+  "name": "Poster",
+  "defaultSize": "a4-portrait",
+  "altSizes": [
+   "ig-portrait",
+   "pinterest-pin"
+  ],
+  "stylePrefs": [
+   "cinematic-poster",
+   "magazine-editorial",
+   "minimal-swiss",
+   "dark-luxury",
+   "synthwave-retro",
+   "brutalist",
+   "riso-retro-print"
+  ],
+  "layoutPrefs": [
+   "poster-stack",
+   "centered-hero",
+   "photo-bottom-plate"
+  ],
+  "textRules": "One headline (<= 7 words), one supporting line, small details line (date/venue/CTA).",
+  "mustHave": [
+   "clear hierarchy 3 levels",
+   "contact/CTA line if event"
+  ],
+  "avoid": [
+   "more than 3 font sizes",
+   "text on busy areas without plate"
+  ],
+  "checklist": [
+   "Hierarchy has exactly 3 levels",
+   "Margins >= 5%",
+   "CTA/details present when event"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "ig-post",
+  "name": "Instagram / social post",
+  "defaultSize": "ig-portrait",
+  "altSizes": [
+   "ig-square",
+   "fb-post",
+   "x-post"
+  ],
+  "stylePrefs": [
+   "gradient-mesh-modern",
+   "sticker-pop",
+   "pastel-soft",
+   "glassmorphism",
+   "flat-vector",
+   "doodle-hand-drawn"
+  ],
+  "layoutPrefs": [
+   "centered-hero",
+   "product-spotlight",
+   "quote-center",
+   "collage-grid"
+  ],
+  "textRules": "Headline <= 8 words; optional handle line at bottom.",
+  "mustHave": [
+   "swipe-stopping focal point",
+   "brand colour consistency"
+  ],
+  "avoid": [
+   "tiny text",
+   "edge-hugging text"
+  ],
+  "checklist": [
+   "Safe margin 6%",
+   "Headline readable on phone"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "story-reel",
+  "name": "Story / Reel cover",
+  "defaultSize": "story-reel",
+  "altSizes": [
+   "phone-wallpaper"
+  ],
+  "stylePrefs": [
+   "sticker-pop",
+   "gradient-mesh-modern",
+   "anime-glow",
+   "bold-yt-thumbnail"
+  ],
+  "layoutPrefs": [
+   "story-vertical"
+  ],
+  "textRules": "Title 2-6 words in the middle third; CTA in lower area above bottom 18%.",
+  "mustHave": [
+   "top 13% and bottom 18% free of key content"
+  ],
+  "avoid": [
+   "small text"
+  ],
+  "checklist": [
+   "Safe zones respected"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "banner",
+  "name": "Social banner / channel art",
+  "defaultSize": "yt-banner",
+  "altSizes": [
+   "x-header",
+   "linkedin-banner",
+   "fb-cover"
+  ],
+  "stylePrefs": [
+   "gradient-mesh-modern",
+   "neon-cyberpunk",
+   "minimal-swiss",
+   "glassmorphism",
+   "cinematic-poster"
+  ],
+  "layoutPrefs": [
+   "banner-safe-wide",
+   "text-left-subject-right"
+  ],
+  "textRules": "Brand/name large + one-line tagline inside the safe area.",
+  "mustHave": [
+   "all key content inside safe area",
+   "works when cropped to mobile"
+  ],
+  "avoid": [
+   "text near edges"
+  ],
+  "checklist": [
+   "Safe area respected",
+   "Tagline <= 8 words"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "quote-card",
+  "name": "Quote card",
+  "defaultSize": "ig-square",
+  "altSizes": [
+   "ig-portrait",
+   "story-reel"
+  ],
+  "stylePrefs": [
+   "pastel-soft",
+   "watercolor-wash",
+   "dark-luxury",
+   "minimal-swiss",
+   "doodle-hand-drawn",
+   "magazine-editorial"
+  ],
+  "layoutPrefs": [
+   "quote-center",
+   "centered-hero"
+  ],
+  "textRules": "Quote <= 22 words, author on separate line; use proper quotation marks.",
+  "mustHave": [
+   "decorative quote mark",
+   "author line"
+  ],
+  "avoid": [
+   "quote text under 4% of height"
+  ],
+  "checklist": [
+   "Quote fits without shrinking below 4% of height",
+   "Author present if provided"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "logo",
+  "name": "Logo / wordmark",
+  "defaultSize": "logo-square",
+  "altSizes": [],
+  "stylePrefs": [
+   "minimal-swiss",
+   "dark-luxury",
+   "flat-vector",
+   "brutalist"
+  ],
+  "layoutPrefs": [
+   "centered-hero"
+  ],
+  "textRules": "Brand name only (+ optional 3-word tagline).",
+  "mustHave": [
+   "simple geometric symbol built in SVG",
+   "works in one colour",
+   "generous padding"
+  ],
+  "avoid": [
+   "gradients that break in one colour",
+   "tiny taglines",
+   "photos"
+  ],
+  "checklist": [
+   "Symbol readable at 64px",
+   "<= 2 colours + neutral"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "infographic",
+  "name": "Infographic",
+  "defaultSize": "ig-portrait",
+  "altSizes": [
+   "a4-portrait",
+   "pinterest-pin"
+  ],
+  "stylePrefs": [
+   "flat-vector",
+   "blueprint-tech",
+   "isometric-3d-css",
+   "gradient-mesh-modern",
+   "minimal-swiss"
+  ],
+  "layoutPrefs": [
+   "collage-grid",
+   "big-number",
+   "poster-stack"
+  ],
+  "textRules": "Title + 3-6 numbered points, each <= 14 words; numbers big.",
+  "mustHave": [
+   "numbered structure",
+   "icons from motifs/SVG",
+   "consistent spacing"
+  ],
+  "avoid": [
+   "paragraphs",
+   "more than 6 blocks"
+  ],
+  "checklist": [
+   "Blocks aligned to a grid",
+   "Only facts the user gave (never invent statistics)"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "wallpaper",
+  "name": "Wallpaper",
+  "defaultSize": "phone-wallpaper",
+  "altSizes": [
+   "desktop-wallpaper"
+  ],
+  "stylePrefs": [
+   "synthwave-retro",
+   "gradient-mesh-modern",
+   "holographic",
+   "anime-glow",
+   "cinematic-poster",
+   "neon-cyberpunk"
+  ],
+  "layoutPrefs": [
+   "centered-hero",
+   "story-vertical"
+  ],
+  "textRules": "Text optional; if used, short and low-contrast to avoid clutter.",
+  "mustHave": [
+   "calm area for clock/icons",
+   "pleasing gradient or scene"
+  ],
+  "avoid": [
+   "dense detail in top 25%"
+  ],
+  "checklist": [
+   "Top 25% calm for phone"
+  ],
+  "needsText": false,
+  "usesPhotos": true
+ },
+ {
+  "id": "product-ad",
+  "name": "Product ad",
+  "defaultSize": "ig-square",
+  "altSizes": [
+   "ig-portrait",
+   "fb-post",
+   "story-reel"
+  ],
+  "stylePrefs": [
+   "dark-luxury",
+   "gradient-mesh-modern",
+   "sticker-pop",
+   "minimal-swiss",
+   "glassmorphism"
+  ],
+  "layoutPrefs": [
+   "product-spotlight",
+   "centered-hero"
+  ],
+  "textRules": "Product name, 1 benefit line, price/offer badge, CTA.",
+  "mustHave": [
+   "product cut-out with contact shadow",
+   "price/offer badge",
+   "CTA"
+  ],
+  "avoid": [
+   "inventing prices or claims the user did not give"
+  ],
+  "checklist": [
+   "No made-up prices/claims",
+   "Product centred with shadow"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "profile-dp",
+  "name": "Profile picture / DP",
+  "defaultSize": "profile-dp",
+  "altSizes": [],
+  "stylePrefs": [
+   "sticker-pop",
+   "gradient-mesh-modern",
+   "anime-glow",
+   "flat-vector"
+  ],
+  "layoutPrefs": [
+   "centered-hero"
+  ],
+  "textRules": "Usually no text; initials optional.",
+  "mustHave": [
+   "subject inside central 80% (circle crop)"
+  ],
+  "avoid": [
+   "text near edges"
+  ],
+  "checklist": [
+   "Safe for circular crop"
+  ],
+  "needsText": false,
+  "usesPhotos": true
+ },
+ {
+  "id": "invitation",
+  "name": "Invitation",
+  "defaultSize": "a4-portrait",
+  "altSizes": [
+   "ig-portrait",
+   "story-reel"
+  ],
+  "stylePrefs": [
+   "paper-cut-layers",
+   "dark-luxury",
+   "watercolor-wash",
+   "pastel-soft",
+   "magazine-editorial"
+  ],
+  "layoutPrefs": [
+   "frame-border",
+   "poster-stack",
+   "centered-hero"
+  ],
+  "textRules": "Occasion title, names, date/time, venue, RSVP. Use ONLY details the user provided.",
+  "mustHave": [
+   "date/time/venue block",
+   "ornamental frame"
+  ],
+  "avoid": [
+   "inventing names/dates"
+  ],
+  "checklist": [
+   "All user-provided details present",
+   "No invented details"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "certificate",
+  "name": "Certificate",
+  "defaultSize": "a4-landscape",
+  "altSizes": [],
+  "stylePrefs": [
+   "dark-luxury",
+   "magazine-editorial",
+   "minimal-swiss"
+  ],
+  "layoutPrefs": [
+   "frame-border"
+  ],
+  "textRules": "Title, recipient name (largest), reason, date, signature lines.",
+  "mustHave": [
+   "frame border",
+   "signature line",
+   "seal motif"
+  ],
+  "avoid": [
+   "inventing names"
+  ],
+  "checklist": [
+   "Recipient name is the largest text after title"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "business-card",
+  "name": "Business card",
+  "defaultSize": "business-card",
+  "altSizes": [],
+  "stylePrefs": [
+   "minimal-swiss",
+   "dark-luxury",
+   "gradient-mesh-modern",
+   "brutalist"
+  ],
+  "layoutPrefs": [
+   "text-left-subject-right",
+   "centered-hero"
+  ],
+  "textRules": "Name, role, 3 contact lines max, tiny logo mark.",
+  "mustHave": [
+   "text >= 3.2% of height for contact lines"
+  ],
+  "avoid": [
+   "more than 5 text lines"
+  ],
+  "checklist": [
+   "Contact text legible at print size"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "flyer",
+  "name": "Flyer / sale offer",
+  "defaultSize": "a4-portrait",
+  "altSizes": [
+   "ig-portrait",
+   "story-reel"
+  ],
+  "stylePrefs": [
+   "pop-art-comic",
+   "brutalist",
+   "sticker-pop",
+   "bold-yt-thumbnail",
+   "paper-cut-layers"
+  ],
+  "layoutPrefs": [
+   "poster-stack",
+   "photo-bottom-plate"
+  ],
+  "textRules": "Offer headline huge; dates; 3 bullet benefits; CTA.",
+  "mustHave": [
+   "offer badge",
+   "CTA",
+   "contact/location line"
+  ],
+  "avoid": [
+   "inventing discounts"
+  ],
+  "checklist": [
+   "Offer numbers only from user"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "album-cover",
+  "name": "Album / podcast cover",
+  "defaultSize": "album-cover",
+  "altSizes": [],
+  "stylePrefs": [
+   "synthwave-retro",
+   "holographic",
+   "grunge-street",
+   "riso-retro-print",
+   "minimal-swiss"
+  ],
+  "layoutPrefs": [
+   "centered-hero"
+  ],
+  "textRules": "Title + artist; must read at 100px.",
+  "mustHave": [
+   "bold central motif"
+  ],
+  "avoid": [
+   "tiny text"
+  ],
+  "checklist": [
+   "Readable at 100px"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "book-cover",
+  "name": "Book cover",
+  "defaultSize": "book-cover",
+  "altSizes": [],
+  "stylePrefs": [
+   "cinematic-poster",
+   "magazine-editorial",
+   "minimal-swiss",
+   "watercolor-wash",
+   "dark-luxury"
+  ],
+  "layoutPrefs": [
+   "poster-stack",
+   "centered-hero"
+  ],
+  "textRules": "Title huge, subtitle, author at bottom.",
+  "mustHave": [
+   "author name",
+   "single strong visual idea"
+  ],
+  "avoid": [
+   "more than 2 fonts"
+  ],
+  "checklist": [
+   "Title readable as thumbnail"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "news-card",
+  "name": "News / announcement card",
+  "defaultSize": "fb-post",
+  "altSizes": [
+   "ig-square",
+   "x-post"
+  ],
+  "stylePrefs": [
+   "bold-yt-thumbnail",
+   "brutalist",
+   "cinematic-poster"
+  ],
+  "layoutPrefs": [
+   "photo-bottom-plate",
+   "text-left-subject-right"
+  ],
+  "textRules": "Headline <= 10 words, source tag, date. Only factual text provided by user.",
+  "mustHave": [
+   "source tag",
+   "plate behind text"
+  ],
+  "avoid": [
+   "sensational invented claims"
+  ],
+  "checklist": [
+   "No invented facts"
+  ],
+  "needsText": true,
+  "usesPhotos": true
+ },
+ {
+  "id": "menu",
+  "name": "Menu card",
+  "defaultSize": "a4-portrait",
+  "altSizes": [],
+  "stylePrefs": [
+   "magazine-editorial",
+   "dark-luxury",
+   "paper-cut-layers",
+   "flat-vector"
+  ],
+  "layoutPrefs": [
+   "frame-border",
+   "collage-grid"
+  ],
+  "textRules": "Sections with item + price from user only.",
+  "mustHave": [
+   "clear sections",
+   "aligned prices"
+  ],
+  "avoid": [
+   "inventing dishes/prices"
+  ],
+  "checklist": [
+   "Items/prices only from user"
+  ],
+  "needsText": true,
+  "usesPhotos": false
+ },
+ {
+  "id": "generic",
+  "name": "Generic image / design",
+  "defaultSize": "ig-square",
+  "altSizes": [
+   "yt-thumbnail",
+   "ig-portrait"
+  ],
+  "stylePrefs": [
+   "gradient-mesh-modern",
+   "flat-vector",
+   "glassmorphism"
+  ],
+  "layoutPrefs": [
+   "centered-hero"
+  ],
+  "textRules": "Short headline if any.",
+  "mustHave": [
+   "clear focal point"
+  ],
+  "avoid": [
+   "clutter"
+  ],
+  "checklist": [
+   "One focal point"
+  ],
+  "needsText": false,
+  "usesPhotos": false
+ }
+]

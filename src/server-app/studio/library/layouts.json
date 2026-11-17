@@ -1,0 +1,576 @@
+{
+ "unit": "all zone values are fractions of canvas width/height; multiply by W/H",
+ "layouts": [
+  {
+   "id": "text-left-subject-right",
+   "name": "Text left, subject right",
+   "bestFor": [
+    "thumbnail",
+    "banner",
+    "x-post"
+   ],
+   "aspects": [
+    "landscape"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.05,
+     "y": 0.06,
+     "w": 0.25,
+     "h": 0.09
+    },
+    "title": {
+     "x": 0.05,
+     "y": 0.2,
+     "w": 0.55,
+     "h": 0.5,
+     "align": "left"
+    },
+    "subtitle": {
+     "x": 0.05,
+     "y": 0.74,
+     "w": 0.55,
+     "h": 0.12
+    },
+    "subject": {
+     "x": 0.58,
+     "y": 0.04,
+     "w": 0.4,
+     "h": 0.96,
+     "anchor": "bottom"
+    }
+   },
+   "notes": "Subject overlaps title zone by up to 5% for depth; keep bottom-right 12% clear on thumbnails."
+  },
+  {
+   "id": "subject-left-text-right",
+   "name": "Subject left, text right",
+   "bestFor": [
+    "thumbnail",
+    "banner"
+   ],
+   "aspects": [
+    "landscape"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.6,
+     "y": 0.06,
+     "w": 0.3,
+     "h": 0.09
+    },
+    "title": {
+     "x": 0.42,
+     "y": 0.2,
+     "w": 0.53,
+     "h": 0.5,
+     "align": "left"
+    },
+    "subtitle": {
+     "x": 0.42,
+     "y": 0.74,
+     "w": 0.53,
+     "h": 0.12
+    },
+    "subject": {
+     "x": 0.02,
+     "y": 0.04,
+     "w": 0.42,
+     "h": 0.96,
+     "anchor": "bottom"
+    }
+   }
+  },
+  {
+   "id": "centered-hero",
+   "name": "Centered hero",
+   "bestFor": [
+    "poster",
+    "quote card",
+    "logo",
+    "ig-square"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.35,
+     "y": 0.07,
+     "w": 0.3,
+     "h": 0.07,
+     "align": "center"
+    },
+    "title": {
+     "x": 0.1,
+     "y": 0.34,
+     "w": 0.8,
+     "h": 0.3,
+     "align": "center"
+    },
+    "subtitle": {
+     "x": 0.15,
+     "y": 0.68,
+     "w": 0.7,
+     "h": 0.1,
+     "align": "center"
+    },
+    "subject": {
+     "x": 0.3,
+     "y": 0.1,
+     "w": 0.4,
+     "h": 0.5,
+     "anchor": "center"
+    }
+   }
+  },
+  {
+   "id": "poster-stack",
+   "name": "Poster stack",
+   "bestFor": [
+    "poster",
+    "flyer",
+    "invitation",
+    "book cover"
+   ],
+   "aspects": [
+    "portrait"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.08,
+     "y": 0.04,
+     "w": 0.3,
+     "h": 0.04
+    },
+    "title": {
+     "x": 0.08,
+     "y": 0.07,
+     "w": 0.84,
+     "h": 0.22,
+     "align": "left"
+    },
+    "subject": {
+     "x": 0.08,
+     "y": 0.3,
+     "w": 0.84,
+     "h": 0.46,
+     "anchor": "center"
+    },
+    "subtitle": {
+     "x": 0.08,
+     "y": 0.78,
+     "w": 0.84,
+     "h": 0.08
+    },
+    "details": {
+     "x": 0.08,
+     "y": 0.88,
+     "w": 0.84,
+     "h": 0.08
+    }
+   }
+  },
+  {
+   "id": "split-diagonal",
+   "name": "Diagonal split",
+   "bestFor": [
+    "thumbnail",
+    "versus",
+    "announcement"
+   ],
+   "aspects": [
+    "landscape",
+    "square"
+   ],
+   "zones": {
+    "left": {
+     "x": 0,
+     "y": 0,
+     "w": 0.58,
+     "h": 1
+    },
+    "right": {
+     "x": 0.42,
+     "y": 0,
+     "w": 0.58,
+     "h": 1
+    },
+    "title": {
+     "x": 0.06,
+     "y": 0.3,
+     "w": 0.45,
+     "h": 0.4,
+     "align": "left"
+    },
+    "subject": {
+     "x": 0.55,
+     "y": 0.05,
+     "w": 0.42,
+     "h": 0.95,
+     "anchor": "bottom"
+    }
+   },
+   "notes": "Use clip-path: polygon(0 0,58% 0,42% 100%,0 100%) for the left panel."
+  },
+  {
+   "id": "versus-split",
+   "name": "A vs B",
+   "bestFor": [
+    "thumbnail",
+    "comparison"
+   ],
+   "aspects": [
+    "landscape"
+   ],
+   "zones": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "w": 0.5,
+     "h": 1
+    },
+    "b": {
+     "x": 0.5,
+     "y": 0,
+     "w": 0.5,
+     "h": 1
+    },
+    "vs": {
+     "x": 0.42,
+     "y": 0.35,
+     "w": 0.16,
+     "h": 0.3,
+     "align": "center"
+    },
+    "titleA": {
+     "x": 0.04,
+     "y": 0.72,
+     "w": 0.4,
+     "h": 0.2
+    },
+    "titleB": {
+     "x": 0.56,
+     "y": 0.72,
+     "w": 0.4,
+     "h": 0.2
+    }
+   }
+  },
+  {
+   "id": "product-spotlight",
+   "name": "Product spotlight",
+   "bestFor": [
+    "product ad",
+    "poster",
+    "ig-square"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "title": {
+     "x": 0.08,
+     "y": 0.06,
+     "w": 0.84,
+     "h": 0.16,
+     "align": "center"
+    },
+    "subject": {
+     "x": 0.2,
+     "y": 0.24,
+     "w": 0.6,
+     "h": 0.5,
+     "anchor": "center"
+    },
+    "price": {
+     "x": 0.62,
+     "y": 0.7,
+     "w": 0.3,
+     "h": 0.14,
+     "align": "center"
+    },
+    "cta": {
+     "x": 0.25,
+     "y": 0.86,
+     "w": 0.5,
+     "h": 0.09,
+     "align": "center"
+    }
+   },
+   "notes": "Soft circle/pedestal behind product; reflection or contact shadow beneath."
+  },
+  {
+   "id": "quote-center",
+   "name": "Quote centre",
+   "bestFor": [
+    "quote card",
+    "ig-square",
+    "ig-portrait"
+   ],
+   "aspects": [
+    "square",
+    "portrait"
+   ],
+   "zones": {
+    "mark": {
+     "x": 0.08,
+     "y": 0.08,
+     "w": 0.2,
+     "h": 0.14
+    },
+    "quote": {
+     "x": 0.1,
+     "y": 0.28,
+     "w": 0.8,
+     "h": 0.44,
+     "align": "center"
+    },
+    "author": {
+     "x": 0.1,
+     "y": 0.78,
+     "w": 0.8,
+     "h": 0.08,
+     "align": "center"
+    }
+   },
+   "notes": "Max ~22 words. Opening quote mark is a decorative element at 30% opacity."
+  },
+  {
+   "id": "big-number",
+   "name": "Big number / stat",
+   "bestFor": [
+    "infographic",
+    "announcement",
+    "ig-square"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "number": {
+     "x": 0.08,
+     "y": 0.2,
+     "w": 0.84,
+     "h": 0.4,
+     "align": "center"
+    },
+    "caption": {
+     "x": 0.12,
+     "y": 0.64,
+     "w": 0.76,
+     "h": 0.14,
+     "align": "center"
+    },
+    "source": {
+     "x": 0.12,
+     "y": 0.88,
+     "w": 0.76,
+     "h": 0.05,
+     "align": "center"
+    }
+   }
+  },
+  {
+   "id": "story-vertical",
+   "name": "Story vertical",
+   "bestFor": [
+    "story-reel",
+    "phone-wallpaper"
+   ],
+   "aspects": [
+    "tall"
+   ],
+   "zones": {
+    "top": {
+     "x": 0.06,
+     "y": 0.13,
+     "w": 0.88,
+     "h": 0.08
+    },
+    "title": {
+     "x": 0.08,
+     "y": 0.3,
+     "w": 0.84,
+     "h": 0.25,
+     "align": "center"
+    },
+    "subject": {
+     "x": 0.1,
+     "y": 0.5,
+     "w": 0.8,
+     "h": 0.3,
+     "anchor": "center"
+    },
+    "cta": {
+     "x": 0.15,
+     "y": 0.8,
+     "w": 0.7,
+     "h": 0.07,
+     "align": "center"
+    }
+   },
+   "notes": "Keep y<13% and y>82% free of important content (UI overlays)."
+  },
+  {
+   "id": "banner-safe-wide",
+   "name": "Wide banner safe area",
+   "bestFor": [
+    "yt-banner",
+    "x-header",
+    "linkedin-banner",
+    "fb-cover"
+   ],
+   "aspects": [
+    "wide"
+   ],
+   "zones": {
+    "safe": {
+     "x": 0.2,
+     "y": 0.35,
+     "w": 0.6,
+     "h": 0.3
+    },
+    "title": {
+     "x": 0.22,
+     "y": 0.38,
+     "w": 0.4,
+     "h": 0.16,
+     "align": "left"
+    },
+    "subtitle": {
+     "x": 0.22,
+     "y": 0.56,
+     "w": 0.4,
+     "h": 0.08,
+     "align": "left"
+    },
+    "subject": {
+     "x": 0.62,
+     "y": 0.2,
+     "w": 0.16,
+     "h": 0.6,
+     "anchor": "center"
+    }
+   },
+   "notes": "For yt-banner the whole message must live inside the central 60%x30%."
+  },
+  {
+   "id": "frame-border",
+   "name": "Framed certificate / invitation",
+   "bestFor": [
+    "certificate",
+    "invitation",
+    "a4-landscape",
+    "menu"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "frame": {
+     "x": 0.04,
+     "y": 0.04,
+     "w": 0.92,
+     "h": 0.92
+    },
+    "heading": {
+     "x": 0.1,
+     "y": 0.1,
+     "w": 0.8,
+     "h": 0.12,
+     "align": "center"
+    },
+    "name": {
+     "x": 0.1,
+     "y": 0.38,
+     "w": 0.8,
+     "h": 0.14,
+     "align": "center"
+    },
+    "body": {
+     "x": 0.15,
+     "y": 0.56,
+     "w": 0.7,
+     "h": 0.16,
+     "align": "center"
+    },
+    "sign": {
+     "x": 0.1,
+     "y": 0.8,
+     "w": 0.8,
+     "h": 0.1
+    }
+   }
+  },
+  {
+   "id": "photo-bottom-plate",
+   "name": "Full-bleed photo with bottom plate",
+   "bestFor": [
+    "poster",
+    "news card",
+    "ig-portrait"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "photo": {
+     "x": 0,
+     "y": 0,
+     "w": 1,
+     "h": 1
+    },
+    "plate": {
+     "x": 0,
+     "y": 0.58,
+     "w": 1,
+     "h": 0.42
+    },
+    "title": {
+     "x": 0.06,
+     "y": 0.64,
+     "w": 0.88,
+     "h": 0.2,
+     "align": "left"
+    },
+    "subtitle": {
+     "x": 0.06,
+     "y": 0.86,
+     "w": 0.88,
+     "h": 0.08,
+     "align": "left"
+    }
+   },
+   "notes": "Plate = gradient from rgba(0,0,0,.85) at bottom to transparent at top."
+  },
+  {
+   "id": "collage-grid",
+   "name": "Collage grid",
+   "bestFor": [
+    "infographic",
+    "social post",
+    "menu"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "grid": {
+     "x": 0.05,
+     "y": 0.2,
+     "w": 0.9,
+     "h": 0.72
+    },
+    "title": {
+     "x": 0.05,
+     "y": 0.05,
+     "w": 0.9,
+     "h": 0.12,
+     "align": "left"
+    }
+   },
+   "notes": "2x2 or 3x2 tiles with 2% gutters; each tile has object-fit:cover."
+  }
+ ]
+}

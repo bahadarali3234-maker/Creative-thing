@@ -104,7 +104,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-[12000] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md select-none"
+        className="fixed inset-0 z-[12000] flex items-center justify-center p-3 sm:p-6 bg-black/88 select-none"
         role="dialog"
         aria-modal="true"
         aria-label={`Preview ${file.name}`}
@@ -138,7 +138,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Download Video"
                   aria-label="Download Video"
                 >
@@ -147,7 +147,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Close (Esc)"
                   aria-label="Close"
                 >
@@ -173,7 +173,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Download Image"
                   aria-label="Download Image"
                 >
@@ -182,7 +182,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Close (Esc)"
                   aria-label="Close"
                 >

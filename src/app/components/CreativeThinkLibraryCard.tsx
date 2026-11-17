@@ -19,7 +19,7 @@ export const CreativeThinkLibraryCard: React.FC<CreativeThinkLibraryCardProps> =
     if (onOpenLibrary) {
       onOpenLibrary();
     } else {
-      window.open('https://fluorescent-code-vault-flow.base44.app', '_blank', 'noopener,noreferrer');
+      window.dispatchEvent(new CustomEvent('open-buildy-workspace'));
     }
   };
 
@@ -61,8 +61,7 @@ export const CreativeThinkLibraryCard: React.FC<CreativeThinkLibraryCardProps> =
       className="my-3 rounded-2xl border border-[#00a6ff]/35 bg-gradient-to-br from-white via-blue-50/40 to-indigo-50/30 dark:from-[#0e1224] dark:via-[#090b14] dark:to-[#0f172a] p-5 sm:p-6 shadow-[0_12px_36px_rgba(0,166,255,0.08)] relative overflow-hidden"
       dir={language === 'ur' ? 'rtl' : 'ltr'}
     >
-      {/* Decorative Glow */}
-      <div className="absolute top-0 right-0 w-48 h-48 bg-[#00a6ff]/10 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
+      {/* Header & Content */}
 
       <div className="relative z-10 flex flex-col gap-4">
         {/* Header */}

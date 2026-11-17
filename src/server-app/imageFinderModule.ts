@@ -1,222 +1,26 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 
-export const IMAGE_FINDER_SYSTEM_PROMPT = `# MODULE — Image Finder (Web Photo Search + Cards)
+export const IMAGE_FINDER_SYSTEM_PROMPT = `# MODULE — Web Image Finder (Real Web Photo Cards)
+You are connected to a real web image search engine (\`/api/google-scrape-images\`). You do NOT generate photos or invent URLs — you output an \`image-card\` fenced JSON block and the UI fetches and renders real web photographs.
 
-## 1. WHAT THIS MODULE IS
+1. EXPLICIT IMAGE REQUESTS:
+- Whenever the user asks to find/show/search photos, images, pics, wallpapers, or tasveer ("find photos of...", "X ki photo dikhao", "what does X look like"), ALWAYS output one \`\`\`image-card block immediately after a short 1-line intro (<= 12 words). Never say "I can't show images" or paste raw URLs.
+- Distinguish Search vs Studio: "find / search / dhundo / real photo / dikhao" = \`image-card\`; "make / create / design / banado / thumbnail / poster / logo / png" = code/Studio, not search.
 
-You are connected to a **real web image search engine**. You do not draw or generate these images — the app **searches the web and shows existing photographs** (like Google Images). You only decide **when** to search, **what** to search for, and **how to present** the result.
+2. SMART AUTO-ATTACH:
+- Attach 1 \`image-card\` at the end of an answer when the topic is inherently visual (landmark, animal, plant, dish, gadget, vehicle, artwork, public figure) AND a real photo helps understanding.
+- NEVER attach cards on coding, math, finance, medical/legal advice, grief/crisis, short greetings/yes-no, or in voice-call mode.
 
-Because of this:
-- You **CAN** show real photos of places, animals, products, food, art, events, objects — and of **public figures** (actors, athletes, politicians, musicians, authors, scientists, businesspeople, historical figures) when the user asks.
-- Showing a web search result of a public figure is **not** "generating a fake image" and **not** "identifying a person from a photo". Never refuse with "I can't show images of people" or "I can't create images of real people". That answer is **wrong** for this feature. (Exceptions are in section 6.)
-- You never invent image URLs. You never paste image links in the text. You output **one image card block** (section 5) and the app does the searching and rendering.
+3. PEOPLE & SAFETY POLICY:
+- PUBLIC FIGURES ARE ALLOWED: Athletes, actors, musicians, politicians, scientists, historical figures, teams — show neutral portraits/event photos without disclaimers.
+- NOT ALLOWED (decline in 1 friendly sentence, NO card): private individuals, anyone under 18 / minors, sexual/nude/leaked content, gore/violence/humiliating imagery, identifying a person from an uploaded photo, deepfakes/stalking.
 
----
-
-## 2. DECISION: DID THE USER ASK FOR IMAGES? (EXPLICIT MODE)
-
-If the message contains an image-finding request, you **must** output an image card. Do not answer with only text, do not offer to "describe" it, do not start writing code, do not call other tools.
-
-### 2.1 Trigger phrases (any language; examples, not exhaustive)
-- English: "find images of…", "show me pictures of…", "photo of…", "images of…", "get me a photo", "what does X look like", "I need a picture", "wallpaper of…", "pics of…", "show X", "image search"
-- Hinglish: "X ki image/photo/pic/tasveer dikhao", "image find karke do", "X ka photo chahiye", "X kaisa dikhta hai", "wallpaper do", "X ki photos laga do", "image dhundo", "pic bhejo", "X ki real photo do"
-- Hindi: "X की फोटो दिखाओ", "इमेज ढूंढ के दो", "X की तस्वीर चाहिए", "मुझे X की इमेज फाइंड करके दो", "X कैसा दिखता है", "वॉलपेपर दो"
-- Voice-dictated and misspelled variants count too ("imej", "foto", "pikchar", "fhoto"). If the sentence is obviously about getting a picture of something, treat it as a trigger.
-
-### 2.2 Not an image-finding request (do NOT output a card)
-- "Make/design/create a thumbnail/poster/banner/logo" → that is the **Creative Studio** (generate a design), not search.
-- "Write code to…", "explain how image search works", "edit/remove background of my uploaded photo".
-- If unsure between "find" and "make": words like *find, dhundo, real, photo of <real thing>, show me* = search. Words like *banao, design, create, generate, thumbnail* = Studio.
-- If the user wants both (e.g., "find a picture of the Taj Mahal and make a poster"), emit the card first, then continue with the Studio request.
-
-### 2.3 Never ask unnecessary questions
-Subject is clear? Search immediately. Only ask ONE short question when there is no subject at all ("ek image do" → "Kis cheez ki image chahiye?").
-If the subject is ambiguous but a reasonable default exists ("Jaguar"), pick the most likely meaning, say it in one line, and offer the alternative gently in text.
-
----
-
-## 3. DECISION: SHOULD I ATTACH IMAGES AUTOMATICALLY? (AUTO MODE)
-
-While answering any question, attach **one** image card **only if all** of these are true:
-1. The topic is something people naturally want to **see**: a place, landmark, animal, plant, food/dish, product/gadget, vehicle, artwork, historical event/site, celebrity/public figure being introduced, clothing/style, architecture, space object, species, natural phenomenon, sports moment, how-something-looks.
-2. The image would **add information** that text can't (appearance, comparison, recognition).
-3. The user is **not** in a context where an image is unwelcome (see below).
-4. You have not already shown an image card for this same subject in the last 3 replies.
-
-### 3.1 Good auto-attach examples
-- "Tell me about the Great Barrier Reef" → card.
-- "Red panda kya khata hai?" → answer + card of red panda.
-- "Who is Neeraj Chopra?" (public figure intro) → answer + card.
-- "iPhone 16 vs Pixel 10" → answer + card (one card, query for both or the main one).
-- "Best street food in Delhi" → answer + card of 2–3 famous dishes.
-
-### 3.2 Never auto-attach when
-- The user is upset, grieving, in crisis, or discussing health problems, abuse, violence, accidents, or deaths.
-- The topic is coding, math, finance numbers, legal/medical advice, writing help, translation, business plans, or anything abstract.
-- The reply is very short (greeting, thanks, yes/no, one-line fact).
-- The topic is a **private individual** or a **child** (see section 6).
-- You are in a **voice call / camera call mode** (Daro & Zara). Never output cards there — keep the spoken 2–3 lines.
-- The subject could produce graphic, sexual, gory or disturbing results.
-
-### 3.3 Frequency
-At most **1 card per reply**, at most 2 in a comparison ("A vs B" may use 2 cards). If in doubt, skip the card — an irrelevant image is worse than no image.
-
----
-
-## 4. CRAFTING THE SEARCH QUERY
-
-The \`query\` is what the search engine receives. Make it precise:
-- **2–6 words.** Subject first, then qualifiers. No sentences, no "image of", no "please".
-- **People:** full name + role/context, e.g. \`Virat Kohli cricketer portrait\`, \`Marie Curie scientist photo\`. Use the most common English spelling. Add \`portrait\`/\`photo\` for a plain look, \`at event\` / \`match\` / \`interview\` for action shots when the user asks for it.
-- **Places:** name + city/country (+ \`skyline\`, \`aerial\`, \`night\`, \`interior\` if asked) → \`Hawa Mahal Jaipur sunrise\`.
-- **Things/products:** brand + model + \`official\` / \`product photo\`.
-- **Animals/plants:** common name + scientific name if ambiguous → \`snow leopard wild\`.
-- **Style words from the user must be kept:** "black and white", "HD", "vintage", "close-up", "wallpaper" (→ add \`wallpaper 4k\`), "vertical", "with Taj Mahal in background".
-- Keep the user's language only if the subject is a local name (\`नीम करोली बाबा\` → \`Neem Karoli Baba\`). Prefer the English/Latin form for better results.
-- Never put unsafe terms in a query (nude, gore, leaked, explicit, etc.).
-- For "more images" requests, re-use the same \`query\` with a bigger \`offset\` (see section 5, field \`offset\`).
-
----
-
-## 5. THE IMAGE CARD (OUTPUT FORMAT)
-
-You output a fenced block with language **\`image-card\`** containing JSON. The app searches, fetches the pictures, and renders a unique card in the chat. **Exactly one JSON object per block. No comments. No trailing commas.**
-
+4. OUTPUT CONTRACT (exact JSON inside \`\`\`image-card):
 \`\`\`image-card
-{
-  "query": "Hawa Mahal Jaipur sunrise",
-  "title": "Hawa Mahal at sunrise",
-  "description": "Jaipur's pink-sandstone 'Palace of Winds' glows gold in the first hour of light. Its 953 tiny windows were built so royal women could watch street life unseen. Look for the honeycomb facade.",
-  "tags": ["Jaipur", "Rajput architecture", "1799"],
-  "layout": "fan",
-  "accent": "#E4572E",
-  "count": 6,
-  "offset": 0,
-  "mode": "explicit"
-}
+{"query":"2-6 word English search query","title":"Short Caption","description":"2-3 crisp museum-label sentences (25-50 words) in the user's language (Roman script if Hindi/Urdu unless native requested) with 1 concrete fact + visual cue.","tags":["Tag1","Tag2"],"layout":"fan|polaroid|mosaic|strip|spotlight","accent":"#00A6FF","count":6,"offset":0,"mode":"explicit|auto"}
 \`\`\`
-
-### 5.1 Fields
-- \`query\`: Section 4. Required.
-- \`title\`: 2–6 words, a caption, not the raw query. Required.
-- \`description\`: **The heart of the card. 2–3 sentences, 25–55 words**, see 5.2. Required.
-- \`tags\`: 2–4 short descriptors (era, place, category, key fact).
-- \`layout\`: Pick by content: \`fan\` (landmarks, places, scenery), \`polaroid\` (people, portraits, nostalgia, history), \`mosaic\` (many varied shots: food, products, art), \`strip\` (wide/cinematic shots, wallpapers, comparisons), \`spotlight\` (one hero image + 2 small: single object, animal, gadget).
-- \`accent\`: A hex colour matching the subject (saffron for temples, teal for ocean, red for sports, etc.).
-- \`count\`: 4–10. Default 6. Wallpapers/strip: 4. Mosaic: 8. Spotlight: 3.
-- \`offset\`: \`0\` for first request; for "aur dikhao / more" use previous offset + count.
-- \`mode\`: \`"explicit"\` if the user asked, \`"auto"\` if you attached it yourself.
-
-### 5.2 How to write the description (this is what makes it feel unique)
-Write like a sharp museum label or a travel-magazine caption — **never** like a search result.
-1. **Sentence 1 — the hook:** what the viewer is looking at + one vivid, specific detail.
-2. **Sentence 2 — the fact worth knowing:** a verified, concrete fact (year, number, origin, reason). If you aren't sure, use a safe general fact. **Never invent numbers, quotes, dates or achievements.**
-3. **Sentence 3 (optional) — "look for":** a visual cue that helps the user appreciate the images.
-- No filler like "Here are some images", "These pictures show", "I found". No emojis inside the description. No ALL CAPS.
-- Match the user's language (Roman script for Hindi/Urdu by default unless Devanagari/native script was requested, or English).
-- For people: neutral, factual, respectful. Role + notable known-for fact. No gossip, no speculation about private life, health, family, or appearance judgments.
-- For current/news subjects where you may be out of date, keep the description timeless (what they're known for), not "currently".
-
-### 5.3 What goes around the card in chat
-- **Explicit mode:** one short intro line (≤ 12 words) → the card block → optional one-line note.
-- **Auto mode:** your normal answer first, then the card at the end (never before the answer), with at most one line introducing it.
-- Never paste raw image URLs. Never describe the pictures one by one. Never say "I generated/created these". You may say "from the web" / "search results" and that sources are linked on the card.
-- After the card, stop. Don't repeat the description in text.
-
----
-
-## 6. REAL PEOPLE — WHAT IS ALLOWED AND WHAT IS NOT
-
-### 6.1 Allowed (do it, no lecture, no disclaimers)
-- Photos of **public figures** — anyone widely known for a public role — when the user names them: actors, athletes, politicians, musicians, authors, scientists, CEOs, activists, religious/spiritual leaders, historical figures. Neutral portraits, event photos, match photos, performance photos.
-- Photos of **groups/teams** (cricket team, band, cabinet) and **historical** photographs.
-- Multiple photos of the same public figure, "latest" photos, specific events, "with <other public figure>" when it is a real documented event.
-
-### 6.2 Not allowed (decline in one friendly sentence and offer a safe alternative; no card)
-- **Private individuals** — a neighbour, classmate, ex, random person, "my teacher", someone known only locally. Never search for them.
-- **Anyone under 18** — never search for photos of children/teens, even if they are famous. Offer images of their work, e.g., the sport, show, or event.
-- **Sexual, nude, or "leaked/private" images** of anyone. **Graphic violence/gore**, crime-scene, accident, autopsy, abuse or torture images. **Content that humiliates** a person.
-- **Identifying a person from an uploaded photo** ("who is this?", "ye kaun hai?"). You can describe visible things (clothes, setting) but never name the person from their face. If the user *tells* you who it is, treat that as their claim.
-- **Face-swaps, morphs, deepfake-style requests** or searching in order to impersonate/defraud/harass/stalk someone.
-- Requests designed to find a **specific private location of a person**.
-
-### 6.3 How to decline
-"Main kisi private insaan ya bachche ki photos search nahi karta. Chaho to unke kaam/event ki images dikha doon?"
-Keep it to one or two sentences. No bullet lists. No moralising.
-
-### 6.4 Notes for borderline cases
-- Politicians/controversial figures: show neutral portraits/event photos; do not add editorial words to the query or description.
-- Names that match both a public figure and common people: ask ONE short question or use the most famous with role in the query and mention the assumption.
-- Deceased public figures and historical photos: allowed.
-- Lookalikes/parodies: use the real subject's name only; do not add "fake/AI/nude/edit".
-
----
-
-## 7. WHEN RESULTS FAIL
-
-The app may send you back a short system note after rendering: \`image_search_result: { count: N, ok: true|false }\`.
-- \`count = 0\` or \`ok:false\` → retry **once** with a broader query (drop adjectives, keep the main subject) using a new \`image-card\`; then, if it still fails, say honestly in one line: "Is query pe images nahi mil rahi — spelling ya dusra naam try karein?"
-- \`count < 3\` → keep the card.
-- Never claim you showed images if the note says count is 0.
-
----
-
-## 8. HARD RULES (SUMMARY)
-
-1. Image requested → **always** an \`image-card\` block. No excuses like "I can't display images", "I'm text-based", "I can't show real people".
-2. Never invent URLs, image links, or facts. Never output markdown images \`![](...)\` for web results.
-3. One card per reply (two only for comparisons).
-4. Subject clear → no clarifying question.
-5. Public figures → allowed; private individuals, minors, sexual/graphic/humiliating content, face-identification, stalking/impersonation → decline politely (section 6).
-6. In voice/camera call mode → no cards (say it in 2–3 spoken lines; offer "Go to Chat" for images).
-7. Studio "make/design" requests are NOT searches.
-8. Description = specific, accurate, short, in the user's language; no filler, no hype, no made-up details.
-9. Be proactive but restrained: attach images when they truly help; skip when in doubt.
-10. Always reply in the language the user wrote in (Romanized script by default unless native script was explicitly requested).
-
----
-
-## 9. TRAINING EXAMPLES
-
-### Ex 1 — explicit, Hindi dictation, public figure
-**User:** "मुझे सचिन तेंदुलकर की इमेज फाइंड करके दो"
-**Assistant:**
-ये लो — सचिन की कुछ शानदार तस्वीरें:
-\`\`\`image-card
-{"query":"Sachin Tendulkar cricketer portrait","title":"Sachin Tendulkar","description":"भारतीय क्रिकेट के सबसे बड़े नामों में से एक, जिन्होंने 1989 से 2013 तक अंतरराष्ट्रीय क्रिकेट खेला। टेस्ट और वनडे दोनों में उनके नाम सबसे ज़्यादा रन रहे हैं। इन तस्वीरों में उनकी क्लासिक स्टांस पर ध्यान दें।","tags":["क्रिकेट","भारत","1989–2013"],"layout":"polaroid","accent":"#1E5AA8","count":6,"offset":0,"mode":"explicit"}
-\`\`\`
-
-### Ex 2 — explicit, Hinglish, place
-**User:** "taj mahal ki night wali photos do"
-**Assistant:** Moonlight wale Taj ke shots:
-\`\`\`image-card
-{"query":"Taj Mahal Agra night moonlight","title":"Taj Mahal after dark","description":"Agra ka white-marble mausoleum raat me soft blue-silver glow karta hai. Shah Jahan ne ise 1632 ke aas-paas Mumtaz Mahal ki yaad me banwana shuru kiya tha. Reflecting pool me symmetry dhyan se dekhna.","tags":["Agra","Mughal","UNESCO"],"layout":"fan","accent":"#3B5BA5","count":6,"offset":0,"mode":"explicit"}
-\`\`\`
-
-### Ex 3 — explicit, English, product, wallpaper
-**User:** "find me a Lamborghini Revuelto wallpaper"
-**Assistant:** Here you go — 4K-style shots:
-\`\`\`image-card
-{"query":"Lamborghini Revuelto wallpaper 4k","title":"Lamborghini Revuelto","description":"Lamborghini's first plug-in hybrid V12 flagship, built to replace the Aventador. Sharp Y-shaped lighting and a hexagonal cockpit theme run through the design. Look for the angular rear diffuser.","tags":["Supercar","V12 hybrid"],"layout":"strip","accent":"#F2C500","count":4,"offset":0,"mode":"explicit"}
-\`\`\`
-
-### Ex 4 — AUTO mode
-**User:** "Red panda kya khata hai aur kahan milta hai?"
-**Assistant:** Red panda mostly **bamboo** khata hai (diet ka lagbhag 95%), saath me fruits, eggs aur insects. Ye Himalaya ke eastern hisse aur south-west China ke thande jungles me milta hai — India me Sikkim, Arunachal aur Darjeeling area me.
-\`\`\`image-card
-{"query":"red panda in tree wild","title":"Red panda in the wild","description":"Rust-red fur, a ringed tail and a masked face make this little tree-dweller unmistakable. It spends most of the day in trees and sleeps curled up with its tail over its face. Spot the white face markings.","tags":["Himalaya","Endangered","Bamboo eater"],"layout":"spotlight","accent":"#B5472B","count":3,"offset":0,"mode":"auto"}
-\`\`\`
-
-### Ex 5 — comparison (2 cards allowed)
-**User:** "Show me a cheetah and a leopard so I can see the difference"
-**Assistant:** Cheetahs have solid black dots and "tear lines" on the face; leopards have rosette patterns and a stockier build.
-\`\`\`image-card
-{"query":"cheetah wild close up","title":"Cheetah","description":"Slim, long-legged sprinter with solid black spots. Look for the black 'tear marks' running from eyes to mouth.","tags":["Spots","Sprinter"],"layout":"spotlight","accent":"#D9A441","count":3,"offset":0,"mode":"explicit"}
-\`\`\`
-\`\`\`image-card
-{"query":"leopard wild close up","title":"Leopard","description":"Heavier, muscular climber with rose-shaped rosettes. Look for the broad head and spots grouped in small rings.","tags":["Rosettes","Climber"],"layout":"spotlight","accent":"#8A5A2B","count":3,"offset":0,"mode":"explicit"}
-\`\`\``;
+- Layout guide: \`polaroid\` (people/portraits), \`fan\` (landmarks/places), \`mosaic\` (food/art/variety), \`strip\` (wide/wallpapers), \`spotlight\` (single animal/object). Keep queries clean, 2-6 English keywords, Moderate SafeSearch compliant.`;
 
 /**
  * Deterministic pre-LLM check for explicit web photo/image requests.
@@ -229,7 +33,7 @@ export function detectExplicitImageSearchIntent(text?: string): boolean {
 
   const lower = raw.toLowerCase();
 
-  // Exclude coding/explanatory meta-questions
+  // Exclude coding/explanatory meta-questions & non-visual analytical "find the ..." tasks
   if (
     /\b(write\s+(me\s+)?(code|python|js|ts|html|react|css|sql)|explain\s+how\s+image\s+search|how\s+does\s+image\s+search\s+work|remove\s+background|background\s*(hata|remove)|cutout\s+my)\b/i.test(
       lower
@@ -238,32 +42,152 @@ export function detectExplicitImageSearchIntent(text?: string): boolean {
     return false;
   }
 
-  // Exclude pure Creative Studio creation requests unless explicit search verb is also used ("find ... real photo")
-  const isPureCreationVerb =
-    /\b(banao|bana\s*do|bana\s*ke\s*do|design\s+(a|an|karo|kardo)|create\s+(a|an)|generate\s+(a|an)|thumbnail|poster|banner|logo|quote\s*card|infographic|short\s*video|reel\b|explainer\s*video)\b/i.test(
+  // Exclude math/code/logic "find the value / area / bug / error / solution / meaning" unless explicit image noun is present
+  const hasExplicitVisualNoun =
+    /\b(images?|photos?|pics?|pictures?|wallpapers?|tasveer|tasweer|tasveerein|imej|foto|fhotos?|pikchar)\b/i.test(lower) ||
+    /(फोटो|इमेज|तस्वीर|तस्वीरें|वॉलपेपर)/i.test(raw);
+  const isNonVisualAnalyticalFind =
+    /\bfind\s+(the\s+)?(value|sum|average|mean|median|mode|area|volume|perimeter|root|roots|derivative|integral|probability|solution|answer|meaning|definition|bug|error|issue|syntax|output|complexity|time|distance|speed|rate|ratio|percent|percentage|missing\s+number|next\s+number)\b/i.test(
+      lower
+    );
+
+  // Exclude pure Creative Studio creation requests unless explicit search verb is also used
+  const hasCreationVerb =
+    /\b(banao|bana\s*do|bana\s*ke\s*do|design|create|generate|make|draw|export|as\s*png)\b/i.test(lower);
+  const hasStudioArtifact =
+    /\b(thumbnail|poster|banner|logo|quote\s*card|infographic|short\s*video|reel\b|explainer\s*video|motion\s*graphic|png|artwork|illustration)\b/i.test(
       lower
     );
   const hasExplicitSearchVerb =
-    /\b(find|dhundo|dhoondo|search|show\s+me|dikhao|dikha\s*do|real\s+photo|kaisa\s+dikhta|kaise\s+dikhte|what\s+does\s+.+\s+look\s+like|aur\s+dikhao|more\s+images|more\s+photos)\b/i.test(
+    /\b(find\s+(?:the\s+)?(?:image|images|photo|photos|pic|pics|picture|pictures|wallpaper|wallpapers)?|dhundo|dhoondo|search|google|show\s+me|dikhao|dikha\s*do|real\s+photo|kaisa\s+dikhta|kaise\s+dikhte|what\s+does\s+.+\s+look\s+like|aur\s+dikhao|more\s+images|more\s+photos|fetch|get\s+me\s+(?:a\s+)?(?:photo|pic|picture|image))\b/i.test(
       lower
     );
 
-  if (isPureCreationVerb && !hasExplicitSearchVerb) {
+  if ((hasCreationVerb || hasStudioArtifact) && !hasExplicitSearchVerb) {
     return false;
   }
 
+  // Trigger deterministically on explicit "find the <subject>" (non-analytical) or any explicit image/search phrase
+  if (/^\s*(?:please\s+|can\s+you\s+)?(?:find|for\s*nd)\s+(?:the\s+(?:images?|photos?|pics?|pictures?|wallpapers?)\s+(?:of|for|about)?|the\s+|(?:images?|photos?|pics?|pictures?|wallpapers?)\s+(?:of|for|about)?)/i.test(lower)) {
+    if (!isNonVisualAnalyticalFind || hasExplicitVisualNoun) {
+      return true;
+    }
+  }
+
   return (
-    /\b(images?|photos?|pics?|pictures?|wallpapers?|tasveer|tasweer|tasveerein|imej|foto|fhotos?|pikchar|dikhao|dhundo|dhoondo)\b/i.test(
-      lower
-    ) ||
-    /(फोटो|इमेज|तस्वीर|तस्वीरें|वॉलपेपर|दिखाओ|ढूंढ)/i.test(raw) ||
+    hasExplicitVisualNoun ||
+    /\b(dikhao|dhundo|dhoondo)\b/i.test(lower) ||
+    /(दिखाओ|ढूंढ)/i.test(raw) ||
     /what\s+does\s+.+\s+look\s+like|kaisa\s+dikhta\s+hai|aur\s+dikhao/i.test(lower)
   );
 }
 
+/**
+ * Extracts a concise, clean web search query deterministically (ZERO AI) from prompts such as:
+ * "find the image of Imran Khan", "find image Ferrari SF90", "find the Eiffel Tower night".
+ */
+export function extractExplicitImageQuery(rawPrompt: string): string {
+  const original = String(rawPrompt || '').trim();
+  if (!original) return '';
+
+  // Step 1: Prioritize segment immediately after explicit trigger phrases
+  let focused = original;
+  const triggerMatch =
+    /(?:^|\b)(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:(?:find|for\s*nd)\s+the\s+(?:images?|photos?|pics?|pictures?|wallpapers?)|(?:find|for\s*nd)\s+(?:images?|photos?|pics?|pictures?|wallpapers?)|(?:find|for\s*nd)\s+the|search\s+(?:for\s+)?(?:images?|photos?|pics?|pictures?|wallpapers?)?|show\s+me\s+(?:the\s+)?(?:images?|photos?|pics?|pictures?|wallpapers?)?|get\s+me\s+(?:the\s+)?(?:images?|photos?|pics?|pictures?|wallpapers?)?|fetch\s+(?:the\s+)?(?:images?|photos?|pics?|pictures?|wallpapers?)?|dikhao|dikha\s+do|dhundo|dhoondo)\b(?:\s+(?:of|for|about|on|ki|ke|ka))?\s*(.+)$/i.exec(
+      original
+    );
+  if (triggerMatch && triggerMatch[1] && triggerMatch[1].trim().length >= 2) {
+    focused = triggerMatch[1].trim();
+  }
+
+  // Step 2: Smart keyword strip (preserve subject nouns, adjectives, years, locations)
+  let q = focused
+    .replace(
+      /\b(please|can you|could you|kindly|show me|find me|find|for nd|search for|search|get me|give me|fetch|dikhao|dikha do|dhundo|dhoondo|bhejo|laga do|chahiye|mujhe|some|online|google|ki|ke|ka|images?|photos?|pics?|pictures?|tasveer|tasweer|tasveerein|imej|foto|fhotos?|pikchar)\b/gi,
+      ' '
+    )
+    .replace(/^(?:of|for|about|the|an|a|on|in)\b\s+/i, '')
+    .replace(/\s+\b(?:please|for\s+me|in\s+google|on\s+google|online)\b$/i, '')
+    .replace(/[?!.,:;"'()]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!q || q.length < 2) {
+    q = original
+      .replace(/^(?:(?:find|for\s*nd)\s+the\s+(?:image|photo|pic)?|(?:find|for\s*nd)\s+(?:image|photo|pic)?|find)\b/i, '')
+      .replace(/[?!.,:;"'()]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 70);
+  }
+  return q.split(' ').filter(Boolean).slice(0, 7).join(' ');
+}
+
+export function extractCleanImageSearchQuery(rawPrompt: string): string {
+  return extractExplicitImageQuery(rawPrompt);
+}
+
+function toDisplayCaptionCase(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length <= 2 && /^[a-z]+$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+function pickDeterministicLayout(query: string): 'polaroid' | 'strip' | 'mosaic' | 'spotlight' | 'fan' {
+  const lower = query.toLowerCase();
+  if (
+    /\b(portrait|person|actor|actress|singer|player|president|prime\s*minister|king|queen|scientist|founder|celebrity|cricketer|footballer|ronaldo|messi|kohli|elon|musk|khan|face|man|woman|athlete|artist)\b/i.test(
+      lower
+    )
+  ) {
+    return 'polaroid';
+  }
+  if (/\b(wallpaper|banner|skyline|landscape|panoramic|4k|desktop|horizon|sunset|sunrise|mountain\s*range)\b/i.test(lower)) {
+    return 'strip';
+  }
+  if (/\b(food|dish|recipe|biryani|pizza|burger|cake|architecture|interior|car|cars|supercar|painting|art|outfit|collection|city|cities)\b/i.test(lower)) {
+    return 'mosaic';
+  }
+  if (/\b(phone|iphone|samsung|laptop|watch|camera|headphone|dog|cat|lion|tiger|eagle|bird|flower|rose)\b/i.test(lower)) {
+    return 'spotlight';
+  }
+  return 'fan';
+}
+
+export function buildDeterministicImageCardMetadata(
+  cleanedQuery: string,
+  detail?: { title?: string; description?: string; sourceUrl?: string }
+) {
+  const rawTitle = String(detail?.title || '').trim();
+  const displayTitle =
+    rawTitle && rawTitle.toLowerCase() !== cleanedQuery.toLowerCase() && rawTitle.length <= 48
+      ? rawTitle
+      : toDisplayCaptionCase(cleanedQuery);
+
+  const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'of', 'in', 'on', 'at', 'to', 'hd', '4k', 'new']);
+  const tags = cleanedQuery
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-zA-Z0-9\u0900-\u097F-]/g, ''))
+    .filter((w) => w.length >= 2 && !stopWords.has(w.toLowerCase()))
+    .slice(0, 3)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+
+  return {
+    query: cleanedQuery,
+    title: displayTitle,
+    description: '',
+    tags: tags.length ? tags : [displayTitle],
+    layout: pickDeterministicLayout(cleanedQuery),
+    intro: '',
+  };
+}
+
 const UNSAFE_QUERY_PATTERNS: RegExp[] = [
-  /\b(porn|xxx|nsfw|nude|nudity|naked|hentai|erotic|explicit\s+sex|sex\s+video|leaked\s+nude|onlyfans\s+leak)\b/i,
-  /\b(gore|autopsy|beheading|decapitat|necrophilia|snuff|self[- ]?harm|suicide\s+photo|dead\s+body\s+gore|crime\s*scene\s*body|torture\s+photo)\b/i,
+  /\b(porn|xxx|nsfw|nude|nudity|naked|hentai|onlyfans|fansly|leaked\s*nude)\b/i,
+  /\b(boobs?|tits?|nipples?|pussy|vagina|penis|dick|cock|bdsm)\b/i,
+  /\b(gore|autopsy|beheading|decapitat|necrophilia|snuff|self[- ]?harm|suicide\s+photo|torture\s+photo)\b/i,
   /\b(child\s*porn|csam|loli|shota|underage\s*(nude|sex|sexy|bikini))\b/i,
   /\b(deepfake\s*(nude|porn)|revenge\s*porn)\b/i,
 ];
@@ -717,6 +641,53 @@ async function fetchWikimediaCommonsImagesFast(query: string, offset: number): P
   return items;
 }
 
+async function fetchBingImagesFast(query: string, offset: number): Promise<ScrapedImageItem[]> {
+  const items: ScrapedImageItem[] = [];
+  try {
+    const first = Math.max(1, offset + 1);
+    const bingUrl = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=${first}&adlt=moderate`;
+    const bRes = await fetch(bingUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(2200),
+    });
+    if (bRes.ok) {
+      const html = await bRes.text();
+      const matches = [...html.matchAll(/class="iusc"[^>]*m="([^"]+)"/g)];
+      for (const match of matches) {
+        try {
+          const rawJson = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+          const obj = JSON.parse(rawJson);
+          const murl = String(obj?.murl || '').trim();
+          const turl = String(obj?.turl || murl).trim();
+          const title = String(obj?.t || query).trim();
+          if (murl && !isBlockedImageCandidate(murl, title)) {
+            let sourceDomain = 'bing.com';
+            try {
+              sourceDomain = new URL(obj?.purl || murl).hostname.replace(/^www\./, '');
+            } catch {}
+            items.push({
+              id: `bing-${offset}-${items.length}-${Math.random().toString(36).slice(2, 6)}`,
+              title,
+              url: murl,
+              thumbnail: turl,
+              sourceUrl: String(obj?.purl || murl).trim(),
+              sourceDomain,
+              width: 1200,
+              height: 800,
+            });
+            if (items.length >= 12) break;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return items;
+}
+
 export async function searchGoogleScrapeImages(params: {
   query: string;
   offset?: number;
@@ -759,9 +730,10 @@ export async function searchGoogleScrapeImages(params: {
     return cached.result;
   }
 
-  // Launch ALL image providers + detail fetch in parallel for fast response (~1.2–2.5s cold)
-  const [ddgSettled, wikiSettled, commonsSettled, detailSettled] = await Promise.allSettled([
+  // Launch ALL image providers + detail fetch in parallel for fast response (~1.2–2.2s cold)
+  const [ddgSettled, bingSettled, wikiSettled, commonsSettled, detailSettled] = await Promise.allSettled([
     fetchDuckDuckGoImagesFast(query, offset),
+    fetchBingImagesFast(query, offset),
     fetchWikipediaImagesFast(query, offset),
     fetchWikimediaCommonsImagesFast(query, offset),
     fetchWikipediaDetail(query),
@@ -783,6 +755,10 @@ export async function searchGoogleScrapeImages(params: {
   if (ddgSettled.status === 'fulfilled') {
     hasMore = ddgSettled.value.hasMore;
     pushUnique(ddgSettled.value.items);
+  }
+  if (images.length < 10 && bingSettled.status === 'fulfilled') {
+    if (bingSettled.value.length >= 10) hasMore = true;
+    pushUnique(bingSettled.value);
   }
   if (images.length < 10 && wikiSettled.status === 'fulfilled') {
     pushUnique(wikiSettled.value);

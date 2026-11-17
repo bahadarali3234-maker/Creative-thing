@@ -24,7 +24,6 @@ import {
   STUDIO_VOICES,
   ThumbnailTemplate,
   ImageFormatTemplate,
-  VideoTemplate,
   allTemplates,
   renderThumbnail,
   saveTemplate,
@@ -43,7 +42,6 @@ import { AttachedFile } from '../types';
 export type StudioTabId =
   | 'thumbnails'
   | 'images'
-  | 'videos'
   | 'voices'
   | 'styles'
   | 'cutout';
@@ -241,7 +239,6 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
 
   const thumbs = allTemplates('thumbnail') as ThumbnailTemplate[];
   const imageFormats = allTemplates('image') as ImageFormatTemplate[];
-  const videoTemplates = allTemplates('video') as VideoTemplate[];
 
   const handleDownloadThumbPng = async (tpl: ThumbnailTemplate) => {
     const cv = document.createElement('canvas');
@@ -363,7 +360,6 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
   const TABS: Array<{ id: StudioTabId; label: string; icon: React.ReactNode }> = [
     { id: 'thumbnails', label: 'Thumbnails', icon: <ImageIcon size={15} /> },
     { id: 'images', label: 'Image Formats', icon: <Plus size={15} /> },
-    { id: 'videos', label: 'Video Templates', icon: <Film size={15} /> },
     { id: 'voices', label: 'Voices', icon: <Volume2 size={15} /> },
     { id: 'styles', label: 'Palettes & Fonts', icon: <Palette size={15} /> },
     { id: 'cutout', label: 'Background Remover', icon: <Scissors size={15} /> },
@@ -376,27 +372,27 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-[10005] bg-black/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5"
+        className="fixed inset-0 z-[10005] bg-black/65 flex items-center justify-center p-2 sm:p-5"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.97, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.97, y: 12 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-6xl h-[90vh] rounded-3xl bg-[#F4F8FC] border border-zinc-200 shadow-2xl flex flex-col overflow-hidden text-zinc-900"
+          className="w-full max-w-6xl h-[90vh] rounded-3xl neu-glass border border-[var(--gb)] shadow-[var(--shadow-neumorphic)] flex flex-col overflow-hidden text-foreground"
         >
           {/* Header */}
-          <div className="px-5 py-4 bg-white border-b border-zinc-200 flex items-center justify-between gap-3 shrink-0">
+          <div className="px-5 py-4 bg-surface/80 border-b border-border/80 flex items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-[#0A2A66] text-white flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl theme-button-primary flex items-center justify-center shrink-0">
                 <Sparkles size={19} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-base sm:text-lg font-extrabold text-[#0A2A66] truncate">
-                  Creative Studio · MythoriaLib
+                <h2 className="text-base sm:text-lg font-extrabold text-foreground truncate">
+                  Creative Image Studio · MythoriaLib
                 </h2>
-                <p className="text-xs font-medium text-zinc-500 truncate">
-                  Thumbnails, posters, videos (up to 120s), Gemini Studio voices, &amp; background cutouts
+                <p className="text-xs font-medium text-muted-foreground truncate">
+                  Thumbnails, posters, image formats, studio voices, &amp; background cutouts (Video OFF)
                 </p>
               </div>
             </div>
@@ -404,7 +400,7 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[44px] min-w-[44px] rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 flex items-center justify-center cursor-pointer shrink-0"
+              className="min-h-[44px] min-w-[44px] rounded-xl neu-raise text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer shrink-0"
               aria-label="Close Creative Studio"
             >
               <X size={18} />
@@ -599,71 +595,6 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
               </div>
             )}
 
-            {activeTab === 'videos' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {videoTemplates.map((vt) => (
-                  <div
-                    key={vt.id}
-                    className="rounded-2xl bg-white border border-zinc-200 p-4 flex flex-col justify-between gap-4"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h4 className="text-sm font-extrabold text-[#0A2A66]">{vt.name}</h4>
-                          <p className="text-[11px] font-semibold text-zinc-500 tabular-nums mt-0.5">
-                            {vt.style} · {vt.aspect} · {vt.duration}s · Voice: {vt.voice} · Font: {vt.font}
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-extrabold text-[#0A2A66] bg-[#F4F8FC] border border-zinc-200 px-2.5 py-1 rounded-lg tabular-nums">
-                          {vt.scenes.length} scenes
-                        </span>
-                      </div>
-
-                      {/* Proportional colored storyboard track */}
-                      <div className="flex h-7 rounded-xl overflow-hidden border border-zinc-200">
-                        {vt.scenes.map(([label, secs, color], idx) => (
-                          <div
-                            key={`${vt.id}-sc-${idx}`}
-                            style={{
-                              flex: secs,
-                              backgroundColor: color,
-                            }}
-                            title={`${label} (${secs}s)`}
-                            className="flex items-center justify-center px-1 text-[9px] font-extrabold text-white truncate"
-                          >
-                            {label}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          launchPrompt(
-                            `Create a ${vt.duration}s ${vt.style} video (${vt.aspect}) using the "${vt.name}" (${vt.id}) template with ${vt.voice} narration on an engaging topic.`
-                          )
-                        }
-                        className="flex-1 min-h-[40px] px-3 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Film size={14} />
-                        <span>Create Video in Chat</span>
-                      </button>
-                      {vt.custom && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTemplate(vt.id)}
-                          className="min-h-[40px] px-3 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center cursor-pointer"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {activeTab === 'voices' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -719,14 +650,10 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            launchPrompt(
-                              `Create a 45-second motion explainer video narrated in the "${v.id}" voice.`
-                            )
-                          }
-                          className="flex-1 min-h-[40px] px-3 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] text-white text-xs font-bold cursor-pointer"
+                          onClick={() => showToast(`Voice "${v.id}" ready for chat read-aloud`)}
+                          className="flex-1 min-h-[40px] px-3 rounded-xl theme-button-primary text-xs font-bold cursor-pointer"
                         >
-                          Use for Video
+                          Use Voice
                         </button>
                       </div>
                     </div>

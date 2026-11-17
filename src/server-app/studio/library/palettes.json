@@ -1,0 +1,458 @@
+[
+ {
+  "id": "neon-night",
+  "name": "Neon Night",
+  "mood": "techy, energetic",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0b1020",
+   "#151c36",
+   "#6a2cff",
+   "#00e5ff",
+   "#ffffff"
+  ]
+ },
+ {
+  "id": "money-red",
+  "name": "Money Red",
+  "mood": "urgent, bold",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0a0a0a",
+   "#1a1a1a",
+   "#e10600",
+   "#ffcc00",
+   "#ffffff"
+  ]
+ },
+ {
+  "id": "ink-gold",
+  "name": "Ink & Gold",
+  "mood": "luxury, serious",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0b0d12",
+   "#161a22",
+   "#e8b04b",
+   "#7a5b1e",
+   "#f4f1ea"
+  ]
+ },
+ {
+  "id": "fresh-mint",
+  "name": "Fresh Mint",
+  "mood": "fresh, healthy",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0d3b36",
+   "#14524a",
+   "#2ec4b6",
+   "#ff9f1c",
+   "#f7fff7"
+  ]
+ },
+ {
+  "id": "sunset-pop",
+  "name": "Sunset Pop",
+  "mood": "warm, playful",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#2b1055",
+   "#3d1a73",
+   "#ff4d6d",
+   "#ffb703",
+   "#fff3e0"
+  ]
+ },
+ {
+  "id": "teal-orange",
+  "name": "Cinematic Teal/Orange",
+  "mood": "film, drama",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#081c24",
+   "#0f2f3a",
+   "#1b6f7a",
+   "#ff8a3d",
+   "#f5e9da"
+  ]
+ },
+ {
+  "id": "mono-clean",
+  "name": "Mono Clean",
+  "mood": "clean, corporate",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#ffffff",
+   "#f3f4f6",
+   "#111827",
+   "#2f5bea",
+   "#111827"
+  ]
+ },
+ {
+  "id": "pastel-dream",
+  "name": "Pastel Dream",
+  "mood": "soft, friendly",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#fdf2f8",
+   "#ffffff",
+   "#f9a8d4",
+   "#a5b4fc",
+   "#3b2a4a"
+  ]
+ },
+ {
+  "id": "forest-calm",
+  "name": "Forest Calm",
+  "mood": "nature, calm",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#10231a",
+   "#17382a",
+   "#3fa66b",
+   "#d9c27a",
+   "#eef5ea"
+  ]
+ },
+ {
+  "id": "ocean-deep",
+  "name": "Ocean Deep",
+  "mood": "trust, depth",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#04162b",
+   "#0a2a4d",
+   "#1fa2ff",
+   "#7ee8fa",
+   "#eaf6ff"
+  ]
+ },
+ {
+  "id": "royal-gold",
+  "name": "Royal Purple Gold",
+  "mood": "royal, premium",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#1a0b2e",
+   "#2a1450",
+   "#7b2cbf",
+   "#ffd166",
+   "#fdf6ff"
+  ]
+ },
+ {
+  "id": "coral-cream",
+  "name": "Coral Cream",
+  "mood": "friendly, light",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#fff4ea",
+   "#ffffff",
+   "#ff6b57",
+   "#2b2d42",
+   "#2b2d42"
+  ]
+ },
+ {
+  "id": "cyber-lime",
+  "name": "Cyber Lime",
+  "mood": "hacker, gaming",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0a0f0a",
+   "#121a12",
+   "#b6ff00",
+   "#00f0ff",
+   "#f2fff2"
+  ]
+ },
+ {
+  "id": "desert-sand",
+  "name": "Desert Sand",
+  "mood": "earthy, editorial",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#f3e5c8",
+   "#fff7e6",
+   "#c8553d",
+   "#2f4858",
+   "#2f4858"
+  ]
+ },
+ {
+  "id": "candy",
+  "name": "Candy",
+  "mood": "fun, youthful",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#fff0f6",
+   "#ffffff",
+   "#ff3d9a",
+   "#3dd6ff",
+   "#2b1b3d"
+  ]
+ },
+ {
+  "id": "steel-blue",
+  "name": "Steel Blue",
+  "mood": "tech, product",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0f172a",
+   "#1e293b",
+   "#38bdf8",
+   "#f97316",
+   "#f1f5f9"
+  ]
+ },
+ {
+  "id": "sakura",
+  "name": "Sakura",
+  "mood": "anime, gentle",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#fff1f2",
+   "#ffe4e6",
+   "#fb7185",
+   "#7c3aed",
+   "#4c1d3d"
+  ]
+ },
+ {
+  "id": "blood-moon",
+  "name": "Blood Moon",
+  "mood": "horror, thriller",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0d0203",
+   "#1f0608",
+   "#c1121f",
+   "#fdf0d5",
+   "#fdf0d5"
+  ]
+ },
+ {
+  "id": "holo",
+  "name": "Holo",
+  "mood": "futuristic, dreamy",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0e0b1f",
+   "#1b1535",
+   "#a78bfa",
+   "#34d399",
+   "#f5f3ff"
+  ]
+ },
+ {
+  "id": "saffron-india",
+  "name": "Saffron India",
+  "mood": "festive, Indian",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#fff7ec",
+   "#ffffff",
+   "#ff9933",
+   "#138808",
+   "#1f2a44"
+  ]
+ },
+ {
+  "id": "midnight-emerald",
+  "name": "Midnight Emerald",
+  "mood": "finance, premium",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#02100c",
+   "#062a20",
+   "#10b981",
+   "#fbbf24",
+   "#ecfdf5"
+  ]
+ },
+ {
+  "id": "retro-wave",
+  "name": "Retro Wave",
+  "mood": "80s, synthwave",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#1a0033",
+   "#2d0057",
+   "#ff2bd6",
+   "#00f0ff",
+   "#ffe600"
+  ]
+ },
+ {
+  "id": "diwali-glow",
+  "name": "Diwali Glow",
+  "mood": "festival, warm",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#1b0a00",
+   "#3a1600",
+   "#ff9f1c",
+   "#ffd166",
+   "#fff4d6"
+  ]
+ },
+ {
+  "id": "ice-white",
+  "name": "Ice White",
+  "mood": "minimal, cold",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#f4f9ff",
+   "#ffffff",
+   "#3b82f6",
+   "#06b6d4",
+   "#0f172a"
+  ]
+ }
+]

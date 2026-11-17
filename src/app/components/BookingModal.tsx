@@ -70,7 +70,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={handleResetAndClose}
-          className="fixed inset-0 bg-black/70 backdrop-blur-md"
+          className="fixed inset-0 bg-black/70"
         />
 
         {/* Modal Container */}

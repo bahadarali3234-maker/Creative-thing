@@ -1,0 +1,735 @@
+[
+ {
+  "id": "bold-yt-thumbnail",
+  "name": "Bold YouTube Thumbnail",
+  "mood": "loud, high-contrast, clickable",
+  "bestFor": [
+   "thumbnail",
+   "reel cover"
+  ],
+  "palettes": [
+   "money-red",
+   "neon-night",
+   "sunset-pop",
+   "cyber-lime"
+  ],
+  "fonts": [
+   "hi-bold-poppins",
+   "anton-oswald",
+   "hi-news-khand"
+  ],
+  "background": "Saturated gradient or sunburst; subject cut-out with white sticker outline and glow",
+  "shapes": "Large circles, arrows, burst shapes behind subject; 1-2 accent bars",
+  "textTreatment": "3-5 words max, 14-18% of canvas width per letter row height, thick stroke (text-shadow ring) + drop shadow, one keyword in accent colour",
+  "effects": [
+   "sunburst",
+   "sticker-outline",
+   "text-stroke-shadow",
+   "vignette"
+  ],
+  "avoid": "clutter, thin fonts, text under 10% of height, more than 3 colours",
+  "promptHint": "Make the face/subject huge, emotion high, headline readable at 120px wide."
+ },
+ {
+  "id": "glassmorphism",
+  "name": "Glassmorphism",
+  "mood": "modern, airy, premium UI",
+  "bestFor": [
+   "banner",
+   "poster",
+   "app promo",
+   "quote card"
+  ],
+  "palettes": [
+   "holo",
+   "ocean-deep",
+   "pastel-dream",
+   "neon-night"
+  ],
+  "fonts": [
+   "modern-grotesk",
+   "hi-anek",
+   "wide-unbounded"
+  ],
+  "background": "Blurred colourful mesh gradient blobs",
+  "shapes": "Frosted translucent cards with 1px light border, rounded 3% radius",
+  "textTreatment": "Clean medium-weight type on glass cards; one bold headline",
+  "effects": [
+   "mesh-gradient",
+   "glass-card",
+   "blob-shape",
+   "grain"
+  ],
+  "avoid": "backdrop-filter if export must be html2canvas (use opaque rgba fallback)",
+  "promptHint": "Layer 2-3 glass panels over soft blobs; keep text inside panels."
+ },
+ {
+  "id": "neumorphism",
+  "name": "Neumorphism",
+  "mood": "soft, tactile, calm",
+  "bestFor": [
+   "ui cards",
+   "quote card",
+   "app promo"
+  ],
+  "palettes": [
+   "ice-white",
+   "pastel-dream",
+   "coral-cream"
+  ],
+  "fonts": [
+   "modern-grotesk",
+   "hi-anek"
+  ],
+  "background": "Single flat tinted background colour",
+  "shapes": "Raised/pressed soft shapes using paired light/dark shadows",
+  "textTreatment": "Low-contrast headings are not allowed: text must keep >=4.5:1 contrast",
+  "effects": [
+   "neumorph-raised",
+   "neumorph-pressed"
+  ],
+  "avoid": "pure white on white text, hard shadows",
+  "promptHint": "Subtle depth only; add one accent colour for focal element."
+ },
+ {
+  "id": "neon-cyberpunk",
+  "name": "Neon Cyberpunk",
+  "mood": "night city, tech, gaming",
+  "bestFor": [
+   "thumbnail",
+   "poster",
+   "wallpaper"
+  ],
+  "palettes": [
+   "neon-night",
+   "cyber-lime",
+   "retro-wave",
+   "holo"
+  ],
+  "fonts": [
+   "hi-rajdhani",
+   "techno-orbitron",
+   "condensed-bebas"
+  ],
+  "background": "Near-black gradient, perspective grid or city silhouette, scanlines",
+  "shapes": "Neon outlines, diagonal light bars, glitch slices",
+  "textTreatment": "Uppercase, wide tracking, neon glow on keyword, glitch offset in magenta/cyan",
+  "effects": [
+   "glow-text",
+   "scanlines",
+   "glitch-text",
+   "perspective-grid",
+   "grain"
+  ],
+  "avoid": "daylight colours, soft pastels",
+  "promptHint": "Glow only on 1-2 elements so it stays readable."
+ },
+ {
+  "id": "synthwave-retro",
+  "name": "Synthwave / 80s",
+  "mood": "nostalgic, sunset grid",
+  "bestFor": [
+   "poster",
+   "album cover",
+   "wallpaper"
+  ],
+  "palettes": [
+   "retro-wave",
+   "sunset-pop"
+  ],
+  "fonts": [
+   "techno-orbitron",
+   "hi-rajdhani",
+   "arcade-pixel"
+  ],
+  "background": "Purple-to-pink sky gradient, striped retro sun, perspective grid floor",
+  "shapes": "Palm silhouettes, chrome text",
+  "textTreatment": "Chrome/gradient title with pink-cyan outline",
+  "effects": [
+   "retro-sun",
+   "perspective-grid",
+   "starfield",
+   "glow-text"
+  ],
+  "avoid": "flat daylight colours",
+  "promptHint": "Horizon at 60% height; sun centred behind title."
+ },
+ {
+  "id": "minimal-swiss",
+  "name": "Minimal Swiss",
+  "mood": "clean, rational, confident",
+  "bestFor": [
+   "poster",
+   "logo",
+   "banner",
+   "business card"
+  ],
+  "palettes": [
+   "mono-clean",
+   "ice-white",
+   "desert-sand"
+  ],
+  "fonts": [
+   "modern-grotesk",
+   "hi-anek",
+   "editorial-playfair"
+  ],
+  "background": "Solid background, one accent block",
+  "shapes": "Grid lines, large type, generous whitespace (40%+ empty)",
+  "textTreatment": "Left aligned, strict baseline grid, 2 sizes only (huge + small)",
+  "effects": [
+   "grid-pattern"
+  ],
+  "avoid": "gradients, shadows, more than 2 colours",
+  "promptHint": "One idea, huge type, lots of space."
+ },
+ {
+  "id": "brutalist",
+  "name": "Brutalist",
+  "mood": "raw, loud, anti-design",
+  "bestFor": [
+   "poster",
+   "merch",
+   "announcement"
+  ],
+  "palettes": [
+   "mono-clean",
+   "money-red",
+   "cyber-lime"
+  ],
+  "fonts": [
+   "heavy-archivo",
+   "hi-news-khand"
+  ],
+  "background": "Flat colour blocks, thick black borders",
+  "shapes": "Hard offset shadows, overlapping rectangles, rotated labels",
+  "textTreatment": "All caps, huge, tight leading, black on yellow/white",
+  "effects": [
+   "hard-shadow",
+   "diagonal-stripes"
+  ],
+  "avoid": "soft shadows, gradients",
+  "promptHint": "Hard 8px offset shadows, 6px black borders."
+ },
+ {
+  "id": "cinematic-poster",
+  "name": "Cinematic Poster",
+  "mood": "dramatic, filmic",
+  "bestFor": [
+   "poster",
+   "thumbnail",
+   "book cover"
+  ],
+  "palettes": [
+   "teal-orange",
+   "blood-moon",
+   "ink-gold"
+  ],
+  "fonts": [
+   "editorial-playfair",
+   "royal-cinzel",
+   "hi-rozha"
+  ],
+  "background": "Teal-orange graded photo/gradient, letterbox bars, heavy vignette",
+  "shapes": "Light rays, dust particles, title block at bottom third",
+  "textTreatment": "Serif/cinzel title with wide tracking, small credits line",
+  "effects": [
+   "vignette",
+   "light-leak",
+   "grain",
+   "letterbox"
+  ],
+  "avoid": "bright flat colours",
+  "promptHint": "Use rule of thirds; subject lit from one side."
+ },
+ {
+  "id": "magazine-editorial",
+  "name": "Magazine Editorial",
+  "mood": "stylish, premium print",
+  "bestFor": [
+   "poster",
+   "cover",
+   "banner"
+  ],
+  "palettes": [
+   "desert-sand",
+   "coral-cream",
+   "mono-clean"
+  ],
+  "fonts": [
+   "editorial-playfair",
+   "luxe-dm-serif",
+   "hi-serif"
+  ],
+  "background": "Warm paper tone or full-bleed photo with plain colour band",
+  "shapes": "Thin rules, masthead, cover lines, issue number",
+  "textTreatment": "Mix of huge serif title and tiny sans captions",
+  "effects": [
+   "paper-texture",
+   "thin-rule"
+  ],
+  "avoid": "neon, glow",
+  "promptHint": "Masthead on top; title overlaps the subject slightly."
+ },
+ {
+  "id": "dark-luxury",
+  "name": "Dark Luxury",
+  "mood": "premium, gold on black",
+  "bestFor": [
+   "poster",
+   "logo",
+   "invitation",
+   "product ad"
+  ],
+  "palettes": [
+   "ink-gold",
+   "royal-gold",
+   "midnight-emerald"
+  ],
+  "fonts": [
+   "luxe-dm-serif",
+   "royal-cinzel",
+   "hi-tiro"
+  ],
+  "background": "Black with subtle radial spotlight, fine gold lines",
+  "shapes": "Thin gold borders, ornamental corners, soft glow",
+  "textTreatment": "Gold gradient text or flat gold, wide letter spacing, small caps for details",
+  "effects": [
+   "spotlight",
+   "gold-text",
+   "grain",
+   "corner-brackets"
+  ],
+  "avoid": "saturated rainbow colours",
+  "promptHint": "Less is more; centre-align; spotlight behind subject."
+ },
+ {
+  "id": "pastel-soft",
+  "name": "Pastel Soft",
+  "mood": "friendly, gentle, kind",
+  "bestFor": [
+   "quote card",
+   "invitation",
+   "social post",
+   "kids"
+  ],
+  "palettes": [
+   "pastel-dream",
+   "sakura",
+   "candy",
+   "coral-cream"
+  ],
+  "fonts": [
+   "hi-baloo",
+   "script-pacifico",
+   "hi-kalam"
+  ],
+  "background": "Soft gradient with blobs and sparkles",
+  "shapes": "Rounded shapes, cloud blobs, hearts/stars",
+  "textTreatment": "Rounded friendly font, dark plum text on pastel for contrast",
+  "effects": [
+   "blob-shape",
+   "sparkles",
+   "dots-pattern"
+  ],
+  "avoid": "harsh black outlines",
+  "promptHint": "Keep text colour dark enough for 4.5:1."
+ },
+ {
+  "id": "pop-art-comic",
+  "name": "Pop Art / Comic",
+  "mood": "playful, loud, retro comics",
+  "bestFor": [
+   "thumbnail",
+   "poster",
+   "announcement"
+  ],
+  "palettes": [
+   "candy",
+   "money-red",
+   "sunset-pop"
+  ],
+  "fonts": [
+   "comic-bangers",
+   "hi-baloo"
+  ],
+  "background": "Halftone dots, bold flat colours, speech bubbles",
+  "shapes": "Starburst callouts, thick black outlines, speed lines",
+  "textTreatment": "Bangers-style title, black outline 6px, offset shadow",
+  "effects": [
+   "halftone",
+   "starburst",
+   "hard-shadow",
+   "text-stroke-shadow"
+  ],
+  "avoid": "subtle gradients",
+  "promptHint": "Use POW/WOW style bursts sparingly."
+ },
+ {
+  "id": "grunge-street",
+  "name": "Grunge Street",
+  "mood": "gritty, urban, music",
+  "bestFor": [
+   "poster",
+   "album cover",
+   "thumbnail"
+  ],
+  "palettes": [
+   "blood-moon",
+   "steel-blue",
+   "money-red"
+  ],
+  "fonts": [
+   "street-marker",
+   "condensed-bebas",
+   "hi-news-khand"
+  ],
+  "background": "Dark concrete texture, torn paper edges, tape strips",
+  "shapes": "Spray marks, stencil text, scribbles",
+  "textTreatment": "Marker/stencil type, rotated -3deg, white with black outline",
+  "effects": [
+   "grain",
+   "paper-texture",
+   "diagonal-stripes",
+   "text-stroke-shadow"
+  ],
+  "avoid": "clean geometric layouts",
+  "promptHint": "Imperfection is the point: slight rotations, uneven spacing."
+ },
+ {
+  "id": "sticker-pop",
+  "name": "Sticker Pop",
+  "mood": "fun, social, bubbly",
+  "bestFor": [
+   "social post",
+   "reel cover",
+   "quote card"
+  ],
+  "palettes": [
+   "candy",
+   "sunset-pop",
+   "fresh-mint"
+  ],
+  "fonts": [
+   "hi-baloo",
+   "comic-bangers",
+   "hi-bold-poppins"
+  ],
+  "background": "Flat bright colour with confetti dots",
+  "shapes": "Die-cut stickers with white outline and soft shadow",
+  "textTreatment": "Chunky rounded text inside sticker label",
+  "effects": [
+   "sticker-outline",
+   "dots-pattern",
+   "confetti"
+  ],
+  "avoid": "dark moody colours",
+  "promptHint": "Each element looks like a peel-off sticker."
+ },
+ {
+  "id": "gradient-mesh-modern",
+  "name": "Gradient Mesh Modern",
+  "mood": "fresh, SaaS, trendy",
+  "bestFor": [
+   "banner",
+   "post",
+   "poster",
+   "app promo"
+  ],
+  "palettes": [
+   "holo",
+   "ocean-deep",
+   "sunset-pop",
+   "midnight-emerald"
+  ],
+  "fonts": [
+   "modern-grotesk",
+   "wide-unbounded",
+   "hi-anek"
+  ],
+  "background": "Multi-colour mesh gradient with grain",
+  "shapes": "Minimal geometric accents, thin outlines",
+  "textTreatment": "Large clean sans, white, one gradient word",
+  "effects": [
+   "mesh-gradient",
+   "grain",
+   "gradient-text"
+  ],
+  "avoid": "flat clip-art",
+  "promptHint": "Gradient + grain removes the 'cheap' look."
+ },
+ {
+  "id": "flat-vector",
+  "name": "Flat Vector Illustration",
+  "mood": "friendly, explainer",
+  "bestFor": [
+   "infographic",
+   "banner",
+   "social post"
+  ],
+  "palettes": [
+   "fresh-mint",
+   "coral-cream",
+   "steel-blue",
+   "saffron-india"
+  ],
+  "fonts": [
+   "hi-baloo",
+   "hi-bold-poppins",
+   "modern-grotesk"
+  ],
+  "background": "Solid colour background with simple shape scenery",
+  "shapes": "Geometric characters/objects built from SVG circles, rects, paths",
+  "textTreatment": "Friendly bold text with plenty of padding",
+  "effects": [
+   "blob-shape",
+   "dots-pattern",
+   "long-shadow"
+  ],
+  "avoid": "photo-real shading",
+  "promptHint": "Limit to 4-5 flat colours + 1 shadow tone."
+ },
+ {
+  "id": "paper-cut-layers",
+  "name": "Paper Cut Layers",
+  "mood": "crafted, depth, festive",
+  "bestFor": [
+   "poster",
+   "invitation",
+   "banner"
+  ],
+  "palettes": [
+   "saffron-india",
+   "diwali-glow",
+   "candy",
+   "forest-calm"
+  ],
+  "fonts": [
+   "hi-rozha",
+   "hi-baloo",
+   "editorial-playfair"
+  ],
+  "background": "Stacked wavy layers each with soft drop shadow",
+  "shapes": "Layered cut-out silhouettes (hills, clouds, lanterns)",
+  "textTreatment": "Title on top layer with subtle emboss",
+  "effects": [
+   "layer-shadow",
+   "paper-texture",
+   "sparkles"
+  ],
+  "avoid": "hard black outlines",
+  "promptHint": "3-5 layers, darker towards the back."
+ },
+ {
+  "id": "isometric-3d-css",
+  "name": "Isometric / 3D CSS",
+  "mood": "techy, product, dimensional",
+  "bestFor": [
+   "infographic",
+   "product ad",
+   "banner"
+  ],
+  "palettes": [
+   "steel-blue",
+   "neon-night",
+   "fresh-mint"
+  ],
+  "fonts": [
+   "modern-grotesk",
+   "hi-rajdhani"
+  ],
+  "background": "Soft gradient floor with isometric grid",
+  "shapes": "CSS-transformed cubes/cards using rotateX(60deg) rotateZ(45deg)",
+  "textTreatment": "Clean sans labels on floating cards",
+  "effects": [
+   "iso-cube",
+   "long-shadow",
+   "grid-pattern"
+  ],
+  "avoid": "flat front-facing only",
+  "promptHint": "Keep lighting consistent: light from top-left."
+ },
+ {
+  "id": "holographic",
+  "name": "Holographic / Iridescent",
+  "mood": "futuristic, dreamy, Gen-Z",
+  "bestFor": [
+   "poster",
+   "album cover",
+   "wallpaper"
+  ],
+  "palettes": [
+   "holo",
+   "retro-wave",
+   "ice-white"
+  ],
+  "fonts": [
+   "wide-unbounded",
+   "art-syne",
+   "modern-grotesk"
+  ],
+  "background": "Conic/linear iridescent gradients with noise",
+  "shapes": "Chrome blobs, orbit rings, sparkles",
+  "textTreatment": "Chrome or iridescent gradient text over dark/white",
+  "effects": [
+   "holo-gradient",
+   "grain",
+   "sparkles",
+   "blob-shape"
+  ],
+  "avoid": "matte flat colours",
+  "promptHint": "Dark base makes iridescence pop."
+ },
+ {
+  "id": "blueprint-tech",
+  "name": "Blueprint / Technical",
+  "mood": "engineering, precise",
+  "bestFor": [
+   "infographic",
+   "poster",
+   "banner"
+  ],
+  "palettes": [
+   "ocean-deep",
+   "steel-blue"
+  ],
+  "fonts": [
+   "techno-orbitron",
+   "hi-rajdhani",
+   "modern-grotesk"
+  ],
+  "background": "Deep blue with fine white grid",
+  "shapes": "Dimension lines, callout arrows, circles, corner brackets",
+  "textTreatment": "Monospace-like uppercase labels, thin lines",
+  "effects": [
+   "grid-pattern",
+   "corner-brackets",
+   "thin-rule"
+  ],
+  "avoid": "warm colours, shadows",
+  "promptHint": "Everything aligned to the grid, 1-2px lines."
+ },
+ {
+  "id": "watercolor-wash",
+  "name": "Watercolor Wash",
+  "mood": "artistic, calm, wellness",
+  "bestFor": [
+   "quote card",
+   "invitation",
+   "poster",
+   "book cover"
+  ],
+  "palettes": [
+   "pastel-dream",
+   "sakura",
+   "forest-calm"
+  ],
+  "fonts": [
+   "hi-kalam",
+   "editorial-playfair",
+   "script-pacifico"
+  ],
+  "background": "Soft bleeding colour washes via blurred radial gradients on paper tone",
+  "shapes": "Brush-stroke underline, splatter dots",
+  "textTreatment": "Handwritten or serif, dark ink colour",
+  "effects": [
+   "watercolor-wash",
+   "paper-texture",
+   "brush-stroke"
+  ],
+  "avoid": "hard geometry",
+  "promptHint": "Overlap 3 blurred blobs with multiply blend."
+ },
+ {
+  "id": "anime-glow",
+  "name": "Anime Glow",
+  "mood": "dreamy, energetic, youthful",
+  "bestFor": [
+   "poster",
+   "wallpaper",
+   "thumbnail"
+  ],
+  "palettes": [
+   "sakura",
+   "neon-night",
+   "sunset-pop"
+  ],
+  "fonts": [
+   "hi-bold-poppins",
+   "hi-baloo",
+   "wide-unbounded"
+  ],
+  "background": "Gradient sky, bokeh circles, speed lines, petals",
+  "shapes": "Sparkles, glow rims, diagonal action lines",
+  "textTreatment": "Bold title with white outline and soft pink/blue glow",
+  "effects": [
+   "bokeh",
+   "sparkles",
+   "speed-lines",
+   "glow-text"
+  ],
+  "avoid": "gritty textures",
+  "promptHint": "Rim light on subject; never copy existing characters."
+ },
+ {
+  "id": "doodle-hand-drawn",
+  "name": "Doodle Hand-Drawn",
+  "mood": "casual, friendly, creative",
+  "bestFor": [
+   "social post",
+   "quote card",
+   "kids",
+   "education"
+  ],
+  "palettes": [
+   "pastel-dream",
+   "coral-cream",
+   "fresh-mint"
+  ],
+  "fonts": [
+   "hi-kalam",
+   "hi-baloo",
+   "street-marker"
+  ],
+  "background": "Paper or notebook grid background",
+  "shapes": "Hand-drawn arrows, stars, underlines, circles (SVG paths)",
+  "textTreatment": "Handwritten font, slight random rotation",
+  "effects": [
+   "paper-texture",
+   "brush-stroke",
+   "sparkles"
+  ],
+  "avoid": "perfect geometry",
+  "promptHint": "Slightly imperfect strokes with round line caps."
+ },
+ {
+  "id": "riso-retro-print",
+  "name": "Riso Retro Print",
+  "mood": "indie, print-like",
+  "bestFor": [
+   "poster",
+   "album cover",
+   "banner"
+  ],
+  "palettes": [
+   "candy",
+   "coral-cream",
+   "ocean-deep"
+  ],
+  "fonts": [
+   "heavy-archivo",
+   "luxe-dm-serif",
+   "hi-yatra"
+  ],
+  "background": "Off-white paper with 2-3 overprinting spot colours (multiply)",
+  "shapes": "Misregistered shapes, halftone gradients",
+  "textTreatment": "Overprint text using mix-blend-mode multiply",
+  "effects": [
+   "halftone",
+   "grain",
+   "paper-texture"
+  ],
+  "avoid": "gloss, glow",
+  "promptHint": "Limit to 2-3 inks; overlaps create new colours."
+ }
+]

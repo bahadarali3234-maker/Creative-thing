@@ -40,7 +40,7 @@ export const BUILT_IN_CREATIVE_SKILLS: AiSkillItem[] = [
     description: 'Crafts detailed Buildy UI prompts, section blueprints, and design systems ready to paste into Buildy.',
     iconName: 'Globe',
     systemInstructions:
-      'You are a Buildy specification and UI architecture specialist. Remember: this workspace does NOT build HTML/CSS/JS websites directly — always remind the user to open Buildy (https://fluorescent-code-vault-flow.base44.app) to build any App or Web UI, and provide a comprehensive Buildy prompt plus architecture specs.',
+      'You are a Buildy specification and UI architecture specialist. Remember: this workspace does NOT build HTML/CSS/JS websites directly in chat — always remind the user to open the built-in Buildy workspace (via the Buildy button or sidebar menu) to build any App or Web UI, and provide a comprehensive Buildy prompt plus architecture specs.',
     starterPrompt: 'Write a detailed Buildy prompt for a luxury dark-mode portfolio website.',
   },
   {
@@ -90,7 +90,7 @@ export const BUILT_IN_CREATIVE_SKILLS: AiSkillItem[] = [
     description: 'Designs complete color roles, typography pairings, and component prompts tailored for Buildy.',
     iconName: 'Sparkles',
     systemInstructions:
-      'You are a Buildy workflow strategist. Guide users to open Buildy (https://fluorescent-code-vault-flow.base44.app) to construct their Web or App UI while crafting detailed color palette, typography, and component prompts.',
+      'You are a Buildy workflow strategist. Guide users to open the built-in Buildy workspace from the sidebar menu to construct their Web or App UI while crafting detailed color palette, typography, and component prompts.',
     starterPrompt: 'Write a Buildy UI prompt with palette, typography, and component hierarchy.',
   },
 ];
@@ -143,19 +143,19 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-2xl max-h-[86vh] rounded-[28px] bg-white text-zinc-900 border border-zinc-200/90 shadow-[0_25px_60px_rgba(0,0,0,0.35)] flex flex-col overflow-hidden"
+          className="relative w-full max-w-2xl max-h-[86vh] rounded-[28px] neu-glass text-foreground border border-border shadow-[var(--shadow-neumorphic)] flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3 border-b border-zinc-100">
+          <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3 border-b border-border/80">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-[#00a6ff]/15 text-[#00a6ff] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-[var(--primary)]/15 text-[var(--primary)] flex items-center justify-center">
                 <Wand2 size={18} />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg font-extrabold text-zinc-900 leading-tight">
+                <h3 className="text-base sm:text-lg font-extrabold text-foreground leading-tight">
                   Explore Creative Skills
                 </h3>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Enable a built-in skill to highlight and activate it inside your prompt box
                 </p>
               </div>
@@ -164,7 +164,7 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-full neu-raise text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer"
               title="Close modal"
               aria-label="Close modal"
             >
@@ -173,21 +173,21 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
           </div>
 
           {/* Search Box */}
-          <div className="px-5 sm:px-6 py-2.5 bg-white border-b border-zinc-100 flex items-center gap-2">
-            <Search size={15} className="text-zinc-400 shrink-0" />
+          <div className="px-5 sm:px-6 py-2.5 bg-surface/60 border-b border-border/70 flex items-center gap-2">
+            <Search size={15} className="text-muted-foreground shrink-0" />
             <input
               type="text"
               placeholder="Search built-in creative skills..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs text-zinc-900 placeholder:text-zinc-400 bg-transparent focus:outline-none"
+              className="w-full text-xs text-foreground placeholder:text-muted-foreground bg-transparent focus:outline-none"
             />
           </div>
 
           {/* Built-in Skills List */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 no-scrollbar">
             {filteredSkills.length === 0 ? (
-              <div className="py-10 text-center text-xs text-zinc-500">
+              <div className="py-10 text-center text-xs text-muted-foreground">
                 No matching built-in skills found.
               </div>
             ) : (
@@ -203,28 +203,28 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
                     }}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       isActive
-                        ? 'bg-sky-50/70 border-[#00a6ff] ring-1 ring-[#00a6ff] shadow-sm'
-                        : 'bg-white border-zinc-200/90 hover:border-zinc-300 hover:shadow-sm'
+                        ? 'bg-[var(--primary)]/10 border-[var(--primary)] ring-1 ring-[var(--primary)] shadow-sm'
+                        : 'neu-raise border-border/80 hover:border-[var(--primary)]/45'
                     }`}
                   >
                     <div className="flex items-start gap-3 min-w-0">
                       <div
                         className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
                           isActive
-                            ? 'bg-[#00a6ff] text-white'
-                            : 'bg-[#00a6ff]/12 text-[#00a6ff]'
+                            ? 'bg-[var(--primary)] text-white'
+                            : 'bg-[var(--primary)]/12 text-[var(--primary)]'
                         }`}
                       >
                         {renderSkillIcon(skill.iconName)}
                       </div>
                       <div className="space-y-0.5 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-zinc-900">{skill.name}</span>
-                          <span className="text-[10px] text-zinc-500 font-semibold">
+                          <span className="font-bold text-sm text-foreground">{skill.name}</span>
+                          <span className="text-[10px] text-muted-foreground font-semibold">
                             {skill.category}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-500 leading-relaxed max-w-md">
+                        <p className="text-xs text-muted-foreground leading-relaxed max-w-md">
                           {skill.description}
                         </p>
                       </div>
@@ -240,8 +240,8 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
                         }}
                         className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-zinc-950 text-white shadow-sm'
-                            : 'bg-zinc-100 hover:bg-[#00a6ff] hover:text-white text-zinc-800'
+                            ? 'bg-[var(--primary)] text-white shadow-sm'
+                            : 'neu-raise text-foreground hover:bg-[var(--primary)] hover:text-white'
                         }`}
                       >
                         {isActive ? <Check size={12} strokeWidth={2.5} /> : <Wand2 size={12} />}
@@ -255,7 +255,7 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
           </div>
 
           {/* Modal Footer */}
-          <div className="px-5 sm:px-6 py-3 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-500">
+          <div className="px-5 sm:px-6 py-3 bg-surface/50 border-t border-border/80 flex items-center justify-between text-xs text-muted-foreground">
             <span>
               {activeSkillId
                 ? '1 creative skill active in your prompt box'
@@ -264,7 +264,7 @@ export const ExploreGptsModal: React.FC<ExploreGptsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-1.5 rounded-xl bg-white border border-zinc-200/90 text-zinc-700 hover:text-zinc-900 font-semibold cursor-pointer"
+              className="px-4 py-1.5 rounded-xl neu-raise text-foreground font-semibold cursor-pointer"
             >
               Done
             </button>

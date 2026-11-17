@@ -96,5 +96,77 @@ service cloud.firestore {
       allow delete: if isSignedIn()
         && resource.data.userId == request.auth.uid;
     }
+
+    // Encrypted user provider API keys (Groq / OpenAI): strictly owner-isolated
+    match /user_provider_keys/{keyDocId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && keyDocId is string
+        && keyDocId.size() > 0
+        && keyDocId.size() <= 160
+        && request.resource.data.keys().hasAll(['id', 'userId', 'provider', 'encryptedKey', 'iv', 'authTag', 'maskedKey'])
+        && request.resource.data.keys().hasOnly(['id', 'userId', 'provider', 'encryptedKey', 'iv', 'authTag', 'maskedKey', 'model', 'createdAt', 'updatedAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == keyDocId
+        && request.resource.data.provider in ['groq', 'openai']
+        && request.resource.data.encryptedKey is string
+        && request.resource.data.encryptedKey.size() > 0
+        && request.resource.data.encryptedKey.size() <= 2048
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() > 0
+        && request.resource.data.iv.size() <= 128
+        && request.resource.data.authTag is string
+        && request.resource.data.authTag.size() > 0
+        && request.resource.data.authTag.size() <= 128
+        && request.resource.data.maskedKey is string
+        && request.resource.data.maskedKey.size() <= 64
+        && (!('model' in request.resource.data) || (request.resource.data.model is string && request.resource.data.model.size() <= 128));
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.provider == resource.data.provider
+        && request.resource.data.keys().hasAll(['id', 'userId', 'provider', 'encryptedKey', 'iv', 'authTag', 'maskedKey'])
+        && request.resource.data.keys().hasOnly(['id', 'userId', 'provider', 'encryptedKey', 'iv', 'authTag', 'maskedKey', 'model', 'createdAt', 'updatedAt'])
+        && request.resource.data.encryptedKey is string
+        && request.resource.data.encryptedKey.size() > 0
+        && request.resource.data.encryptedKey.size() <= 2048
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() <= 128
+        && request.resource.data.authTag is string
+        && request.resource.data.authTag.size() <= 128
+        && request.resource.data.maskedKey is string
+        && request.resource.data.maskedKey.size() <= 64
+        && (!('model' in request.resource.data) || (request.resource.data.model is string && request.resource.data.model.size() <= 128))
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Persisted AI-generated / edited image metadata: strictly owner-isolated
+    match /generated_images/{imageId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(imageId)
+        && request.resource.data.keys().hasAll(['id', 'userId', 'provider', 'model', 'originalPrompt', 'fileName', 'mimeType', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == imageId
+        && request.resource.data.provider is string
+        && request.resource.data.provider.size() <= 64
+        && request.resource.data.model is string
+        && request.resource.data.model.size() <= 128
+        && request.resource.data.originalPrompt is string
+        && request.resource.data.originalPrompt.size() <= 4000
+        && (!('optimizedPrompt' in request.resource.data) || (request.resource.data.optimizedPrompt is string && request.resource.data.optimizedPrompt.size() <= 8000))
+        && request.resource.data.fileName is string
+        && request.resource.data.fileName.size() <= 256
+        && request.resource.data.mimeType is string
+        && request.resource.data.mimeType.size() <= 64
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 64;
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
   }
 }

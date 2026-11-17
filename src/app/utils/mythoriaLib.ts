@@ -874,20 +874,48 @@ export async function removeBackground(
   fileOrDataURL: File | Blob | string,
   opts: { edge_feather?: number; tolerance?: number } = {}
 ): Promise<{ method: 'ai' | 'simple'; dataURL: string }> {
-  const blob = typeof fileOrDataURL === 'string' ? await (await fetch(fileOrDataURL)).blob() : fileOrDataURL;
+  const blob =
+    typeof fileOrDataURL === 'string'
+      ? await (await fetch(fileOrDataURL)).blob()
+      : fileOrDataURL;
+
   try {
     const cdnUrl = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm';
-    const mod: any = await import(/* @vite-ignore */ cdnUrl);
-    const out: Blob = await mod.removeBackground(blob);
-    return { method: 'ai', dataURL: await fileToDataURL(out) };
+    const aiCutoutPromise = (async () => {
+      const mod: any = await import(/* @vite-ignore */ cdnUrl);
+      const out: Blob = await mod.removeBackground(blob);
+      return await fileToDataURL(out);
+    })();
+
+    const dataURL = await Promise.race<string>([
+      aiCutoutPromise,
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('Background removal timeout')), 8500)
+      ),
+    ]);
+    return { method: 'ai', dataURL };
   } catch {
     const src = await fileToDataURL(blob);
     const cv = await removeBackgroundSimple(src, {
       feather: opts.edge_feather ?? 2,
-      tolerance: opts.tolerance ?? 48,
+      tolerance: opts.tolerance ?? 54,
     });
     return { method: 'simple', dataURL: cv.toDataURL('image/png') };
   }
+}
+
+export function extractSubjectSlotQuery(html: string): { query: string; cutout: boolean } | null {
+  if (!html) return null;
+  const slotMatch = html.match(/<[^>]*data-studio-subject-slot[^>]*>/i);
+  const tagText = slotMatch ? slotMatch[0] : (html.match(/<img[^>]*data-query[^>]*>/i)?.[0] || '');
+  if (!tagText) return null;
+  const qMatch = tagText.match(/data-query=["']([^"']+)["']/i);
+  if (!qMatch || !qMatch[1].trim()) return null;
+  const cMatch = tagText.match(/data-cutout=["']([^"']+)["']/i);
+  return {
+    query: qMatch[1].trim(),
+    cutout: cMatch ? cMatch[1].toLowerCase() !== 'false' : true,
+  };
 }
 
 export function catalogForPrompt(): string {
@@ -978,19 +1006,45 @@ export function extractStudioToolCall(rawText: string): StudioToolCall | null {
 
 /**
  * Extracts VideoPlan JSON from a message when present.
+ * Works whether or not a `tts.segments` block was included (since auto-TTS is disabled).
  */
 export function extractVideoPlan(rawText: string): VideoPlan | null {
   if (!rawText) return null;
-  const jsonFences = rawText.matchAll(/```json\s*([\s\S]*?)```/gi);
+  const jsonFences = rawText.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
   for (const m of jsonFences) {
-    const body = (m[1] || '').trim();
-    if (!body.startsWith('{')) continue;
+    let body = (m[1] || '').trim();
+    if (!body.startsWith('{') || !body.includes('"scenes"')) continue;
+    // Strip trailing commas before closing braces/brackets for LLM resilience
+    body = body.replace(/,\s*([}\]])/g, '$1');
     try {
       const parsed = JSON.parse(body);
-      if (parsed && Array.isArray(parsed.scenes) && parsed.tts && Array.isArray(parsed.tts.segments)) {
-        const cappedDuration = Math.min(120, Math.max(5, Number(parsed.duration) || 60));
+      if (parsed && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+        let cursor = 0;
+        const normalizedScenes = parsed.scenes.map((sc: any, idx: number) => {
+          const dur = Math.max(1, Number(sc?.duration) || (Number(sc?.end) > Number(sc?.start) ? Number(sc.end) - Number(sc.start) : 5));
+          const start = Number.isFinite(Number(sc?.start)) ? Number(sc.start) : cursor;
+          const end = Number.isFinite(Number(sc?.end)) && Number(sc.end) > start ? Number(sc.end) : start + dur;
+          cursor = end;
+          return {
+            ...sc,
+            id: String(sc?.id || `s${idx + 1}`),
+            start,
+            end,
+            narration: String(sc?.narration || ''),
+            visual: sc?.visual || { type: 'motion-graphic', content: { title: parsed.title || `Scene ${idx + 1}` }, animation: 'fade' },
+            transition: sc?.transition || { type: 'fade', duration: 0.5 },
+          };
+        });
+
+        const totalFromScenes = normalizedScenes.length > 0 ? normalizedScenes[normalizedScenes.length - 1].end : 30;
+        const cappedDuration = Math.min(120, Math.max(3, Number(parsed.duration) || totalFromScenes || 30));
+        const segments =
+          parsed.tts && Array.isArray(parsed.tts.segments)
+            ? parsed.tts.segments
+            : normalizedScenes.map((sc: any) => ({ scene: sc.id, text: sc.narration || '' }));
+
         return {
-          title: String(parsed.title || 'Creative Video'),
+          title: String(parsed.title || 'Motion Graphic Video'),
           style: String(parsed.style || 'motion-graphic'),
           aspect: String(parsed.aspect || '16:9'),
           size: Array.isArray(parsed.size) && parsed.size.length === 2 ? [Number(parsed.size[0]), Number(parsed.size[1])] : [1280, 720],
@@ -999,13 +1053,13 @@ export function extractVideoPlan(rawText: string): VideoPlan | null {
           palette: Array.isArray(parsed.palette) ? parsed.palette : ['#0b1020', '#00e5ff', '#ffffff'],
           font: String(parsed.font || 'Poppins'),
           captions: parsed.captions !== false,
-          scenes: parsed.scenes,
+          scenes: normalizedScenes,
           tts: {
-            voice: String(parsed.tts.voice || 'Kore'),
-            language: String(parsed.tts.language || 'en-US'),
-            style: String(parsed.tts.style || 'Clear studio narrator'),
-            speed: Number(parsed.tts.speed) || 1.0,
-            segments: parsed.tts.segments,
+            voice: String(parsed.tts?.voice || 'Kore'),
+            language: String(parsed.tts?.language || 'en-US'),
+            style: String(parsed.tts?.style || 'Clear studio narrator'),
+            speed: Number(parsed.tts?.speed) || 1.0,
+            segments,
           },
         };
       }
@@ -1015,11 +1069,53 @@ export function extractVideoPlan(rawText: string): VideoPlan | null {
 }
 
 /**
+ * Synthesizes a valid VideoPlan when the LLM outputs standalone `window.VIDEO` / animated `<canvas>` HTML
+ * without a preceding VideoPlan JSON fence.
+ */
+export function buildFallbackVideoPlanFromHtml(html: string): VideoPlan {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const cleanTitle = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : 'Motion Graphic Video';
+  const durMatch = html.match(/\bduration\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+  const duration = Math.min(120, Math.max(5, durMatch ? Number(durMatch[1]) : 18));
+  const wMatch = html.match(/\bwidth\s*[:=]\s*["']?(\d{3,4})/i);
+  const hMatch = html.match(/\bheight\s*[:=]\s*["']?(\d{3,4})/i);
+  const width = wMatch ? Math.max(360, Math.min(1920, Number(wMatch[1]))) : 1280;
+  const height = hMatch ? Math.max(360, Math.min(1920, Number(hMatch[1]))) : 720;
+  const isVertical = height > width;
+  const s1End = Number((duration * 0.25).toFixed(1));
+  const s2End = Number((duration * 0.8).toFixed(1));
+
+  return {
+    title: cleanTitle || 'Motion Graphic Video',
+    style: 'motion-graphic',
+    aspect: isVertical ? '9:16' : '16:9',
+    size: [width, height],
+    fps: 30,
+    duration,
+    palette: ['#0b1020', '#00e5ff', '#ffffff'],
+    font: 'Poppins',
+    captions: true,
+    scenes: [
+      { id: 's1', start: 0, end: s1End, narration: 'Opening Title Sequence', visual: { type: 'title', content: { title: cleanTitle } }, transition: { type: 'fade', duration: 0.5 } },
+      { id: 's2', start: s1End, end: s2End, narration: 'Main Motion Sequence', visual: { type: 'kinetic-text', content: {} }, transition: { type: 'slide-left', duration: 0.5 } },
+      { id: 's3', start: s2End, end: duration, narration: 'Closing Frame', visual: { type: 'closing-cta', content: {} }, transition: { type: 'fade', duration: 0.5 } },
+    ],
+    tts: {
+      voice: 'Kore',
+      language: 'en-US',
+      style: 'Clear studio narrator',
+      speed: 1.0,
+      segments: [],
+    },
+  };
+}
+
+/**
  * Determines whether an HTML block is a Studio Video Renderer (`window.VIDEO`) or Studio Image Canvas (`#canvas`).
  */
 export function classifyStudioHtmlBlock(html: string): 'video' | 'image' | null {
   if (!html) return null;
-  if (/window\.VIDEO\s*=|id=["']vo["']|seek\s*\(\s*[a-zA-Z_]/i.test(html)) {
+  if (/window\.VIDEO\s*=|id=["']vo["']|seek\s*\(\s*[a-zA-Z_]|(<canvas[\s\S]*requestAnimationFrame)/i.test(html)) {
     return 'video';
   }
   if (/id=["']canvas["']/i.test(html)) {

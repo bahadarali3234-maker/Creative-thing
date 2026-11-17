@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--bg);
@@ -14,57 +15,127 @@
 }
 
 @layer base {
-  :root {
+  :root,
+  :root.light,
+  [data-theme="light"] {
     /* -------------------------------------------------------------------
-     * LIGHT THEME — BLUE / WHITE / SOFT NEUMORPHIC
-     * Clean, modern AI-workspace aesthetic
+     * LIGHT GLASSMORPHIC NEUMORPHIC THEME (from Think Creative HTML)
      * ------------------------------------------------------------------- */
-    --bg: #F4F8FC;
-    --bg-gradient-start: #F8FAFD;
-    --bg-gradient-end: #EEF4FA;
-    --surface: #FFFFFF;
-    --surface-soft: #EEF5FB;
-    --surface-card: #FFFFFF;
-    --surface-nav: rgba(255, 255, 255, 0.85);
+    --bg: #ffffff;
+    --bg2: #f8fafc;
+    --bg-gradient-start: #ffffff;
+    --bg-gradient-end: #f3f6fb;
+    --surface: #ffffff;
+    --surface-soft: #f4f6fa;
+    --surface-card: #ffffff;
+    --surface-nav: rgba(255, 255, 255, 0.88);
 
-    --primary: #4DA3FF;
-    --primary-light: #8CC8FF;
-    --primary-dark: #1769AA;
-    --primary-glow: rgba(77, 163, 255, 0.35);
+    --ink: #18181b;
+    --mut: #64748b;
+    --acc: #0a7cf0;
+    --acc2: #4aa8ff;
+    --hi: #ffffff;
+    --lo: #d6dbe6;
+    --glass: rgba(255, 255, 255, 0.96);
+    --gb: rgba(15, 23, 42, 0.09);
+    --blur: none;
 
-    --text: #000000;
-    --prompt-bg: oklch(1 0 0);
-    --prompt-text: oklch(0.19 0 0);
-    --prompt-muted: oklch(0.5 0 0);
-    --prompt-border: oklch(0.87 0 0);
-    --prompt-icon: oklch(0.94 0 0);
-    --remove-bg: oklch(0.57 0 0);
-    --on-primary: #FFFFFF;
-    --text-secondary: #667085;
-    --text-muted: #98A2B3;
+    --primary: #0a7cf0;
+    --primary-light: #4aa8ff;
+    --primary-dark: #075ec2;
+    --primary-glow: rgba(10, 124, 240, 0.24);
 
-    --border: rgba(23, 105, 170, 0.12);
-    --border-strong: rgba(23, 105, 170, 0.22);
+    --text: #18181b;
+    --prompt-bg: #ffffff;
+    --prompt-text: #18181b;
+    --prompt-muted: #71717a;
+    --prompt-border: rgba(15, 23, 42, 0.12);
+    --prompt-icon: #f4f4f5;
+    --remove-bg: #6b7080;
+    --on-primary: #ffffff;
+    --text-secondary: #52525b;
+    --text-muted: #71717a;
 
-    --shadow-light: rgba(255, 255, 255, 0.95);
-    --shadow-dark: rgba(71, 105, 135, 0.16);
+    --border: rgba(15, 23, 42, 0.08);
+    --border-strong: rgba(15, 23, 42, 0.14);
 
-    /* Neumorphic shadow presets for light theme */
-    --shadow-neumorphic: 8px 8px 22px rgba(71, 105, 135, 0.12), -8px -8px 22px rgba(255, 255, 255, 0.95);
-    --shadow-neumorphic-soft: 5px 5px 14px rgba(71, 105, 135, 0.08), -5px -5px 14px rgba(255, 255, 255, 0.95);
-    --shadow-neumorphic-inset: inset 3px 3px 6px rgba(71, 105, 135, 0.10), inset -3px -3px 6px rgba(255, 255, 255, 0.95);
+    --shadow-light: #ffffff;
+    --shadow-dark: #d6dbe6;
+
+    --shadow-neumorphic: 9px 9px 20px var(--lo), -9px -9px 20px var(--hi);
+    --shadow-neumorphic-soft: 5px 5px 12px var(--lo), -5px -5px 12px var(--hi);
+    --shadow-neumorphic-inset: inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);
 
     color-scheme: light;
   }
 
-  /* Dark mode removed — the app is permanently light (blue / white / black text). */
+  :root.dark,
+  [data-theme="dark"] {
+    /* -------------------------------------------------------------------
+     * DARK GLASSMORPHIC NEUMORPHIC THEME (from Think Creative HTML)
+     * ------------------------------------------------------------------- */
+    --bg: #1c1d20;
+    --bg2: #222428;
+    --bg-gradient-start: #222428;
+    --bg-gradient-end: #16171a;
+    --surface: #222428;
+    --surface-soft: #26282d;
+    --surface-card: #222428;
+    --surface-nav: rgba(28, 29, 32, 0.78);
 
+    --ink: #eceef2;
+    --mut: #8b90a0;
+    --acc: #0a7cf0;
+    --acc2: #4aa8ff;
+    --hi: #2c2e34;
+    --lo: #101113;
+    --glass: rgba(22, 24, 29, 0.96);
+    --gb: rgba(255, 255, 255, 0.12);
+    --blur: none;
+
+    --primary: #0a7cf0;
+    --primary-light: #4aa8ff;
+    --primary-dark: #0663c7;
+    --primary-glow: rgba(10, 124, 240, 0.38);
+
+    --text: #eceef2;
+    --prompt-bg: rgba(34, 36, 40, 0.76);
+    --prompt-text: #eceef2;
+    --prompt-muted: #8b90a0;
+    --prompt-border: rgba(255, 255, 255, 0.13);
+    --prompt-icon: rgba(255, 255, 255, 0.07);
+    --remove-bg: #3b3f4a;
+    --on-primary: #ffffff;
+    --text-secondary: #a2a7b8;
+    --text-muted: #8b90a0;
+
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.16);
+
+    --shadow-light: #2c2e34;
+    --shadow-dark: #101113;
+
+    --shadow-neumorphic: 9px 9px 20px var(--lo), -9px -9px 20px var(--hi);
+    --shadow-neumorphic-soft: 5px 5px 12px var(--lo), -5px -5px 12px var(--hi);
+    --shadow-neumorphic-inset: inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);
+
+    color-scheme: dark;
+  }
 
   body {
+    background: radial-gradient(120% 80% at 50% -10%, var(--bg2), var(--bg));
     background-color: var(--bg);
     color: var(--text);
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    transition: background-color 380ms ease, color 380ms ease;
+    transition: background-color 320ms ease, color 320ms ease;
+  }
+
+  :root[data-font-style="editorial"] body {
+    font-family: 'Cormorant Garamond', 'Playfair Display', Georgia, 'Times New Roman', serif;
+  }
+
+  :root[data-font-style="mono"] body {
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
   }
 
   h1, h2, h3, .font-display {
@@ -95,27 +166,50 @@
 }
 
 /* -------------------------------------------------------------
- * Neumorphic Utility Classes (Theme Sensitive)
+ * Think Creative Neumorphic & Glassmorphic Surface Utilities
  * ------------------------------------------------------------- */
+.neu-raise {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 6px 6px 14px var(--lo), -6px -6px 14px var(--hi), inset 0 1px 0 var(--gb);
+  border: 1px solid var(--border);
+  transition: box-shadow 260ms ease, transform 200ms ease, border-color 260ms ease, background 260ms ease;
+}
+
+.neu-sink {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: inset 4px 4px 10px var(--lo), inset -4px -4px 10px var(--hi);
+  border: 1px solid var(--border);
+}
+
+.neu-glass {
+  background: var(--glass);
+  color: var(--text);
+  border: 1px solid var(--gb);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 220ms ease, border-color 220ms ease, background 220ms ease;
+}
+
 .neumorphic-surface {
   background-color: var(--surface);
   box-shadow: var(--shadow-neumorphic);
   border: 1px solid var(--border);
-  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .neumorphic-card {
   background-color: var(--surface-card);
   box-shadow: var(--shadow-neumorphic);
   border: 1px solid var(--border);
-  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .neumorphic-card-soft {
   background-color: var(--surface-soft);
   box-shadow: var(--shadow-neumorphic-soft);
   border: 1px solid var(--border);
-  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .neumorphic-inset {
@@ -124,19 +218,19 @@
 }
 
 .theme-button-primary {
-  background-color: var(--primary);
+  background: linear-gradient(145deg, var(--acc2), var(--acc));
   color: #ffffff;
-  box-shadow: 0 4px 18px var(--primary-glow);
-  transition: all 250ms ease;
+  box-shadow: 0 8px 22px var(--primary-glow), inset 0 1px 1px rgba(255, 255, 255, 0.32);
+  transition: all 240ms ease;
 }
 
 .theme-button-primary:hover {
-  background-color: var(--primary-dark);
-  box-shadow: 0 6px 24px var(--primary-glow);
+  background: linear-gradient(145deg, var(--acc), var(--primary-dark));
+  box-shadow: 0 10px 28px var(--primary-glow);
 }
 
 .theme-accent-text {
-  color: var(--primary);
+  color: var(--acc2);
 }
 
 .theme-accent-glow {
@@ -180,56 +274,102 @@
  * Custom Scrollbar
  * ------------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--text-muted);
-  opacity: 0.5;
-  border-radius: 4px;
+  opacity: 0.45;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
 }
 
 /* -------------------------------------------------------------
- * Strict Exceptions from user spec:
- * Prompt box and questions card retain crisp white card styling
+ * Theme-Aware Prompt Box & Code Snippet Surfaces
  * ------------------------------------------------------------- */
-.fixed-prompt-box { --surface: var(--prompt-bg); --text: var(--prompt-text); --border: var(--prompt-border); background: var(--prompt-bg); color: var(--prompt-text); color-scheme: light; }
-.fixed-prompt-box input { color: var(--prompt-text); }
-.fixed-prompt-box input::placeholder { color: var(--prompt-muted); }
-.snippet-box { --surface: var(--prompt-bg); --text: var(--prompt-text); --border: var(--prompt-border); background: var(--prompt-bg) !important; color: var(--prompt-text) !important; color-scheme: light; }
-.snippet-box *:not(button):not(button *):not(.theme-color-swatch):not(.theme-color-swatch *):not([data-swatch]):not([data-swatch] *) { color: var(--prompt-text) !important; background-color: var(--prompt-bg) !important; opacity: 1 !important; -webkit-text-fill-color: var(--prompt-text) !important; }
-.snippet-box pre { color: var(--prompt-text) !important; visibility: visible !important; }
-.theme-color-swatch { display: inline-block !important; border-radius: 9999px !important; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1) !important; flex-shrink: 0 !important; }
+.fixed-prompt-box {
+  --surface: #ffffff;
+  --surface-soft: #f4f6fa;
+  --surface-card: #ffffff;
+  --ink: #18181b;
+  --mut: #64748b;
+  --hi: #ffffff;
+  --lo: #d6dbe6;
+  --text: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --border: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.2);
+  --prompt-bg: #ffffff;
+  --prompt-text: #18181b;
+  --prompt-muted: #71717a;
+  --prompt-border: rgba(15, 23, 42, 0.14);
+  --prompt-icon: #f4f4f5;
+  background: #ffffff !important;
+  color: #18181b !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.06) !important;
+}
+.fixed-prompt-box input,
+.fixed-prompt-box textarea {
+  color: #18181b !important;
+}
+.fixed-prompt-box input::placeholder,
+.fixed-prompt-box textarea::placeholder {
+  color: #71717a !important;
+}
+
+.snippet-box {
+  --surface: var(--prompt-bg);
+  --text: var(--prompt-text);
+  --border: var(--prompt-border);
+  background: var(--surface-card);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.snippet-box pre {
+  color: var(--text);
+  visibility: visible;
+}
+.theme-color-swatch {
+  display: inline-block !important;
+  border-radius: 9999px !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  flex-shrink: 0 !important;
+}
 
 .simple-loader { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); }
 .simple-loader span { width: 28px; height: 28px; border: 2px solid var(--border-strong); border-top-color: var(--primary); border-radius: 50%; animation: loading-spin .8s linear infinite; }
 @keyframes loading-spin { to { transform: rotate(360deg); } }
+
 .attachment-grid { display: flex; flex-wrap: nowrap; gap: 8px; width: 100%; padding-block: 6px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
 .attachment-grid > * { flex-shrink: 0; scroll-snap-align: start; }
-.attachment-tile { position: relative; min-width: 180px; width: 200px !important; height: 64px !important; border-radius: 16px; overflow: hidden; background: var(--prompt-bg); border: 1px solid var(--prompt-border); transition: all 0.2s ease; }
-.attachment-tile:hover { border-color: #00a6ff; box-shadow: 0 4px 14px rgba(0, 166, 255, 0.15); }
-.attachment-code { border-color: rgba(0, 166, 255, 0.45) !important; box-shadow: 0 0 12px rgba(0, 166, 255, 0.1); }
-.attachment-code .attachment-file-icon { border-color: rgba(0, 166, 255, 0.4); background: rgba(0, 166, 255, 0.08); }
+.attachment-tile { position: relative; min-width: 180px; width: 200px !important; height: 64px !important; border-radius: 16px; overflow: hidden; background: var(--surface-card); border: 1px solid var(--border-strong); transition: all 0.2s ease; }
+.attachment-tile:hover { border-color: var(--acc2); box-shadow: 0 4px 14px var(--primary-glow); }
+.attachment-code { border-color: var(--acc2) !important; box-shadow: 0 0 12px var(--primary-glow); }
+.attachment-code .attachment-file-icon { border-color: var(--acc2); background: rgba(10, 124, 240, 0.12); }
 .attachment-tile img { width: 100%; height: 100%; object-fit: cover; }
-.attachment-document { height: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 30px 8px 8px; color: var(--prompt-text); }
-.attachment-file-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--prompt-border); background: var(--prompt-icon); display: grid; place-items: center; flex-shrink: 0; color: var(--prompt-muted); }
+.attachment-document { height: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 30px 8px 8px; color: var(--text); }
+.attachment-file-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--prompt-icon); display: grid; place-items: center; flex-shrink: 0; color: var(--text-secondary); }
 .attachment-file-label { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .attachment-file-label span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
-.attachment-file-label small { font-size: 10px; color: var(--prompt-muted); }
-.attachment-remove { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; border-radius: 50%; padding: 0; background: var(--remove-bg); color: var(--prompt-bg); }
-.attachment-remove:hover { background: var(--prompt-text); color: var(--prompt-bg); }
+.attachment-file-label small { font-size: 10px; color: var(--text-muted); }
+.attachment-remove { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; border-radius: 50%; padding: 0; background: var(--remove-bg); color: #ffffff; }
+.attachment-remove:hover { background: var(--primary); color: #ffffff; }
+
 .reference-gallery { color: var(--text); }
 .reference-gallery-header { flex-wrap: wrap; gap: 8px; }
-.reference-gallery-card { box-shadow: none; background: var(--surface); border-color: var(--border-strong); border-radius: 18px; }
-.chat-workspace { --shadow-neumorphic-soft: 0 2px 12px var(--primary-glow); }
+.reference-gallery-card { box-shadow: var(--shadow-neumorphic-soft); background: var(--surface-card); border-color: var(--border-strong); border-radius: 18px; }
+.chat-workspace { --shadow-neumorphic-soft: 0 6px 20px var(--lo), -4px -4px 14px var(--hi); }
 .chat-workspace [class*="bg-[var(--primary)]"] { color: var(--on-primary); }
 .chat-workspace [class*="bg-[var(--primary)]"] > * { color: inherit; }
 .preview-shell { background: var(--bg); color: var(--text); }
 .preview-toolbar { background: var(--surface); border-bottom: 1px solid var(--border); }
 .preview-frame { background: var(--surface); }
 @media (prefers-reduced-motion: reduce) { .simple-loader span { animation: none; } }
+

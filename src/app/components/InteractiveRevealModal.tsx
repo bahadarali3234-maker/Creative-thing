@@ -6,7 +6,6 @@ import {
   Mic,
   MicOff,
   ArrowUp,
-  Image as ImageIcon,
   Code,
   Globe,
   MessageSquare,
@@ -26,6 +25,7 @@ import {
   Wand2,
   AudioLines,
   Sparkles,
+  KeyRound,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HERO_AVATAR } from '../data/portfolioData';
@@ -36,19 +36,29 @@ import { AttachedFile } from '../types';
 import { AttachmentGrid } from './AttachmentGrid';
 import { LiveVoiceCallModal } from './LiveVoiceCallModal';
 import { ExploreGptsModal, AiSkillItem } from './ExploreGptsModal';
-import { VoiceSettingsModal } from './VoiceSettingsModal';
-import { CreativeStudioModal } from './CreativeStudioModal';
-import { BuildyExpandableCard, BUILDY_URL } from './BuildyExpandableCard';
+import { AiApiSettingsModal } from './AiApiSettingsModal';
+import { BuildyExpandableCard } from './BuildyExpandableCard';
+import { BuildyWorkspaceModal } from './BuildyWorkspaceModal';
+import { useTheme } from '../context/ThemeContext';
 import { isWebsiteOrAppUiBuildRequest } from '../utils/buildyIntent';
 import { getActiveAssistantPersona } from '../utils/geminiTts';
 import { detectAndExtractCode, sniffCodeLanguage } from '../utils/codeAttachment';
 import {
   subscribeToAuth,
   getCurrentUser,
+  getFirebaseIdToken,
   logOut,
   subscribeToUserChatThreads,
   deleteChatThreadFromFirestore,
 } from '../firebase';
+import { buildWorkspaceAuthHeaders } from '../utils/workspaceSession';
+import {
+  mergeChatThreads,
+  getUserStorageScope,
+  loadChatThreadsFromStorage,
+  saveChatThreadsToStorage,
+  CHAT_THREADS_UPDATED_EVENT,
+} from '../utils/chatThreads';
 
 interface Message {
   id: string;
@@ -73,7 +83,8 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   initialTopic = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isLight = true; // Dark mode removed — permanently light
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
 
 
   // Chat & Prompt States
@@ -91,39 +102,67 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [isExploreGptsOpen, setIsExploreGptsOpen] = useState(false);
-  const [isCreativeStudioOpen, setIsCreativeStudioOpen] = useState(false);
+  const [isBuildyOpen, setIsBuildyOpen] = useState(false);
+  const [buildyInitialPrompt, setBuildyInitialPrompt] = useState<string | undefined>(undefined);
   const [activeSkill, setActiveSkill] = useState<AiSkillItem | null>(null);
   const [activePersona, setActivePersona] = useState<'Zara' | 'Daro'>(() => getActiveAssistantPersona());
   const [buildyRedirectRequest, setBuildyRedirectRequest] = useState<string | null>(null);
   const [currentFullScreenPrompt, setCurrentFullScreenPrompt] = useState('');
   const [currentFullScreenAttachments, setCurrentFullScreenAttachments] = useState<AttachedFile[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(() => getCurrentUser());
-  const [userChatThreads, setUserChatThreads] = useState<Record<string, any>>({});
+  const [userChatThreads, setUserChatThreads] = useState<Record<string, any>>(() =>
+    loadChatThreadsFromStorage(getUserStorageScope(getCurrentUser()))
+  );
+
+  useEffect(() => {
+    const onOpenBuildy = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setBuildyInitialPrompt(detail?.initialPrompt || undefined);
+      setIsBuildyOpen(true);
+    };
+    window.addEventListener('open-buildy-workspace', onOpenBuildy as EventListener);
+    return () => window.removeEventListener('open-buildy-workspace', onOpenBuildy as EventListener);
+  }, []);
+
+  useEffect(() => {
+    const syncLocal = () => {
+      const scope = getUserStorageScope(getCurrentUser());
+      setUserChatThreads(loadChatThreadsFromStorage(scope));
+    };
+    window.addEventListener(CHAT_THREADS_UPDATED_EVENT, syncLocal);
+    window.addEventListener('storage', syncLocal);
+    return () => {
+      window.removeEventListener(CHAT_THREADS_UPDATED_EVENT, syncLocal);
+      window.removeEventListener('storage', syncLocal);
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToAuth((user) => {
       setCurrentUser(user);
+      const scope = getUserStorageScope(user);
+      setUserChatThreads(loadChatThreadsFromStorage(scope));
       if (user && !user.isAnonymous) {
         setActiveRecentItem('');
       } else {
         setActiveRecentItem('Guest Session');
-        setUserChatThreads({});
       }
     });
     return () => unsub();
   }, []);
 
-  // Listen to Firestore real-time chats if user is logged in
+  // Listen to Firestore real-time chats if user is logged in & merge with browser storage
   useEffect(() => {
+    const scope = getUserStorageScope(currentUser);
     if (!currentUser || currentUser.isAnonymous) {
-      setUserChatThreads({});
+      setUserChatThreads(loadChatThreadsFromStorage(scope));
       return;
     }
     const unsub = subscribeToUserChatThreads(currentUser.uid, (threads) => {
-      setUserChatThreads(threads);
+      setUserChatThreads((prev) => mergeChatThreads(threads, prev));
     });
     return () => unsub();
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, currentUser?.isAnonymous]);
 
   // Working File Attachments (Matches exact screenshot styling, Max 10 files)
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
@@ -139,6 +178,9 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   const speechRecognitionRef = useRef<any>(null);
   const micBaseInputRef = useRef<string>('');
   const liveTranscriptRef = useRef<string>('');
+  const micSessionGenRef = useRef<number>(0);
+  const micMimeTypeRef = useRef<string>('audio/webm');
+  const recorderStopResolverRef = useRef<((blob: Blob | null) => void) | null>(null);
   const isRecordingRef = useRef<boolean>(false);
   const suppressSttFallbackRef = useRef<boolean>(false);
 
@@ -214,17 +256,79 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     return Math.round(Math.max(220, Math.min(minDim * 0.22, 280)));
   }, []);
 
+  const revealedLayerRef = useRef<HTMLDivElement>(null);
+  const revealRafRef = useRef<number>(0);
   const targetPos = useRef<{ x: number; y: number }>({ x: -500, y: -500 });
   const currentPos = useRef<{ x: number; y: number }>({ x: -500, y: -500 });
-  const [renderPos, setRenderPos] = useState<{ x: number; y: number }>({ x: -500, y: -500 });
-
   const targetRadius = useRef<number>(0);
   const currentRadius = useRef<number>(0);
-  const [renderRadius, setRenderRadius] = useState<number>(0);
-
   const targetOpacity = useRef<number>(0);
   const currentOpacity = useRef<number>(0);
-  const [renderOpacity, setRenderOpacity] = useState<number>(0);
+
+  const isOverlayActive =
+    isFullScreenChatOpen ||
+    isBuildyOpen ||
+    isVoiceCallOpen ||
+    isExploreGptsOpen ||
+    isVoiceSettingsOpen ||
+    isDrawerOpen;
+  const isOverlayActiveRef = useRef<boolean>(false);
+  isOverlayActiveRef.current = isOverlayActive;
+
+  const applyRevealToDom = useCallback(() => {
+    const el = revealedLayerRef.current;
+    if (!el) return;
+    const safeOpacity = currentOpacity.current < 0.005 ? 0 : currentOpacity.current;
+    const safeRadius = currentRadius.current < 0.5 ? 0 : currentRadius.current;
+    el.style.opacity = String(safeOpacity);
+    if (safeRadius > 0 && safeOpacity > 0) {
+      const maskVal = `radial-gradient(circle ${safeRadius.toFixed(1)}px at ${currentPos.current.x.toFixed(1)}px ${currentPos.current.y.toFixed(1)}px, black 65%, transparent 100%)`;
+      el.style.maskImage = maskVal;
+      (el.style as any).webkitMaskImage = maskVal;
+    } else {
+      el.style.maskImage = 'none';
+      (el.style as any).webkitMaskImage = 'none';
+    }
+  }, []);
+
+  const scheduleRevealLoop = useCallback(() => {
+    if (!isOpen || isOverlayActiveRef.current) return;
+    if (revealRafRef.current) return;
+
+    const step = () => {
+      revealRafRef.current = 0;
+      if (!isOpen || isOverlayActiveRef.current) return;
+
+      const dx = targetPos.current.x - currentPos.current.x;
+      const dy = targetPos.current.y - currentPos.current.y;
+      const dr = targetRadius.current - currentRadius.current;
+      const do_ = targetOpacity.current - currentOpacity.current;
+
+      currentPos.current.x += dx * 0.18;
+      currentPos.current.y += dy * 0.18;
+      currentRadius.current += dr * 0.18;
+      currentOpacity.current += do_ * 0.18;
+
+      const settled =
+        Math.abs(dx) < 0.35 &&
+        Math.abs(dy) < 0.35 &&
+        Math.abs(dr) < 0.35 &&
+        Math.abs(do_) < 0.005;
+
+      if (settled) {
+        currentPos.current = { ...targetPos.current };
+        currentRadius.current = targetRadius.current;
+        currentOpacity.current = targetOpacity.current;
+        applyRevealToDom();
+        return;
+      }
+
+      applyRevealToDom();
+      revealRafRef.current = requestAnimationFrame(step);
+    };
+
+    revealRafRef.current = requestAnimationFrame(step);
+  }, [isOpen, applyRevealToDom]);
 
   // Keyboard shortcut: Escape to close
   useEffect(() => {
@@ -241,15 +345,14 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isDrawerOpen, onClose]);
 
-  // Reset when opening
+  // Reset when opening or when initialTopic changes
   useEffect(() => {
     if (isOpen) {
       targetRadius.current = 0;
       currentRadius.current = 0;
       targetOpacity.current = 0;
       currentOpacity.current = 0;
-      setRenderRadius(0);
-      setRenderOpacity(0);
+      applyRevealToDom();
       if (initialTopic) {
         setInputValue(initialTopic);
         const targetTopic = currentUser && !currentUser.isAnonymous
@@ -260,97 +363,98 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
         setIsFullScreenChatOpen(true);
       }
     }
-  }, [isOpen, initialTopic]);
+  }, [isOpen, initialTopic, applyRevealToDom]);
 
-  // Smooth animation loop
+  // Pause reveal loop whenever an overlay / chat view is active
   useEffect(() => {
-    if (!isOpen) return;
-    let animId: number;
-
-    const smoothLoop = () => {
-      const dx = targetPos.current.x - currentPos.current.x;
-      const dy = targetPos.current.y - currentPos.current.y;
-      currentPos.current.x += dx * 0.16;
-      currentPos.current.y += dy * 0.16;
-
-      currentRadius.current += (targetRadius.current - currentRadius.current) * 0.15;
-      currentOpacity.current += (targetOpacity.current - currentOpacity.current) * 0.15;
-
-      const safeOpacity = currentOpacity.current < 0.005 ? 0 : currentOpacity.current;
-      const safeRadius = currentRadius.current < 0.5 ? 0 : currentRadius.current;
-
-      setRenderPos({
-        x: currentPos.current.x,
-        y: currentPos.current.y,
-      });
-      setRenderRadius(safeRadius);
-      setRenderOpacity(safeOpacity);
-
-      animId = requestAnimationFrame(smoothLoop);
+    if (isOverlayActive || !isOpen) {
+      if (revealRafRef.current) {
+        cancelAnimationFrame(revealRafRef.current);
+        revealRafRef.current = 0;
+      }
+      targetRadius.current = 0;
+      currentRadius.current = 0;
+      targetOpacity.current = 0;
+      currentOpacity.current = 0;
+      applyRevealToDom();
+    }
+    return () => {
+      if (revealRafRef.current) {
+        cancelAnimationFrame(revealRafRef.current);
+        revealRafRef.current = 0;
+      }
     };
-
-    animId = requestAnimationFrame(smoothLoop);
-    return () => cancelAnimationFrame(animId);
-  }, [isOpen]);
+  }, [isOverlayActive, isOpen, applyRevealToDom]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isOverlayActiveRef.current) return;
       targetPos.current = { x: e.clientX, y: e.clientY };
       targetRadius.current = getAdaptiveRadius();
       targetOpacity.current = 1;
+      scheduleRevealLoop();
     },
-    [getAdaptiveRadius]
+    [getAdaptiveRadius, scheduleRevealLoop]
   );
 
   const handleMouseEnter = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isOverlayActiveRef.current) return;
       targetPos.current = { x: e.clientX, y: e.clientY };
       currentPos.current = { x: e.clientX, y: e.clientY };
       targetRadius.current = getAdaptiveRadius();
       targetOpacity.current = 1;
+      scheduleRevealLoop();
     },
-    [getAdaptiveRadius]
+    [getAdaptiveRadius, scheduleRevealLoop]
   );
 
   const handleMouseLeave = useCallback(() => {
     targetRadius.current = 0;
     targetOpacity.current = 0;
-  }, []);
+    scheduleRevealLoop();
+  }, [scheduleRevealLoop]);
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
+      if (isOverlayActiveRef.current) return;
       const touch = e.touches[0];
       if (touch) {
         targetPos.current = { x: touch.clientX, y: touch.clientY };
         currentPos.current = { x: touch.clientX, y: touch.clientY };
         targetRadius.current = getAdaptiveRadius();
         targetOpacity.current = 1;
+        scheduleRevealLoop();
       }
     },
-    [getAdaptiveRadius]
+    [getAdaptiveRadius, scheduleRevealLoop]
   );
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
+      if (isOverlayActiveRef.current) return;
       const touch = e.touches[0];
       if (touch) {
         targetPos.current = { x: touch.clientX, y: touch.clientY };
         targetRadius.current = getAdaptiveRadius();
         targetOpacity.current = 1;
+        scheduleRevealLoop();
       }
     },
-    [getAdaptiveRadius]
+    [getAdaptiveRadius, scheduleRevealLoop]
   );
 
   const handleTouchEnd = useCallback(() => {
     targetRadius.current = 0;
     targetOpacity.current = 0;
-  }, []);
+    scheduleRevealLoop();
+  }, [scheduleRevealLoop]);
 
   const handleTouchCancel = useCallback(() => {
     targetRadius.current = 0;
     targetOpacity.current = 0;
-  }, []);
+    scheduleRevealLoop();
+  }, [scheduleRevealLoop]);
 
   // Automatically extract pasted or typed code into attached file chips
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -423,60 +527,221 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     setIsFullScreenChatOpen(true);
   };
 
-  const stopMicHardware = (suppressFallback = false) => {
-    suppressSttFallbackRef.current = suppressFallback;
+  const stopMicHardwareAndCollectBlob = async (collectBlob: boolean): Promise<Blob | null> => {
     isRecordingRef.current = false;
-    setIsRecording(false);
+
     if (speechRecognitionRef.current) {
       try {
         speechRecognitionRef.current.onresult = null;
         speechRecognitionRef.current.onend = null;
+        speechRecognitionRef.current.onerror = null;
         speechRecognitionRef.current.stop();
       } catch {}
       speechRecognitionRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      mediaRecorderRef.current = null;
+      if (!collectBlob) {
+        audioChunksRef.current = [];
+        return null;
+      }
+      if (audioChunksRef.current.length === 0) return null;
+      return new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' });
+    }
+
+    if (!collectBlob) {
+      suppressSttFallbackRef.current = true;
+      audioChunksRef.current = [];
+      recorderStopResolverRef.current = null;
       try {
-        mediaRecorderRef.current.stop();
+        recorder.stop();
       } catch {}
+      mediaRecorderRef.current = null;
+      return null;
+    }
+
+    suppressSttFallbackRef.current = false;
+    return new Promise<Blob | null>((resolve) => {
+      let settled = false;
+      const finish = (blob: Blob | null) => {
+        if (settled) return;
+        settled = true;
+        recorderStopResolverRef.current = null;
+        resolve(blob);
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        const fallbackBlob =
+          audioChunksRef.current.length > 0
+            ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+            : null;
+        finish(fallbackBlob);
+      }, 1500);
+
+      recorderStopResolverRef.current = (blob) => {
+        window.clearTimeout(timeoutId);
+        finish(blob);
+      };
+
+      try {
+        recorder.stop();
+      } catch {
+        window.clearTimeout(timeoutId);
+        finish(
+          audioChunksRef.current.length > 0
+            ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+            : null
+        );
+      }
+    });
+  };
+
+  const transcribeBlobWithApi = async (audioBlob: Blob, sessionGen: number): Promise<string> => {
+    if (!audioBlob || audioBlob.size < 120) return '';
+    if (sessionGen !== micSessionGenRef.current) return '';
+
+    const base64Audio = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(audioBlob);
+    });
+
+    if (!base64Audio || sessionGen !== micSessionGenRef.current) return '';
+
+    try {
+      const token = await getFirebaseIdToken().catch(() => null);
+      if (sessionGen !== micSessionGenRef.current) return '';
+      const sttRes = await fetch('/api/stt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildWorkspaceAuthHeaders(token),
+        },
+        body: JSON.stringify({
+          audio: base64Audio,
+          mimeType: audioBlob.type || micMimeTypeRef.current || 'audio/webm',
+        }),
+      });
+      const sttData = await sttRes.json().catch(() => ({}));
+      if (sessionGen !== micSessionGenRef.current) return '';
+      return typeof sttData?.text === 'string' ? sttData.text.trim() : '';
+    } catch (sttErr) {
+      console.warn('STT transcription error:', sttErr);
+      return '';
     }
   };
 
+  // Cross (X): Cuts everything spoken so ZERO spoken words stay in the prompt box
   const handleCancelMic = () => {
-    stopMicHardware(true);
+    micSessionGenRef.current += 1;
+    suppressSttFallbackRef.current = true;
+    liveTranscriptRef.current = '';
+    audioChunksRef.current = [];
+    void stopMicHardwareAndCollectBlob(false);
+    setIsRecording(false);
+    setIsTranscribing(false);
     setInputValue(micBaseInputRef.current);
-    showMicToast('Recording cancelled');
+    showMicToast('Recording cut & discarded');
   };
 
-  const handleStopMicKeepText = () => {
-    stopMicHardware(false);
+  // Pause (Square): Transcribes recorded speech and places it ONLY in the prompt box
+  const handleStopMicKeepText = async () => {
+    if (isTranscribing) return;
+    const sessionGen = micSessionGenRef.current;
+    const base = micBaseInputRef.current.trim();
+    const audioBlob = await stopMicHardwareAndCollectBlob(true);
+    if (sessionGen !== micSessionGenRef.current) return;
+
+    const liveSpoken = liveTranscriptRef.current.trim();
+    if (liveSpoken) {
+      setIsRecording(false);
+      setIsTranscribing(false);
+      setInputValue([base, liveSpoken].filter(Boolean).join(' '));
+      showMicToast('Text kept in prompt box');
+      return;
+    }
+
+    if (audioBlob && audioBlob.size >= 120) {
+      setIsRecording(false);
+      setIsTranscribing(true);
+      showMicToast('Converting speech to text...');
+      const transcript = await transcribeBlobWithApi(audioBlob, sessionGen);
+      if (sessionGen !== micSessionGenRef.current) return;
+      setIsTranscribing(false);
+      if (transcript) {
+        setInputValue([base, transcript].filter(Boolean).join(' '));
+        showMicToast('Text kept in prompt box');
+      } else {
+        setInputValue(micBaseInputRef.current);
+        showMicToast('Could not recognize speech');
+      }
+      return;
+    }
+
+    setIsRecording(false);
+    setIsTranscribing(false);
     showMicToast('Text kept in prompt box');
   };
 
-  const handleConfirmMic = () => {
-    const latest = inputValue.trim();
-    stopMicHardware(true);
-    if (latest) {
-      handleSend(latest);
+  // Forward (Black ArrowUp): Stays solid black, transcribes audio if needed, then auto-forwards immediately
+  const handleConfirmMic = async () => {
+    if (isTranscribing) return;
+    const sessionGen = micSessionGenRef.current;
+    const base = micBaseInputRef.current.trim();
+    const preLive = liveTranscriptRef.current.trim();
+    const currentTyped = inputValue.trim();
+
+    if (preLive || (currentTyped && currentTyped !== base)) {
+      const immediateText = preLive ? [base, preLive].filter(Boolean).join(' ').trim() : currentTyped;
+      void stopMicHardwareAndCollectBlob(false);
+      setIsRecording(false);
+      setIsTranscribing(false);
+      if (immediateText) {
+        handleSend(immediateText);
+        return;
+      }
+    }
+
+    setIsRecording(false);
+    setIsTranscribing(true);
+    showMicToast('Transcribing & forwarding...');
+
+    const audioBlob = await stopMicHardwareAndCollectBlob(true);
+    if (sessionGen !== micSessionGenRef.current) return;
+
+    const lateLive = liveTranscriptRef.current.trim();
+    const apiTranscript = lateLive ? '' : audioBlob ? await transcribeBlobWithApi(audioBlob, sessionGen) : '';
+    if (sessionGen !== micSessionGenRef.current) return;
+
+    setIsTranscribing(false);
+    const spokenResult = (lateLive || apiTranscript).trim();
+    const finalText = [base, spokenResult].filter(Boolean).join(' ').trim();
+
+    if (finalText) {
+      handleSend(finalText);
     } else {
-      showMicToast('Speak first or type a prompt');
+      setInputValue(micBaseInputRef.current);
+      showMicToast('Could not recognize speech — please speak clearly');
     }
   };
 
   const toggleRecording = async () => {
     if (isRecording) {
-      stopMicHardware(false);
-      showMicToast('Microphone stopped');
+      await handleStopMicKeepText();
       return;
     }
 
+    const sessionGen = ++micSessionGenRef.current;
     suppressSttFallbackRef.current = false;
     isRecordingRef.current = true;
     setIsRecording(true);
     setIsTranscribing(false);
-    // Capture starting text in input box
     micBaseInputRef.current = inputValue;
     liveTranscriptRef.current = '';
+    audioChunksRef.current = [];
     showMicToast('Listening... Speak now (Live transcription active)');
 
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -491,7 +756,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
         recognition.lang = navigator.language || 'en-US';
 
         recognition.onresult = (event: any) => {
-          if (!isRecordingRef.current) return;
+          if (!isRecordingRef.current || sessionGen !== micSessionGenRef.current) return;
           let interim = '';
           let finalChunk = '';
           for (let i = 0; i < event.results.length; ++i) {
@@ -503,9 +768,11 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
             }
           }
           const combinedTranscript = [finalChunk, interim].filter(Boolean).join(' ').trim();
-          liveTranscriptRef.current = combinedTranscript;
-          const base = micBaseInputRef.current;
-          const liveCombined = [base, finalChunk, interim].filter(Boolean).join(' ');
+          if (combinedTranscript) {
+            liveTranscriptRef.current = combinedTranscript;
+          }
+          const base = micBaseInputRef.current.trim();
+          const liveCombined = [base, combinedTranscript].filter(Boolean).join(' ');
           setInputValue(liveCombined);
         };
 
@@ -519,7 +786,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
         };
 
         recognition.onend = () => {
-          if (isRecordingRef.current) {
+          if (isRecordingRef.current && sessionGen === micSessionGenRef.current) {
             try {
               recognition.start();
             } catch {}
@@ -537,47 +804,44 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
+        if (!isRecordingRef.current || sessionGen !== micSessionGenRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const preferredMime =
+          typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
+            ? 'audio/webm;codecs=opus'
+            : typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.('audio/webm')
+              ? 'audio/webm'
+              : '';
+        const mediaRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
+        micMimeTypeRef.current = mediaRecorder.mimeType || preferredMime || 'audio/webm';
         audioChunksRef.current = [];
 
         mediaRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
+          if (event.data && event.data.size > 0 && sessionGen === micSessionGenRef.current) {
             audioChunksRef.current.push(event.data);
           }
         };
 
-        mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = () => {
           stream.getTracks().forEach((track) => track.stop());
-          if (suppressSttFallbackRef.current) return;
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioBlob.size < 50) return;
+          mediaRecorderRef.current = null;
+          const resolver = recorderStopResolverRef.current;
+          recorderStopResolverRef.current = null;
 
-          // If SpeechRecognition didn't produce text, fallback to Groq Whisper /api/stt
-          if (!startedSpeechRecognition || !liveTranscriptRef.current.trim()) {
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            reader.onloadend = async () => {
-              const base64Audio = reader.result as string;
-              try {
-                setIsTranscribing(true);
-                showMicToast('Transcribing audio...');
-                const sttRes = await fetch('/api/stt', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ audio: base64Audio, mimeType: 'audio/webm' }),
-                });
-                const sttData = await sttRes.json();
-                if (sttData.text && sttData.text.trim()) {
-                  setInputValue((prev) => (prev ? `${prev} ${sttData.text.trim()}` : sttData.text.trim()));
-                  showMicToast('Transcribed speech');
-                }
-              } catch (sttErr) {
-                console.warn('STT transcription error:', sttErr);
-                showMicToast('Transcription service unavailable');
-              } finally {
-                setIsTranscribing(false);
-              }
-            };
+          if (suppressSttFallbackRef.current || sessionGen !== micSessionGenRef.current) {
+            audioChunksRef.current = [];
+            if (resolver) resolver(null);
+            return;
+          }
+
+          const blob =
+            audioChunksRef.current.length > 0
+              ? new Blob(audioChunksRef.current, { type: micMimeTypeRef.current || 'audio/webm' })
+              : null;
+          if (resolver) {
+            resolver(blob);
           }
         };
 
@@ -595,11 +859,6 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   };
 
   const handleNewChat = () => {
-    if (!currentUser || currentUser.isAnonymous) {
-      setIsDrawerOpen(false);
-      onOpenLogin?.();
-      return;
-    }
     setInputValue('');
     setShowResponsePopup(false);
     setIsDrawerOpen(false);
@@ -611,11 +870,6 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   };
 
   const handleSelectRecent = (title: string) => {
-    if (!currentUser || currentUser.isAnonymous) {
-      setIsDrawerOpen(false);
-      onOpenLogin?.();
-      return;
-    }
     setActiveRecentItem(title);
     setCurrentFullScreenPrompt('');
     setIsDrawerOpen(false);
@@ -625,12 +879,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
+      <div
         className={`reveal-welcome fixed inset-0 z-[9999] bg-background overflow-hidden ${
           isFullScreenChatOpen ? '' : 'select-none touch-none'
         }`}
@@ -657,20 +906,11 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
             />
           </div>
 
-          {/* Underneath Revealed Image (revealed through spotlight mask) */}
+          {/* Underneath Revealed Image (revealed through spotlight mask via direct DOM updates) */}
           <div
-            className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-150"
-            style={{
-              opacity: renderOpacity,
-              maskImage:
-                renderRadius > 0
-                  ? `radial-gradient(circle ${renderRadius}px at ${renderPos.x}px ${renderPos.y}px, black 65%, transparent 100%)`
-                  : 'none',
-              WebkitMaskImage:
-                renderRadius > 0
-                  ? `radial-gradient(circle ${renderRadius}px at ${renderPos.x}px ${renderPos.y}px, black 65%, transparent 100%)`
-                  : 'none',
-            }}
+            ref={revealedLayerRef}
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ opacity: 0 }}
           >
             <img
               src={revealedUnderneathImg}
@@ -685,7 +925,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-black/75 to-transparent pointer-events-none" />
         </div>
 
-        {/* TOP CORNER: Three Lines Menu Button */}
+        {/* TOP CORNER: Three Lines Menu Button (No top-right X or API Keys buttons) */}
         <div className="absolute top-5 sm:top-6 left-5 sm:left-6 z-40 pointer-events-auto">
           <button
             id="reveal-three-lines-menu-btn"
@@ -693,24 +933,11 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
             onClick={() => setIsDrawerOpen(true)}
             aria-label="Open Menu"
             title="Open Menu"
-            className="w-11 h-11 rounded-2xl bg-black/40 hover:bg-black/70 text-white flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.6)] active:scale-95 group"
+            className="w-11 h-11 rounded-2xl bg-black/65 hover:bg-black/85 text-white flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.45)] active:scale-95 group"
           >
             <span className="w-5 h-[2px] bg-white rounded-full transition-all group-hover:w-6" />
             <span className="w-5 h-[2px] bg-white rounded-full transition-all group-hover:w-4" />
             <span className="w-5 h-[2px] bg-white rounded-full transition-all group-hover:w-6" />
-          </button>
-        </div>
-
-        {/* TOP RIGHT CORNER: Theme Toggle & Close Button */}
-        <div className="absolute top-5 sm:top-6 right-5 sm:right-6 z-40 pointer-events-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            title="Close"
-            className="w-11 h-11 rounded-2xl bg-black/40 hover:bg-black/70 text-white flex items-center justify-center transition-all cursor-pointer border border-white/20 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.6)] active:scale-95"
-          >
-            <X size={20} />
           </button>
         </div>
 
@@ -753,9 +980,6 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                   transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
                   className="relative group cursor-pointer select-none"
                 >
-                  {/* Crimson backlight glow behind character cutout */}
-                  <div className="absolute inset-0 bg-[#00a6ff]/30 blur-2xl rounded-full transform scale-90 pointer-events-none" />
-
                   <img
                     src={HERO_AVATAR}
                     alt="Irtza 3D Cutout Character Avatar"
@@ -799,6 +1023,11 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                     variant="welcome"
                     requestText={buildyRedirectRequest}
                     onClose={() => setBuildyRedirectRequest(null)}
+                    onOpenBuildy={(reqText) => {
+                      setBuildyRedirectRequest(null);
+                      setBuildyInitialPrompt(reqText);
+                      setIsBuildyOpen(true);
+                    }}
                     onDraftPrompt={(reqText) => {
                       setBuildyRedirectRequest(null);
                       handleSend(
@@ -833,18 +1062,18 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                         processFiles(e.dataTransfer.files);
                       }
                     }}
-                    className={`fixed-prompt-box relative rounded-[28px] sm:rounded-[32px] bg-[#f8f9fc]/95 backdrop-blur-xl text-zinc-900 px-5 pt-4 pb-3 shadow-[0_20px_60px_rgba(0,0,0,0.85),0_0_40px_rgba(0, 166, 255,0.15)] border transition-all ${
+                    className={`fixed-prompt-box relative rounded-[28px] sm:rounded-[32px] bg-white text-zinc-900 px-5 pt-4 pb-3 border transition-all ${
                       isDraggingOver
-                        ? 'border-[#00a6ff] bg-white ring-2 ring-[#00a6ff]/30'
+                        ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/30'
                         : activeSkill
-                        ? 'border-[#00a6ff]/80 ring-2 ring-[#00a6ff]/25'
-                        : 'border-white/90'
+                        ? 'border-[var(--primary)]/80 ring-2 ring-[var(--primary)]/25'
+                        : 'border-zinc-200/90'
                     }`}
                   >
                     {/* Active Creative Skill Highlight Chip */}
                     {activeSkill && (
-                      <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-50 border border-[#00a6ff]/40 text-[#0a2a66] text-xs font-bold shadow-xs">
-                        <Wand2 size={12} className="text-[#00a6ff]" />
+                      <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--primary)]/12 border border-[var(--primary)]/35 text-zinc-900 text-xs font-bold shadow-xs">
+                        <Wand2 size={12} className="text-[var(--primary)]" />
                         <span>Skill Active: {activeSkill.name}</span>
                         <button
                           type="button"
@@ -861,7 +1090,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                     {/* Input Text Area */}
                     <input
                       type="text"
-                      placeholder={isRecording ? "Bolna shuru kijiye..." : "Ask anything, write prompts, or code..."}
+                      placeholder={isRecording ? "Bolna shuru kijiye..." : "Ask anything, generate images, write prompts, or code..."}
                       value={inputValue}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -880,7 +1109,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                         }
                       }}
                       onPaste={handlePaste}
-                      className="w-full bg-transparent text-zinc-800 text-sm sm:text-base font-normal placeholder:text-zinc-400 focus:outline-none pb-2.5 tracking-wide"
+                      className="w-full bg-transparent text-zinc-900 text-sm sm:text-base font-normal placeholder:text-zinc-500 focus:outline-none pb-2.5 tracking-wide"
                     />
 
                     {/* Attached Files Strip (Matches User Requirement: only image shown for images, no name pill) */}
@@ -920,7 +1149,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="w-8 h-8 rounded-full hover:bg-zinc-200/70 text-zinc-800 flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                          className="w-8 h-8 rounded-full hover:bg-zinc-100 text-zinc-800 flex items-center justify-center transition-all cursor-pointer active:scale-95"
                           title="Attach files (Max 10)"
                           aria-label="Attach files (Max 10)"
                         >
@@ -935,10 +1164,10 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
-                            className="flex items-center gap-1.5 text-zinc-800 text-sm sm:text-base font-normal hover:opacity-75 transition-all cursor-pointer active:scale-95"
+                            className="flex items-center gap-1.5 text-zinc-900 text-sm sm:text-base font-normal hover:opacity-75 transition-all cursor-pointer active:scale-95"
                           >
                             <span>{selectedMode}</span>
-                            <ChevronDown size={17} strokeWidth={2.2} className="text-zinc-700 mt-0.5" />
+                            <ChevronDown size={17} strokeWidth={2.2} className="text-zinc-500 mt-0.5" />
                           </button>
 
                           {/* Mode Popup */}
@@ -948,7 +1177,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                className="absolute bottom-11 right-0 w-36 bg-[#12121a] text-white rounded-2xl shadow-2xl border border-white/15 p-1.5 z-50 space-y-1"
+                                className="absolute bottom-11 right-0 w-36 bg-white text-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 p-1.5 z-50 space-y-1"
                               >
                                 {(['Build', 'Design', 'Code', 'Brand'] as const).map((m) => (
                                   <button
@@ -961,7 +1190,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                                     className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all ${
                                       selectedMode === m
                                         ? 'bg-[#00a6ff] text-white'
-                                        : 'text-zinc-300 hover:bg-white/10'
+                                        : 'text-zinc-700 hover:bg-zinc-100'
                                     }`}
                                   >
                                     <span>{m}</span>
@@ -982,7 +1211,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
                               isRecording
                                 ? 'bg-red-500 text-white animate-pulse'
-                                : 'text-zinc-800 hover:bg-zinc-200/70'
+                                : 'text-zinc-800 hover:bg-zinc-100'
                             }`}
                           >
                             {isRecording ? (
@@ -998,7 +1227,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                               onClick={() => handleSend()}
                               aria-label="Send Prompt"
                               title="Send Prompt"
-                              className="w-9 h-9 rounded-full bg-zinc-950 hover:bg-black text-white flex items-center justify-center shadow-md active:scale-90 transition-all cursor-pointer"
+                              className="w-9 h-9 rounded-full theme-button-primary flex items-center justify-center active:scale-90 transition-all cursor-pointer"
                             >
                               <ArrowUp size={18} strokeWidth={2.6} />
                             </button>
@@ -1008,7 +1237,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                               onClick={() => setIsVoiceCallOpen(true)}
                               aria-label={`Open ${activePersona} Voice Assistant`}
                               title={`Open ${activePersona} Voice & Camera Assistant`}
-                              className="w-9 h-9 rounded-full bg-zinc-950 hover:bg-black text-white flex items-center justify-center shadow-md active:scale-90 transition-all cursor-pointer"
+                              className="w-9 h-9 rounded-full theme-button-primary flex items-center justify-center active:scale-90 transition-all cursor-pointer"
                             >
                               <AudioLines size={18} strokeWidth={2.4} />
                             </button>
@@ -1031,7 +1260,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                 exit={{ opacity: 0, y: 12, scale: 0.95 }}
                 className="w-full max-w-[560px] mt-3 pointer-events-auto"
               >
-                <div className="rounded-2xl bg-black/85 backdrop-blur-2xl border border-red-500/30 p-4 shadow-[0_15px_40px_rgba(0,0,0,0.85)] text-white text-xs sm:text-sm space-y-2">
+                <div className="rounded-2xl bg-[#0e1017] border border-red-500/30 p-4 shadow-[0_15px_40px_rgba(0,0,0,0.85)] text-white text-xs sm:text-sm space-y-2">
                   <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono pb-1 border-b border-white/10">
                     <span className="text-[#00a6ff] font-semibold">AI Intelligence Blueprint</span>
                     <button
@@ -1075,304 +1304,260 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsDrawerOpen(false)}
-                className="absolute inset-0 bg-black/75 backdrop-blur-md z-50 pointer-events-auto flex items-center justify-start p-2 sm:p-6"
+                className="absolute inset-0 bg-black/65 z-50 pointer-events-auto flex items-center justify-start p-2 sm:p-6"
               >
-                {/* Floating Card */}
+                {/* Obsidian Black Curved Menu Card */}
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95, x: -40 }}
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.95, x: -40 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="relative w-full max-w-[345px] sm:max-w-[365px] h-[92vh] max-h-[820px] rounded-[38px] border-2 p-6 flex flex-col justify-between overflow-hidden select-none transition-colors duration-300"
+                  className="relative w-full max-w-[345px] sm:max-w-[365px] h-[92vh] max-h-[820px] rounded-[34px] bg-[#0b0b10] border border-white/15 p-6 flex flex-col justify-between overflow-hidden select-none text-white"
                   style={{
-                    backgroundColor: 'var(--surface)',
-                    borderColor: 'var(--primary)',
-                    boxShadow: isLight
-                      ? '0 10px 40px rgba(71, 105, 135, 0.16)'
-                      : '0 0 40px rgba(0, 166, 255, 0.45)',
-                    color: 'var(--text)',
+                    boxShadow: '0 22px 52px rgba(0,0,0,0.48)',
                   }}
                 >
-                  {/* Atmospheric subtle nebula background */}
-                  <div
-                    className="absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-20"
-                    style={{ backgroundColor: 'var(--primary)' }}
-                  />
-                  <div
-                    className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-20"
-                    style={{ backgroundColor: 'var(--primary)' }}
-                  />
-
-                  {/* TOP FIXED SECTION: BMW ///M Logo & Theme Switcher */}
+                  {/* TOP FIXED SECTION: BMW ///M Logo + Styled Close Button */}
                   <div className="shrink-0 relative z-10">
-                    {/* TOP LOGO: Exact BMW ///M Logo from Reference Image */}
                     <div className="flex items-center justify-between pt-1 pb-1">
                       <div className="flex items-center gap-2 select-none">
-                        {/* Three slanted /// stripes: Light Blue, Dark Navy, Crimson Red */}
                         <div className="flex items-center gap-1.5 -skew-x-[18deg]">
-                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px] shadow-[0_0_12px_rgba(0,130,202,0.7)]" />
+                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px]" />
                           <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#17205a] rounded-[1px]" />
-                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px] shadow-[0_0_16px_rgba(226,27,35,0.9)]" />
+                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px]" />
                         </div>
-                        {/* Metallic Chrome Slanted M */}
-                        <span
-                          className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 transition-colors"
-                          style={{ color: 'var(--text)' }}
-                        >
+                        <span className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 text-white">
                           M
                         </span>
                       </div>
 
-                      {/* Theme Toggle in Drawer Header */}
+                      <button
+                        type="button"
+                        onClick={() => setIsDrawerOpen(false)}
+                        className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                        aria-label="Close menu"
+                        title="Close menu"
+                      >
+                        <X size={16} />
+                      </button>
                     </div>
                   </div>
 
-                  {!currentUser || currentUser.isAnonymous ? (
-                    /* GUEST SIDEBAR / MENU: Sign In Required Box */
-                    <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 text-center my-auto relative z-10">
-                      <div className="w-14 h-14 rounded-2xl bg-sky-50 border border-[#00a6ff]/40 flex items-center justify-center text-[#00a6ff] shadow-[0_0_20px_rgba(0,166,255,0.2)] mb-3">
-                        <Lock size={24} />
-                      </div>
-                      <h3 className="text-foreground text-base font-extrabold tracking-tight mb-1.5">
-                        Sign in required
-                      </h3>
-                      <p className="text-xs text-zinc-600 leading-relaxed max-w-[210px] mb-5">
-                        Sign in to access your chats, projects and memory.
-                      </p>
+                  {/* Navigation + Saved Chats (Browser Storage + Firestore) */}
+                  <>
+                    <div className="shrink-0 space-y-4 pt-3 relative z-10">
+                      {/* + New Chat Pill Button */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsDrawerOpen(false);
-                          onOpenLogin?.();
-                        }}
-                        className="w-full py-2.5 px-4 rounded-xl bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(0,166,255,0.45)] cursor-pointer active:scale-95"
+                        onClick={handleNewChat}
+                        className="w-full py-3 px-4 rounded-[20px] bg-[#11131b] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between hover:bg-[#161a25] transition-all cursor-pointer active:scale-98 group"
                       >
-                        Sign In
+                        <div className="flex items-center gap-3">
+                          <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
+                          <span className="text-white tracking-wide">New Chat</span>
+                        </div>
+                        <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
                       </button>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Authenticated Mode: New Chat + Navigation */}
-                      <div className="shrink-0 space-y-4 pt-3 relative z-10">
-                        {/* + New Chat Pill Button */}
+
+                      {/* Navigation List Items: Daro & Zara, Explore Creative Skills, Buildy */}
+                      <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-zinc-200">
                         <button
                           type="button"
-                          onClick={handleNewChat}
-                          className="w-full py-3 px-4 rounded-[20px] bg-[#0c0204] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between shadow-[0_0_18px_rgba(0,166,255,0.35)] hover:shadow-[0_0_24px_rgba(0,166,255,0.55)] transition-all cursor-pointer active:scale-98 group"
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            setIsVoiceCallOpen(true);
+                          }}
+                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
                         >
-                          <div className="flex items-center gap-3">
-                            <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
-                            <span className="text-white tracking-wide">New Chat</span>
+                          <div className="flex items-center gap-3.5">
+                            <PhoneCall size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
+                            <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
                           </div>
-                          <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold uppercase tracking-wider">
+                            {activePersona}
+                          </span>
                         </button>
-
-                        {/* Navigation List Items: Daro & Zara, Explore Creative Skills, Buildy */}
-                        <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-foreground">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDrawerOpen(false);
-                              setIsVoiceCallOpen(true);
-                            }}
-                            className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center justify-between text-foreground transition-all cursor-pointer group"
-                          >
-                            <div className="flex items-center gap-3.5">
-                              <PhoneCall size={19} strokeWidth={1.8} className="text-[#00a6ff]" />
-                              <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
-                            </div>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#00a6ff]/15 text-[#0a2a66] font-bold uppercase tracking-wider">
-                              {activePersona}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            setIsExploreGptsOpen(true);
+                          }}
+                          className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
+                            activeSkill
+                              ? 'bg-[#0a7cf0]/20 text-white font-semibold'
+                              : 'hover:bg-white/10 text-zinc-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <LayoutGrid size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#38bdf8]' : 'text-zinc-400'} />
+                            <span className="tracking-wide">Explore Creative Skills</span>
+                          </div>
+                          {activeSkill && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0] text-white font-bold">
+                              Active
                             </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDrawerOpen(false);
-                              setIsExploreGptsOpen(true);
-                            }}
-                            className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
-                              activeSkill
-                                ? 'bg-[#00a6ff]/12 text-[#0a2a66] font-semibold'
-                                : 'hover:bg-sky-50 text-foreground'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3.5">
-                              <LayoutGrid size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#00a6ff]' : 'text-zinc-600'} />
-                              <span className="tracking-wide">Explore Creative Skills</span>
-                            </div>
-                            {activeSkill && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#00a6ff] text-white font-bold">
-                                Active
-                              </span>
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDrawerOpen(false);
-                              window.open(BUILDY_URL, '_blank', 'noopener,noreferrer');
-                            }}
-                            className="w-full px-3 py-2 rounded-xl hover:bg-sky-50 text-left flex items-center gap-3.5 text-foreground transition-all cursor-pointer"
-                          >
-                            <Hammer size={19} strokeWidth={1.8} className="text-zinc-600" />
-                            <span className="tracking-wide">Buildy</span>
-                          </button>
-                        </div>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            setBuildyInitialPrompt(undefined);
+                            setIsBuildyOpen(true);
+                          }}
+                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <Hammer size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
+                            <span className="tracking-wide font-semibold">Buildy</span>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold">
+                            UI Studio
+                          </span>
+                        </button>
                       </div>
+                    </div>
 
-                      {/* ONLY RECENT SECTION SCROLLABLE: User's real Firestore chats */}
-                      <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
-                        <span className="text-[13px] font-semibold text-zinc-500 px-3 tracking-wide mb-2 shrink-0">
-                          Recent
-                        </span>
+                    {/* ONLY RECENT SECTION SCROLLABLE */}
+                    <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
+                      <span className="text-[13px] font-semibold text-zinc-400 px-3 tracking-wide mb-2 shrink-0">
+                        Recent
+                      </span>
 
-                        {/* Scrollable list of user's saved chats */}
-                        <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
-                          {Object.keys(userChatThreads).length === 0 ? (
-                            <div className="px-3 py-6 text-center text-xs text-zinc-500">
-                              No saved chats yet. Start a new conversation!
-                            </div>
-                          ) : (
-                            Object.values(userChatThreads).map((thread: any) => (
+                      <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
+                        {Object.keys(userChatThreads).length === 0 ? (
+                          <div className="px-3 py-6 text-center text-xs text-zinc-500">
+                            No saved chats yet. Start a new conversation!
+                          </div>
+                        ) : (
+                          Object.values(userChatThreads).map((thread: any) => {
+                            const topic = thread.title || thread.id;
+                            return (
                               <div
-                                key={thread.id || thread.title}
-                                className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer hover:bg-sky-50/60 text-foreground border border-transparent group"
+                                key={thread.id || topic}
+                                className={`w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
+                                  topic === activeRecentItem
+                                    ? 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
+                                    : 'hover:bg-white/10 text-zinc-300 border-transparent'
+                                }`}
                               >
                                 <button
                                   type="button"
-                                  onClick={() => handleSelectRecent(thread.title || thread.id)}
+                                  onClick={() => handleSelectRecent(topic)}
                                   className="flex items-center gap-3 truncate text-left flex-1 min-w-0 cursor-pointer"
                                 >
-                                  <MessageSquare size={17} strokeWidth={1.8} className="text-zinc-500 group-hover:text-[#00a6ff] shrink-0" />
-                                  <span className="truncate text-[14px] text-foreground font-normal">{thread.title || thread.id}</span>
+                                  <MessageSquare
+                                    size={17}
+                                    strokeWidth={1.8}
+                                    className={topic === activeRecentItem ? 'text-[#38bdf8] shrink-0' : 'text-zinc-500 shrink-0'}
+                                  />
+                                  <span className="truncate text-[14px]">{topic}</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={async (e) => {
                                     e.stopPropagation();
-                                    if (currentUser?.uid && thread.id) {
-                                      await deleteChatThreadFromFirestore(thread.id, currentUser.uid);
+                                    if (currentUser?.uid && !currentUser.isAnonymous && thread.id) {
+                                      await deleteChatThreadFromFirestore(thread.id, currentUser.uid).catch(() => {});
                                     }
+                                    const scope = getUserStorageScope(currentUser);
+                                    const nextThreads = { ...userChatThreads };
+                                    delete nextThreads[topic];
+                                    setUserChatThreads(nextThreads);
+                                    saveChatThreadsToStorage(scope, nextThreads);
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-500 transition-opacity ml-1 shrink-0 cursor-pointer"
+                                  className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-400 transition-opacity ml-1 shrink-0 cursor-pointer"
                                   title="Delete chat"
                                 >
                                   <Trash2 size={13} />
                                 </button>
                               </div>
-                            ))
-                          )}
-                        </div>
+                            );
+                          })
+                        )}
                       </div>
-                    </>
-                  )}
+                    </div>
+                  </>
 
-                  {/* BOTTOM ACTIONS: Spaced Account Row with Settings (Voices) Button in front of Sign Out / Sign In */}
-                  <div className="shrink-0 pt-5 pb-1 mt-2 relative z-10 border-t border-border/60">
-                    {/* Menu Account Actions: Settings (Voices) + Sign In (Guest) or Sign Out (Logged In) */}
+                  {/* BOTTOM ACTIONS: Full-Width Blue Settings Button + Compact Account Row */}
+                  <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDrawerOpen(false);
+                        setIsVoiceSettingsOpen(true);
+                      }}
+                      className="w-full py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 bg-[#0a7cf0] hover:bg-[#096dd4]"
+                    >
+                      <Settings size={17} className="text-white" />
+                      <span>Settings</span>
+                    </button>
+
                     {currentUser && !currentUser.isAnonymous ? (
-                      <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-sky-50/50 border border-border">
+                      <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-[#14141d] border border-white/10">
                         <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                          <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-[#00a6ff] flex items-center justify-center text-[#00a6ff] shadow-sm shrink-0 overflow-hidden">
+                          <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-[#0a7cf0] flex items-center justify-center text-[#38bdf8] shrink-0 overflow-hidden">
                             {currentUser?.photoURL ? (
                               <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
-                              <UserIcon size={17} className="fill-[#00a6ff] text-[#00a6ff]" />
+                              <UserIcon size={17} className="fill-[#0a7cf0] text-[#0a7cf0]" />
                             )}
                           </div>
                           <div className="flex flex-col min-w-0 truncate">
-                            <span className="text-[13px] font-bold text-foreground leading-tight truncate">
+                            <span className="text-[13px] font-bold text-white leading-tight truncate">
                               {currentUser.displayName || currentUser.email?.split('@')[0]}
                             </span>
-                            <span className="text-[11px] text-zinc-500 truncate">
+                            <span className="text-[11px] text-zinc-400 truncate">
                               {currentUser.email || 'Cloud Account'}
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Settings Button for Voices in front of Sign Out */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsDrawerOpen(false);
-                              setIsVoiceSettingsOpen(true);
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                            title="Voice Settings"
-                            aria-label="Voice Settings"
-                          >
-                            <Settings size={13} className="text-[#00a6ff]" />
-                            <span>Settings</span>
-                          </button>
-
-                          {/* Sign Out Button in Menu */}
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              await logOut();
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                            title="Sign Out"
-                          >
-                            <LogOut size={13} />
-                            <span>Sign Out</span>
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await logOut();
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/25 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                          title="Sign Out"
+                        >
+                          <LogOut size={13} />
+                          <span>Sign Out</span>
+                        </button>
                       </div>
                     ) : (
                       <div
                         onClick={onOpenLogin}
-                        className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer hover:bg-sky-50/60 bg-sky-50/40 border border-border rounded-2xl transition-colors"
+                        className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer bg-[#14141d] border border-white/10 hover:border-white/20 rounded-2xl transition-colors"
                         title="Click to sign in"
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                          <div className="w-9 h-9 rounded-full bg-white border-[1.5px] border-zinc-300 flex items-center justify-center text-zinc-600 shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-white/20 flex items-center justify-center text-zinc-300 shrink-0">
                             <UserIcon size={16} />
                           </div>
                           <div className="flex flex-col min-w-0 truncate">
-                            <span className="text-[13px] font-bold text-foreground leading-tight truncate">
+                            <span className="text-[13px] font-bold text-white leading-tight truncate">
                               Guest User
                             </span>
-                            <span className="text-[11px] text-zinc-500 truncate">
-                              Session Active
+                            <span className="text-[11px] text-zinc-400 truncate">
+                              Saved in Browser
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Settings Button for Voices in front of Sign In */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsDrawerOpen(false);
-                              setIsVoiceSettingsOpen(true);
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-foreground border border-border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                            title="Voice Settings"
-                            aria-label="Voice Settings"
-                          >
-                            <Settings size={13} className="text-[#00a6ff]" />
-                            <span>Settings</span>
-                          </button>
-
-                          {/* Sign In Button in Menu */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenLogin?.();
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-[#00a6ff] hover:bg-[#0094e6] text-white text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0"
-                          >
-                            Sign In
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenLogin?.();
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#0a7cf0] hover:bg-[#096dd4] text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                        >
+                          Sign In
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1392,7 +1577,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           initialPrompt={currentFullScreenPrompt}
           onClearInitialPrompt={() => { setCurrentFullScreenPrompt(''); setCurrentFullScreenAttachments([]); }}
           initialAttachments={currentFullScreenAttachments}
-          selectedRecentTopic={currentUser && !currentUser.isAnonymous ? activeRecentItem : 'Guest Session'}
+          selectedRecentTopic={activeRecentItem}
           onSelectRecentTopic={setActiveRecentItem}
           onOpenLogin={onOpenLogin}
           externalActiveSkill={activeSkill}
@@ -1413,15 +1598,17 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           }}
         />
 
-        {/* Creative Studio (Thumbnails, Images, Video Templates, Voices, Cutouts) */}
-        <CreativeStudioModal
-          isOpen={isCreativeStudioOpen}
-          onClose={() => setIsCreativeStudioOpen(false)}
-          onLaunchPromptInChat={(prompt, attachedFile) => {
-            setIsCreativeStudioOpen(false);
-            setCurrentFullScreenAttachments(attachedFile ? [attachedFile] : []);
-            setCurrentFullScreenPrompt(prompt);
-            setIsFullScreenChatOpen(true);
+        {/* Buildy Embedded HTML Workspace Modal */}
+        <BuildyWorkspaceModal
+          isOpen={isBuildyOpen}
+          onClose={() => {
+            setIsBuildyOpen(false);
+            setBuildyInitialPrompt(undefined);
+          }}
+          initialPrompt={buildyInitialPrompt}
+          onOpenSettings={() => {
+            setIsBuildyOpen(false);
+            setIsVoiceSettingsOpen(true);
           }}
         />
 
@@ -1433,13 +1620,14 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           onSelectSkill={(skill) => setActiveSkill(skill)}
         />
 
-        {/* Voices Modal */}
-        <VoiceSettingsModal
+        {/* AI API Settings & Voices Modal */}
+        <AiApiSettingsModal
           isOpen={isVoiceSettingsOpen}
           onClose={() => setIsVoiceSettingsOpen(false)}
+          initialTab="api-keys"
           onVoiceChanged={() => setActivePersona(getActiveAssistantPersona())}
+          onOpenLogin={onOpenLogin}
         />
-      </motion.div>
-    </AnimatePresence>
+      </div>
   );
 };

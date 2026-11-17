@@ -1,0 +1,79 @@
+[
+ {
+  "id": "ask_questions",
+  "where": "backend → client",
+  "purpose": "Ask the user missing details in the app's question UI.",
+  "input": {
+   "questions": "[question ids]"
+  },
+  "output": {
+   "answers": "{questionId: optionId|text}"
+  }
+ },
+ {
+  "id": "analyze_image",
+  "where": "client (browser)",
+  "purpose": "Measure an uploaded/fetched image: size, orientation, dominant colours, brightness, background uniformity, transparency. The LLM NEVER guesses these; it reads the facts.",
+  "input": {
+   "source": "upload id | dataURL"
+  },
+  "output": {
+   "facts": "{name,width,height,orientation,hasAlpha,dominant[],brightness,bgUniform,bgColor,edgeBusy}"
+  }
+ },
+ {
+  "id": "search_images",
+  "where": "backend",
+  "purpose": "Find real web photos via the Visual A-Z image search endpoint (POST /api/google-scrape-images).",
+  "input": {
+   "query": "2-6 words",
+   "count": "1-8"
+  },
+  "output": {
+   "candidates": "[{url,thumbnail,sourceUrl,sourceDomain,width,height,title}]"
+  }
+ },
+ {
+  "id": "prepare_asset",
+  "where": "client (browser)",
+  "purpose": "Download a candidate through the image proxy, optionally remove the background, adjust (brightness/contrast/saturation/crop/resize) and return a PNG dataURL.",
+  "input": {
+   "assetId": "a1",
+   "candidates": "[...]",
+   "removeBackground": "bool",
+   "adjust": "{brightness,contrast,saturate,blur,maxSize}"
+  },
+  "output": {
+   "dataUrl": "png",
+   "width": 0,
+   "height": 0,
+   "facts": "{...}",
+   "method": "ai|simple|none"
+  }
+ },
+ {
+  "id": "validate_html",
+  "where": "backend",
+  "purpose": "Static checks on generated HTML (size, no scripts, no external resources, placeholders, fonts, contrast hints).",
+  "input": {
+   "html": "string"
+  },
+  "output": {
+   "ok": "bool",
+   "issues": "[{code,severity,msg}]"
+  }
+ },
+ {
+  "id": "render_preview",
+  "where": "client",
+  "purpose": "Render final HTML at full size inside a sandboxed iframe, scale down into the small chat box; export PNG on download.",
+  "input": {
+   "html": "string",
+   "w": 0,
+   "h": 0
+  },
+  "output": {
+   "png": "on demand"
+  }
+ }
+]

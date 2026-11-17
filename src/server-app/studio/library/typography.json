@@ -1,0 +1,308 @@
+{
+ "rules": [
+  "If any text is Devanagari, the display AND body font must come from a pair whose scripts include 'devanagari' (ids starting hi-).",
+  "Max 2 families per image. Load only through the pair's googleFonts URL.",
+  "Title weight >= 700 for thumbnails; line-height 1.05-1.15 for titles, 1.35-1.5 for body.",
+  "Hindi glyphs are taller: use ~8% larger line-height than Latin."
+ ],
+ "pairs": [
+  {
+   "id": "hi-bold-poppins",
+   "display": "Poppins",
+   "displayWeight": "800",
+   "body": "Poppins",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Headlines in Hindi+English, thumbnails, general",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Poppins:wght@500;800;900&display=swap"
+  },
+  {
+   "id": "hi-news-khand",
+   "display": "Khand",
+   "displayWeight": "700",
+   "body": "Hind",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "News, sports, urgent Hindi headlines",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Khand:wght@600;700&family=Hind:wght@500&display=swap"
+  },
+  {
+   "id": "hi-rozha",
+   "display": "Rozha One",
+   "displayWeight": "400",
+   "body": "Hind",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Festival, cultural, invitations in Hindi",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Rozha+One&family=Hind:wght@500&display=swap"
+  },
+  {
+   "id": "hi-yatra",
+   "display": "Yatra One",
+   "displayWeight": "400",
+   "body": "Hind",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Rustic, vintage, brush-like Hindi titles",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Yatra+One&family=Hind:wght@500&display=swap"
+  },
+  {
+   "id": "hi-kalam",
+   "display": "Kalam",
+   "displayWeight": "700",
+   "body": "Kalam",
+   "bodyWeight": "400",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Handwritten Hindi, doodle, casual",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap"
+  },
+  {
+   "id": "hi-baloo",
+   "display": "Baloo 2",
+   "displayWeight": "800",
+   "body": "Baloo 2",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Friendly rounded Hindi, kids, food",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;800&display=swap"
+  },
+  {
+   "id": "hi-rajdhani",
+   "display": "Rajdhani",
+   "displayWeight": "700",
+   "body": "Rajdhani",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Tech / gaming Hindi",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap"
+  },
+  {
+   "id": "hi-serif",
+   "display": "Noto Serif Devanagari",
+   "displayWeight": "800",
+   "body": "Noto Sans Devanagari",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Editorial Hindi, quotes",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@800&family=Noto+Sans+Devanagari:wght@500&display=swap"
+  },
+  {
+   "id": "hi-anek",
+   "display": "Anek Devanagari",
+   "displayWeight": "800",
+   "body": "Anek Devanagari",
+   "bodyWeight": "400",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Modern Hindi UI-style posters",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Anek+Devanagari:wght@400;800&display=swap"
+  },
+  {
+   "id": "hi-tiro",
+   "display": "Tiro Devanagari Hindi",
+   "displayWeight": "400",
+   "body": "Hind",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin",
+    "devanagari"
+   ],
+   "bestFor": "Classic literary Hindi",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Hind:wght@500&display=swap"
+  },
+  {
+   "id": "condensed-bebas",
+   "display": "Bebas Neue",
+   "displayWeight": "400",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Tall condensed titles: news, gaming, sports",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@500;700&display=swap"
+  },
+  {
+   "id": "anton-oswald",
+   "display": "Anton",
+   "displayWeight": "400",
+   "body": "Oswald",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Heavy impact thumbnails",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500&display=swap"
+  },
+  {
+   "id": "editorial-playfair",
+   "display": "Playfair Display",
+   "displayWeight": "900",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Editorial, documentary, quotes",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@500&display=swap"
+  },
+  {
+   "id": "modern-grotesk",
+   "display": "Space Grotesk",
+   "displayWeight": "700",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Tech, SaaS, clean modern",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@500&display=swap"
+  },
+  {
+   "id": "luxe-dm-serif",
+   "display": "DM Serif Display",
+   "displayWeight": "400",
+   "body": "Montserrat",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Luxury, fashion, wedding",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Montserrat:wght@500&display=swap"
+  },
+  {
+   "id": "comic-bangers",
+   "display": "Bangers",
+   "displayWeight": "400",
+   "body": "Poppins",
+   "bodyWeight": "600",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Comic / pop-art / fun",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Bangers&family=Poppins:wght@600&display=swap"
+  },
+  {
+   "id": "street-marker",
+   "display": "Permanent Marker",
+   "displayWeight": "400",
+   "body": "Inter",
+   "bodyWeight": "600",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Street, grunge, handwritten emphasis",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Inter:wght@600&display=swap"
+  },
+  {
+   "id": "arcade-pixel",
+   "display": "Press Start 2P",
+   "displayWeight": "400",
+   "body": "Space Grotesk",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Retro games (keep titles very short)",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@500&display=swap"
+  },
+  {
+   "id": "techno-orbitron",
+   "display": "Orbitron",
+   "displayWeight": "800",
+   "body": "Rajdhani",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Sci-fi, cyberpunk",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&family=Rajdhani:wght@500&display=swap"
+  },
+  {
+   "id": "royal-cinzel",
+   "display": "Cinzel",
+   "displayWeight": "700",
+   "body": "Montserrat",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Royal, historical, awards",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Montserrat:wght@500&display=swap"
+  },
+  {
+   "id": "wide-unbounded",
+   "display": "Unbounded",
+   "displayWeight": "800",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Wide, trendy, music, startup",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Unbounded:wght@800&family=Inter:wght@500&display=swap"
+  },
+  {
+   "id": "art-syne",
+   "display": "Syne",
+   "displayWeight": "800",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Art, design studios",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@500&display=swap"
+  },
+  {
+   "id": "heavy-archivo",
+   "display": "Archivo Black",
+   "displayWeight": "400",
+   "body": "Inter",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Brutalist, sale, bold statement",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@500&display=swap"
+  },
+  {
+   "id": "script-pacifico",
+   "display": "Pacifico",
+   "displayWeight": "400",
+   "body": "Poppins",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Friendly script accents (not for Hindi)",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Pacifico&family=Poppins:wght@500&display=swap"
+  }
+ ]
+}

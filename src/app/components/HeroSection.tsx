@@ -40,13 +40,13 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenChat }) => {
         />
       </div>
 
-      {/* Secondary ambient glow */}
+      {/* Subtle radial accent without blur filter */}
       <div
-        className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] sm:w-[1000px] h-[450px] sm:h-[600px] blur-[140px] pointer-events-none rounded-full z-0 transition-all duration-500"
+        className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] sm:w-[1000px] h-[450px] sm:h-[600px] pointer-events-none rounded-full z-0 transition-all duration-500"
         style={{
           background: isLight
-            ? 'radial-gradient(circle, rgba(77, 163, 255, 0.18) 0%, rgba(140, 200, 255, 0.08) 50%, transparent 80%)'
-            : 'radial-gradient(circle, rgba(255, 23, 68, 0.22) 0%, rgba(180, 0, 40, 0.10) 50%, transparent 80%)',
+            ? 'radial-gradient(circle, rgba(77, 163, 255, 0.14) 0%, rgba(140, 200, 255, 0.05) 50%, transparent 75%)'
+            : 'radial-gradient(circle, rgba(255, 23, 68, 0.16) 0%, rgba(180, 0, 40, 0.07) 50%, transparent 75%)',
         }}
       />
 
@@ -100,16 +100,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenChat }) => {
                 transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
                 className="relative group cursor-pointer select-none"
               >
-                {/* Subtle backlight glow behind character outline */}
-                <div
-                  className="absolute inset-0 blur-2xl rounded-full transform scale-90 pointer-events-none transition-all duration-500"
-                  style={{
-                    backgroundColor: isLight
-                      ? 'rgba(77, 163, 255, 0.25)'
-                      : 'rgba(255, 23, 68, 0.28)',
-                  }}
-                />
-
                 <img
                   src={HERO_AVATAR}
                   alt="AI Character Avatar"
@@ -177,7 +167,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenChat }) => {
 
               <span className="relative z-10 font-bold tracking-tight">Start Chatting</span>
 
-              <div className="w-7 h-7 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center relative z-10 group-hover:bg-white/30 transition-all">
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center relative z-10 group-hover:bg-white/30 transition-all">
                 <ArrowUpRight
                   size={16}
                   className="transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200"

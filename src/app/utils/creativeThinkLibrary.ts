@@ -946,7 +946,7 @@ button { font-family: inherit; }
     <a href="#gradient">Systems</a>
     <a href="#typography">Type</a>
     <a href="#pricing">Pricing</a>
-    <a href="https://fluorescent-code-vault-flow.base44.app" target="_blank">Creative Think Library</a>
+    <a href="#hero">Creative Think Library</a>
   </div>
   <p>&copy; 2026 Creative Think Studio. Built faithfully from Creative Think Library design references.</p>
 </footer>

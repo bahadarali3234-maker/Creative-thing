@@ -126,7 +126,7 @@ export const MessageTopImageGallery: React.FC<MessageTopImageGalleryProps> = ({
       <AnimatePresence>
         {lightboxImage && (
           <div
-            className="fixed inset-0 z-[12500] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            className="fixed inset-0 z-[12500] bg-black/88 flex items-center justify-center p-3 sm:p-6"
             onClick={() => setLightboxImage(null)}
           >
             <motion.div
@@ -155,7 +155,7 @@ export const MessageTopImageGallery: React.FC<MessageTopImageGalleryProps> = ({
                 <button
                   type="button"
                   onClick={(e) => handleDownload(e, lightboxImage)}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Download Image"
                   aria-label="Download Image"
                 >
@@ -164,7 +164,7 @@ export const MessageTopImageGallery: React.FC<MessageTopImageGalleryProps> = ({
                 <button
                   type="button"
                   onClick={() => setLightboxImage(null)}
-                  className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Close (Esc)"
                   aria-label="Close"
                 >

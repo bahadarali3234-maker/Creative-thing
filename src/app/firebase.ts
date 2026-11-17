@@ -283,6 +283,16 @@ export async function ensureAuth(): Promise<User | null> {
   return toUser(auth.currentUser);
 }
 
+export async function getFirebaseIdToken(forceRefresh = false): Promise<string | null> {
+  try {
+    const fbUser = auth.currentUser;
+    if (!fbUser || fbUser.isAnonymous) return null;
+    return await fbUser.getIdToken(forceRefresh);
+  } catch {
+    return null;
+  }
+}
+
 export async function saveBookingToFirestore(data: {
   name: string;
   email: string;

@@ -15,6 +15,8 @@ import {
   MessageSquare,
   ArrowRight,
   AudioLines,
+  Clock,
+  Lock,
 } from 'lucide-react';
 import {
   GEMINI_TTS_VOICES,
@@ -22,7 +24,6 @@ import {
   setStoredVoice,
   getVoiceInfo,
   speakWithGeminiTts,
-  createStreamingTtsSession,
   playVoicePreviewSample,
   stopGeminiTts,
 } from '../utils/geminiTts';
@@ -38,6 +39,152 @@ export interface LiveVoiceCallModalProps {
 }
 
 type AssistantStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
+type LockReason = 'session_cap' | 'quota_exhausted' | null;
+
+const VOICE_QUOTA_STORAGE_KEY = 'daro_zara_voice_quota_v1';
+const MAX_SESSION_SECONDS = 120; // 2 minutes per continuous session
+const MAX_QUOTA_SECONDS = 20 * 60; // 20 minutes per 5 hours
+const QUOTA_WINDOW_MS = 5 * 60 * 60 * 1000; // 5 hours
+
+interface VoiceQuotaLedger {
+  windowStartMs: number;
+  usedSeconds: number;
+}
+
+function readVoiceQuotaLedger(): VoiceQuotaLedger {
+  const now = Date.now();
+  try {
+    const raw = localStorage.getItem(VOICE_QUOTA_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const startMs = Number(parsed?.windowStartMs) || now;
+      const used = Math.max(0, Number(parsed?.usedSeconds) || 0);
+      if (now - startMs < QUOTA_WINDOW_MS) {
+        return { windowStartMs: startMs, usedSeconds: used };
+      }
+    }
+  } catch {}
+  const fresh: VoiceQuotaLedger = { windowStartMs: now, usedSeconds: 0 };
+  try {
+    localStorage.setItem(VOICE_QUOTA_STORAGE_KEY, JSON.stringify(fresh));
+  } catch {}
+  return fresh;
+}
+
+function writeVoiceQuotaLedger(ledger: VoiceQuotaLedger) {
+  try {
+    localStorage.setItem(VOICE_QUOTA_STORAGE_KEY, JSON.stringify(ledger));
+  } catch {}
+}
+
+function formatMinSec(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, '0')}`;
+}
+
+function formatResetCountdown(msRemaining: number): string {
+  const totalSec = Math.max(0, Math.ceil(msRemaining / 1000));
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  if (mins > 0) return `${mins}m`;
+  return `${totalSec}s`;
+}
+
+function stopBrowserVoice() {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
+}
+
+function speakWithBrowserVoice(
+  text: string,
+  preferGender: 'male' | 'female',
+  callbacks?: { onStart?: () => void; onEnd?: () => void; onWordProgress?: (visibleText: string) => void }
+) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  let wordTimer: number | null = null;
+
+  const stopTimer = () => {
+    if (wordTimer !== null) {
+      clearInterval(wordTimer);
+      wordTimer = null;
+    }
+  };
+
+  if (typeof window === 'undefined' || !('speechSynthesis' in window) || !window.speechSynthesis) {
+    callbacks?.onStart?.();
+    let idx = 0;
+    wordTimer = window.setInterval(() => {
+      idx++;
+      callbacks?.onWordProgress?.(words.slice(0, idx).join(' '));
+      if (idx >= words.length) {
+        stopTimer();
+        callbacks?.onEnd?.();
+      }
+    }, 240);
+    return;
+  }
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices() || [];
+    if (voices.length > 0) {
+      const genderHints =
+        preferGender === 'male' ? /(male|daniel|david|mark|rishi|alex|george)/i : /(female|samantha|zira|hazel|karen|susan|heera|veena)/i;
+      const picked =
+        voices.find((v) => genderHints.test(v.name) && /^en|^ur|^hi/i.test(v.lang)) ||
+        voices.find((v) => /^en/i.test(v.lang)) ||
+        voices[0];
+      if (picked) utter.voice = picked;
+    }
+    utter.rate = 0.96;
+    utter.pitch = 1.0;
+
+    let finished = false;
+    let boundaryDriven = false;
+    let fallbackIdx = 0;
+
+    const finishOnce = () => {
+      if (finished) return;
+      finished = true;
+      stopTimer();
+      callbacks?.onWordProgress?.(words.join(' '));
+      callbacks?.onEnd?.();
+    };
+    utter.onboundary = (ev: any) => {
+      if (finished || typeof ev?.charIndex !== 'number') return;
+      boundaryDriven = true;
+      const upto = text.slice(0, ev.charIndex + (ev.charLength || 1)).trim();
+      if (upto) callbacks?.onWordProgress?.(upto);
+    };
+    utter.onstart = () => {
+      callbacks?.onStart?.();
+      if (words.length > 0) {
+        callbacks?.onWordProgress?.(words[0]);
+      }
+      wordTimer = window.setInterval(() => {
+        if (finished || boundaryDriven) return;
+        fallbackIdx = Math.min(words.length, fallbackIdx + 1);
+        callbacks?.onWordProgress?.(words.slice(0, fallbackIdx).join(' '));
+      }, 280);
+    };
+    utter.onend = finishOnce;
+    utter.onerror = finishOnce;
+    callbacks?.onStart?.();
+    window.speechSynthesis.speak(utter);
+    // Safety fallback if browser suppresses speechSynthesis events
+    setTimeout(finishOnce, Math.max(8500, words.length * 460));
+  } catch {
+    callbacks?.onStart?.();
+    callbacks?.onWordProgress?.(words.join(' '));
+    setTimeout(() => callbacks?.onEnd?.(), 2200);
+  }
+}
 
 export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   isOpen,
@@ -57,8 +204,14 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
     `Assalam-o-Alaikum! Main ${personaName} hoon. Bol kar, likh kar ya camera se kuch bhi poochhein.`
   );
   const [goToChatTopic, setGoToChatTopic] = useState<string | null>(null);
-  const [audioLevel, setAudioLevel] = useState<number>(0.08);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // 2-Min Session Cap + 20-Min / 5-Hr Quota + Browser Voice Switch State
+  const [sessionSeconds, setSessionSeconds] = useState<number>(0);
+  const [quotaUsedSeconds, setQuotaUsedSeconds] = useState<number>(() => readVoiceQuotaLedger().usedSeconds);
+  const [windowStartMs, setWindowStartMs] = useState<number>(() => readVoiceQuotaLedger().windowStartMs);
+  const [lockReason, setLockReason] = useState<LockReason>(null);
+  const [voiceEngineMode, setVoiceEngineMode] = useState<'studio' | 'browser'>('studio');
 
   // Quick Voices Drawer inside Daro & Zara
   const [isVoiceDrawerOpen, setIsVoiceDrawerOpen] = useState<boolean>(false);
@@ -72,6 +225,8 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   const [cameraPrompt, setCameraPrompt] = useState<string>('What is this?');
   const [attachedThumbUrl, setAttachedThumbUrl] = useState<string | null>(null);
 
+  const orbScaleRef = useRef<HTMLDivElement | null>(null);
+  const orbAuraRef = useRef<HTMLDivElement | null>(null);
   const orbVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -86,7 +241,21 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const generationRef = useRef<number>(0);
   const statusRef = useRef<AssistantStatus>('idle');
+  const isModalOpenRef = useRef<boolean>(isOpen);
+  const lockReasonRef = useRef<LockReason>(lockReason);
+  const silenceTimerRef = useRef<number | null>(null);
+  const vadRafRef = useRef<number | null>(null);
+  const vadAudioCtxRef = useRef<AudioContext | null>(null);
+  const startListeningRef = useRef<() => void>(() => {});
   const historyRef = useRef<Array<{ sender: 'user' | 'ai'; text: string }>>([]);
+
+  useEffect(() => {
+    isModalOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
+    lockReasonRef.current = lockReason;
+  }, [lockReason]);
 
   useEffect(() => {
     statusRef.current = status;
@@ -104,55 +273,23 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
     }, 3200);
   }, []);
 
-  // Refresh active voice when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const currentStored = getStoredVoice();
-      setSelectedVoiceId(currentStored);
-      const info = getVoiceInfo(currentStored);
-      setAiSpeechText(
-        `Assalam-o-Alaikum! Main ${info.persona} hoon. Bol kar, likh kar ya camera se kuch bhi poochhein.`
-      );
-      setUserTranscript('');
-      setAttachedThumbUrl(null);
-      setGoToChatTopic(null);
-      setStatus('idle');
-    } else {
-      stopAllActivity();
-      stopCameraStream();
-      setIsCameraOpen(false);
-      setIsVoiceDrawerOpen(false);
-      setGoToChatTopic(null);
-    }
-  }, [isOpen]);
-
-  // Ambient & active orb audio-level pulse loop (matches Aura CSS --lvl dynamics)
-  useEffect(() => {
-    if (!isOpen) return;
-    let rafId: number;
-    const start = performance.now();
-
-    const tick = (now: number) => {
-      const t = now - start;
-      const cur = statusRef.current;
-      let target = 0.05 + 0.03 * Math.sin(t / 900);
-      if (cur === 'speaking') {
-        target = 0.34 + 0.22 * Math.sin(t / 110) * Math.cos(t / 290);
-      } else if (cur === 'listening') {
-        target = 0.28 + 0.16 * Math.sin(t / 150);
-      } else if (cur === 'thinking') {
-        target = 0.2 + 0.08 * Math.sin(t / 220);
-      }
-      setAudioLevel((prev) => prev + (target - prev) * 0.2);
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    animFrameRef.current = rafId;
-    return () => cancelAnimationFrame(rafId);
-  }, [isOpen]);
+  const lockAutoCloseTimerRef = useRef<number | null>(null);
 
   const stopMicHardware = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (vadRafRef.current !== null) {
+      cancelAnimationFrame(vadRafRef.current);
+      vadRafRef.current = null;
+    }
+    if (vadAudioCtxRef.current) {
+      try {
+        vadAudioCtxRef.current.close();
+      } catch {}
+      vadAudioCtxRef.current = null;
+    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onresult = null;
@@ -164,6 +301,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
+        mediaRecorderRef.current.onstop = null;
         mediaRecorderRef.current.stop();
       } catch {}
       mediaRecorderRef.current = null;
@@ -183,6 +321,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       abortControllerRef.current = null;
     }
     stopGeminiTts();
+    stopBrowserVoice();
     stopMicHardware();
     setStatus('idle');
   }, [stopMicHardware]);
@@ -196,6 +335,164 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       cameraVideoRef.current.srcObject = null;
     }
   }, []);
+
+  const triggerLimitLock = useCallback(
+    (reason: 'session_cap' | 'quota_exhausted', ledger: VoiceQuotaLedger, autoEndAfterSpeech = true) => {
+      if (lockAutoCloseTimerRef.current) {
+        clearTimeout(lockAutoCloseTimerRef.current);
+        lockAutoCloseTimerRef.current = null;
+      }
+      stopAllActivity();
+      stopCameraStream();
+      setIsCameraOpen(false);
+      setIsVoiceDrawerOpen(false);
+      setLockReason(reason);
+      setVoiceEngineMode('browser');
+
+      const resetRemainingMs = Math.max(0, ledger.windowStartMs + QUOTA_WINDOW_MS - Date.now());
+      const resetStr = formatResetCountdown(resetRemainingMs);
+      const quotaLeft = Math.max(0, MAX_QUOTA_SECONDS - ledger.usedSeconds);
+
+      const notice =
+        reason === 'quota_exhausted'
+          ? `20-minute calling quota for this 5-hour window is complete. Switching voice to browser built-in voice. Next reset in ${resetStr}. Active call ended.`
+          : `2-minute calling session limit reached (${formatMinSec(quotaLeft)} left in your 5-hour quota, resets in ${resetStr}). Switched to browser voice and ended the active call.`;
+
+      setAiSpeechText(notice);
+      const genderHint = voiceInfo.gender === 'Male' ? 'male' : 'female';
+      speakWithBrowserVoice(notice, genderHint, {
+        onStart: () => setStatus('speaking'),
+        onEnd: () => {
+          setStatus('idle');
+          if (autoEndAfterSpeech && isOpen) {
+            lockAutoCloseTimerRef.current = window.setTimeout(() => {
+              onClose();
+            }, 1400);
+          }
+        },
+      });
+    },
+    [isOpen, onClose, stopAllActivity, stopCameraStream, voiceInfo.gender]
+  );
+
+  // Refresh active voice & check 5-hour quota when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (lockAutoCloseTimerRef.current) {
+        clearTimeout(lockAutoCloseTimerRef.current);
+        lockAutoCloseTimerRef.current = null;
+      }
+      const currentStored = getStoredVoice();
+      setSelectedVoiceId(currentStored);
+      const info = getVoiceInfo(currentStored);
+      const ledger = readVoiceQuotaLedger();
+      setWindowStartMs(ledger.windowStartMs);
+      setQuotaUsedSeconds(ledger.usedSeconds);
+      setSessionSeconds(0);
+      setUserTranscript('');
+      setAttachedThumbUrl(null);
+      setGoToChatTopic(null);
+
+      if (ledger.usedSeconds >= MAX_QUOTA_SECONDS) {
+        setLockReason('quota_exhausted');
+        setVoiceEngineMode('browser');
+        const resetStr = formatResetCountdown(ledger.windowStartMs + QUOTA_WINDOW_MS - Date.now());
+        const lockedMsg = `20-minute calling quota for this 5-hour window is complete. Voice switched to browser built-in voice. Resets in ${resetStr}.`;
+        setAiSpeechText(lockedMsg);
+        speakWithBrowserVoice(lockedMsg, info.gender === 'Male' ? 'male' : 'female', {
+          onStart: () => setStatus('speaking'),
+          onEnd: () => setStatus('idle'),
+        });
+      } else {
+        setLockReason(null);
+        setVoiceEngineMode('studio');
+        setAiSpeechText(
+          `Assalam-o-Alaikum! Main ${info.persona} hoon. Seedha bolna shuru karein — mic hamesha open hai.`
+        );
+        setStatus('listening');
+        // Hands-free always-open mic starts automatically when voice call opens
+        setTimeout(() => {
+          if (isModalOpenRef.current && !lockReasonRef.current) {
+            startListeningRef.current();
+          }
+        }, 280);
+      }
+    } else {
+      if (lockAutoCloseTimerRef.current) {
+        clearTimeout(lockAutoCloseTimerRef.current);
+        lockAutoCloseTimerRef.current = null;
+      }
+      stopAllActivity();
+      stopCameraStream();
+      setIsCameraOpen(false);
+      setIsVoiceDrawerOpen(false);
+      setGoToChatTopic(null);
+      setLockReason(null);
+    }
+  }, [isOpen]);
+
+  // Live 1-second session & 20-min / 5-hour quota enforcement timer
+  useEffect(() => {
+    if (!isOpen || lockReason !== null) return;
+
+    const timer = window.setInterval(() => {
+      const ledger = readVoiceQuotaLedger();
+      const nextUsed = ledger.usedSeconds + 1;
+      const updatedLedger: VoiceQuotaLedger = {
+        windowStartMs: ledger.windowStartMs,
+        usedSeconds: nextUsed,
+      };
+      writeVoiceQuotaLedger(updatedLedger);
+      setWindowStartMs(updatedLedger.windowStartMs);
+      setQuotaUsedSeconds(nextUsed);
+
+      setSessionSeconds((prev) => {
+        const nextSess = prev + 1;
+        if (nextUsed >= MAX_QUOTA_SECONDS) {
+          setTimeout(() => triggerLimitLock('quota_exhausted', updatedLedger, true), 0);
+        } else if (nextSess >= MAX_SESSION_SECONDS) {
+          setTimeout(() => triggerLimitLock('session_cap', updatedLedger, true), 0);
+        }
+        return nextSess;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOpen, lockReason, triggerLimitLock]);
+
+  // Ambient & active orb audio-level pulse loop directly on DOM refs (zero 60fps React re-renders)
+  useEffect(() => {
+    if (!isOpen) return;
+    let rafId: number;
+    let level = 0.08;
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const t = now - start;
+      const cur = statusRef.current;
+      let target = 0.05 + 0.03 * Math.sin(t / 900);
+      if (cur === 'speaking') {
+        target = 0.34 + 0.22 * Math.sin(t / 110) * Math.cos(t / 290);
+      } else if (cur === 'listening') {
+        target = 0.28 + 0.16 * Math.sin(t / 150);
+      } else if (cur === 'thinking') {
+        target = 0.2 + 0.08 * Math.sin(t / 220);
+      }
+      level = level + (target - level) * 0.2;
+      if (orbScaleRef.current) {
+        orbScaleRef.current.style.transform = `scale(${(1 + level * 0.17).toFixed(3)})`;
+      }
+      if (orbAuraRef.current) {
+        orbAuraRef.current.style.opacity = `${Math.min(1, 0.35 + level * 1.4).toFixed(2)}`;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    animFrameRef.current = rafId;
+    return () => cancelAnimationFrame(rafId);
+  }, [isOpen]);
+
 
   // Start live camera preview when Camera sheet is opened and no image captured yet
   useEffect(() => {
@@ -244,33 +541,110 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
     };
   }, [isOpen, isCameraOpen, capturedImageDataUrl, facingMode, stopCameraStream]);
 
-  // Speak using high-definition Gemini Studio TTS
+  // Keep THINKING state until full-sentence TTS audio is loaded, then reveal text word by word while speaking,
+  // and automatically re-open always-on mic when finished speaking.
   const speakResponse = useCallback(
     (text: string, genId: number) => {
       if (generationRef.current !== genId) {
         return;
       }
-      setStatus('speaking');
+      const scheduleAutoReopenMic = () => {
+        if (generationRef.current !== genId) return;
+        if (isModalOpenRef.current && !lockReasonRef.current) {
+          setTimeout(() => {
+            if (generationRef.current === genId && isModalOpenRef.current && !lockReasonRef.current) {
+              startListeningRef.current();
+            }
+          }, 320);
+        } else {
+          setStatus('idle');
+        }
+      };
+
+      const genderHint = voiceInfo.gender === 'Male' ? 'male' : 'female';
+      if (voiceEngineMode === 'browser' || lockReason !== null) {
+        speakWithBrowserVoice(text, genderHint, {
+          onStart: () => {
+            if (generationRef.current === genId) {
+              setStatus('speaking');
+            }
+          },
+          onWordProgress: (revealed) => {
+            if (generationRef.current === genId) {
+              setAiSpeechText(revealed);
+            }
+          },
+          onEnd: () => {
+            if (generationRef.current === genId) {
+              setAiSpeechText(text);
+              scheduleAutoReopenMic();
+            }
+          },
+        });
+        return;
+      }
+
+      // Remain in 'thinking' until Gemini TTS synthesizes complete sentences & begins playback
+      setStatus('thinking');
+      setAiSpeechText('');
       speakWithGeminiTts({
         text,
         voice: selectedVoiceId,
+        chunkMode: 'complete-sentence',
+        onLoadingStart: () => {
+          if (generationRef.current === genId) setStatus('thinking');
+        },
         onStart: () => {
-          if (generationRef.current === genId) setStatus('speaking');
+          if (generationRef.current === genId) {
+            setStatus('speaking');
+          }
+        },
+        onWordProgress: (revealed) => {
+          if (generationRef.current === genId) {
+            setAiSpeechText(revealed);
+          }
         },
         onEnd: () => {
-          if (generationRef.current === genId) setStatus('idle');
+          if (generationRef.current === genId) {
+            setAiSpeechText(text);
+            scheduleAutoReopenMic();
+          }
         },
         onError: () => {
-          if (generationRef.current === genId) setStatus('idle');
+          if (generationRef.current !== genId) return;
+          speakWithBrowserVoice(text, genderHint, {
+            onStart: () => {
+              if (generationRef.current === genId) setStatus('speaking');
+            },
+            onWordProgress: (revealed) => {
+              if (generationRef.current === genId) setAiSpeechText(revealed);
+            },
+            onEnd: () => {
+              if (generationRef.current === genId) {
+                setAiSpeechText(text);
+                scheduleAutoReopenMic();
+              }
+            },
+          });
         },
       });
     },
-    [selectedVoiceId]
+    [lockReason, selectedVoiceId, voiceEngineMode, voiceInfo.gender]
   );
 
-  // Send query (text, voice transcript, or snapped camera image) to /api/chat and parse SSE
+  // Send query (text, voice transcript, or snapped camera image) to /api/chat,
+  // stay in THINKING... until complete reply + TTS audio finish preparing, then speak & reveal word-by-word.
   const submitQuery = useCallback(
     async (rawQuery: string, imageDataUrl?: string) => {
+      if (lockReason !== null) {
+        const resetStr = formatResetCountdown(windowStartMs + QUOTA_WINDOW_MS - Date.now());
+        showToast(
+          lockReason === 'quota_exhausted'
+            ? `20-min calling quota exhausted. Resets in ${resetStr}.`
+            : '2-min session ended. Close and start a new call.'
+        );
+        return;
+      }
       const cleanedPrompt = (rawQuery || '').trim() || (imageDataUrl ? 'What is this?' : '');
       if (!cleanedPrompt && !imageDataUrl) return;
 
@@ -282,6 +656,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       setUserTranscript(cleanedPrompt);
       setAttachedThumbUrl(imageDataUrl || null);
       setGoToChatTopic(null);
+      setAiSpeechText('');
       setStatus('thinking');
 
       const currentHistory = [...historyRef.current.slice(-10)];
@@ -299,20 +674,6 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             },
           ]
         : [];
-
-      const liveTtsSession = createStreamingTtsSession({
-        messageId: `voice-${myGen}`,
-        voice: selectedVoiceId,
-        onStart: () => {
-          if (generationRef.current === myGen) setStatus('speaking');
-        },
-        onEnd: () => {
-          if (generationRef.current === myGen) setStatus('idle');
-        },
-        onError: () => {
-          if (generationRef.current === myGen) setStatus('idle');
-        },
-      });
 
       try {
         const res = await fetch('/api/chat', {
@@ -347,10 +708,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            if (generationRef.current !== myGen) {
-              liveTtsSession.cancel();
-              return;
-            }
+            if (generationRef.current !== myGen) return;
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -369,16 +727,6 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
                 }
                 if (typeof parsed.text === 'string' && parsed.text) {
                   fullText += parsed.text;
-                  const cleanDisplay = fullText
-                    .replace(/\[GO_TO_CHAT\]/gi, '')
-                    .replace(/```[\s\S]*?```/g, '')
-                    .replace(/[*_`#>~|]/g, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-                  if (cleanDisplay) {
-                    setAiSpeechText(cleanDisplay);
-                    liveTtsSession.pushText(cleanDisplay);
-                  }
                 }
               } catch {
                 // Ignore partial JSON frames
@@ -390,10 +738,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           fullText = fallbackJson?.text || fallbackJson?.reply || '';
         }
 
-        if (generationRef.current !== myGen) {
-          liveTtsSession.cancel();
-          return;
-        }
+        if (generationRef.current !== myGen) return;
 
         const shouldOfferGoToChat = metaSuggestGoToChat || /\[GO_TO_CHAT\]/i.test(fullText);
         if (shouldOfferGoToChat) {
@@ -409,21 +754,21 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             .trim() || `Main ${personaName} hoon — aapka sawal samajh aa gaya hai.`;
 
         historyRef.current = [...historyRef.current, { sender: 'ai', text: finalClean }];
-        setAiSpeechText(finalClean);
-        liveTtsSession.finish(finalClean);
+        // Do NOT reveal text yet: keep status in 'thinking' while complete sentences synthesize via TTS,
+        // then reveal word-by-word only once speaking starts!
+        speakResponse(finalClean, myGen);
       } catch (err: any) {
-        liveTtsSession.cancel();
         if (err?.name === 'AbortError' || generationRef.current !== myGen) return;
         const fallback = 'Network ya server se rabta nahi ho saka. Dobara koshish karein.';
-        setAiSpeechText(fallback);
         speakResponse(fallback, myGen);
       }
     },
-    [personaName, selectedVoiceId, speakResponse, stopAllActivity]
+    [lockReason, personaName, showToast, speakResponse, stopAllActivity, windowStartMs]
   );
 
-  // Start Listening via SpeechRecognition (+ Whisper /api/stt fallback)
+  // Hands-free Continuous Listening via SpeechRecognition (+ MediaRecorder + VAD + /api/stt fallback)
   const startListening = useCallback(async () => {
+    if (lockReason !== null || !isModalOpenRef.current) return;
     stopAllActivity();
     const myGen = generationRef.current;
     setStatus('listening');
@@ -433,16 +778,25 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
     let finalBuffer = '';
     let settled = false;
 
+    const commitRecognizedText = (textToSubmit: string) => {
+      if (settled || generationRef.current !== myGen) return;
+      const clean = textToSubmit.trim();
+      if (clean.length < 2) return;
+      settled = true;
+      stopMicHardware();
+      submitQuery(clean);
+    };
+
     if (SpeechRec) {
       try {
         const rec = new SpeechRec();
-        rec.continuous = false;
+        rec.continuous = true;
         rec.interimResults = true;
         rec.maxAlternatives = 1;
-        rec.lang = 'en-IN';
+        rec.lang = navigator.language || 'en-IN';
 
         rec.onresult = (event: any) => {
-          if (generationRef.current !== myGen) return;
+          if (generationRef.current !== myGen || settled) return;
           let interim = '';
           let finals = '';
           for (let i = 0; i < event.results.length; i++) {
@@ -456,10 +810,19 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           finalBuffer = [finals, interim].filter(Boolean).join(' ').trim();
           setUserTranscript(finalBuffer);
 
-          if (finals && !settled) {
-            settled = true;
-            stopMicHardware();
-            submitQuery(finals);
+          if (silenceTimerRef.current !== null) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+
+          if (finals && !interim && finals.trim().length > 1) {
+            silenceTimerRef.current = window.setTimeout(() => {
+              commitRecognizedText(finals);
+            }, 650);
+          } else if (finalBuffer.length > 1) {
+            silenceTimerRef.current = window.setTimeout(() => {
+              commitRecognizedText(finalBuffer);
+            }, 1350);
           }
         };
 
@@ -474,10 +837,14 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         rec.onend = () => {
           if (generationRef.current !== myGen || settled) return;
           if (finalBuffer.trim().length > 1) {
-            settled = true;
-            submitQuery(finalBuffer.trim());
-          } else {
-            setStatus('idle');
+            commitRecognizedText(finalBuffer);
+          } else if (statusRef.current === 'listening' && isModalOpenRef.current && !lockReasonRef.current) {
+            // Re-arm continuous listening automatically without asking the user to tap again
+            try {
+              rec.start();
+            } catch {
+              setStatus('idle');
+            }
           }
         };
 
@@ -485,11 +852,11 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         recognitionRef.current = rec;
         return;
       } catch {
-        // Fall through to MediaRecorder + /api/stt
+        // Fall through to MediaRecorder + VAD + /api/stt
       }
     }
 
-    // Fallback MediaRecorder + /api/stt when SpeechRecognition is unavailable
+    // Fallback MediaRecorder + RMS VAD + /api/stt when SpeechRecognition is unavailable
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (generationRef.current !== myGen) {
@@ -499,12 +866,24 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       micStreamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
+      let speechDetected = false;
+      let lastSpeechMs = Date.now();
 
       recorder.ondataavailable = (ev) => {
         if (ev.data && ev.data.size > 0) audioChunksRef.current.push(ev.data);
       };
 
       recorder.onstop = () => {
+        if (vadRafRef.current !== null) {
+          cancelAnimationFrame(vadRafRef.current);
+          vadRafRef.current = null;
+        }
+        if (vadAudioCtxRef.current) {
+          try {
+            vadAudioCtxRef.current.close();
+          } catch {}
+          vadAudioCtxRef.current = null;
+        }
         if (micStreamRef.current) {
           micStreamRef.current.getTracks().forEach((t) => t.stop());
           micStreamRef.current = null;
@@ -512,11 +891,15 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         if (generationRef.current !== myGen) return;
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         if (blob.size < 300) {
-          setStatus('idle');
-          showToast('Awaz sahi sunai nahi di, dobara try karein');
+          if (isModalOpenRef.current && !lockReasonRef.current) {
+            setTimeout(() => startListeningRef.current(), 250);
+          } else {
+            setStatus('idle');
+          }
           return;
         }
         setStatus('thinking');
+        setAiSpeechText('');
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = async () => {
@@ -530,16 +913,55 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             const text = (sttData?.text || '').trim();
             if (text.length >= 2) {
               submitQuery(text);
+            } else if (isModalOpenRef.current && !lockReasonRef.current) {
+              startListeningRef.current();
             } else {
               setStatus('idle');
-              showToast('Speech samajh nahi aayi, dubara bolein');
             }
           } catch {
-            setStatus('idle');
-            showToast('Speech transcription error');
+            if (isModalOpenRef.current && !lockReasonRef.current) {
+              startListeningRef.current();
+            } else {
+              setStatus('idle');
+            }
           }
         };
       };
+
+      // Simple WebAudio RMS Voice Activity Detection for hands-free auto-submit
+      try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          vadAudioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          src.connect(analyser);
+          const dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+          const monitorVad = () => {
+            if (generationRef.current !== myGen || statusRef.current !== 'listening') return;
+            analyser.getByteTimeDomainData(dataArr);
+            let sumSq = 0;
+            for (let i = 0; i < dataArr.length; i++) {
+              const v = (dataArr[i] - 128) / 128;
+              sumSq += v * v;
+            }
+            const rms = Math.sqrt(sumSq / dataArr.length);
+            const now = Date.now();
+            if (rms > 0.025) {
+              speechDetected = true;
+              lastSpeechMs = now;
+            } else if (speechDetected && now - lastSpeechMs > 1350 && recorder.state !== 'inactive') {
+              recorder.stop();
+              return;
+            }
+            vadRafRef.current = requestAnimationFrame(monitorVad);
+          };
+          vadRafRef.current = requestAnimationFrame(monitorVad);
+        }
+      } catch {}
 
       recorder.start(250);
       mediaRecorderRef.current = recorder;
@@ -547,9 +969,14 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       setStatus('idle');
       showToast('Please allow microphone access');
     }
-  }, [showToast, stopAllActivity, stopMicHardware, submitQuery]);
+  }, [lockReason, showToast, stopAllActivity, stopMicHardware, submitQuery]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
 
   const handleOrbOrMicTap = () => {
+    if (lockReason !== null) return;
     if (orbVideoRef.current) {
       orbVideoRef.current.play().catch(() => {});
     }
@@ -630,12 +1057,12 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
 
   const statusLabel =
     status === 'listening'
-      ? 'LISTENING...'
+      ? 'MIC OPEN · LISTENING...'
       : status === 'thinking'
-      ? 'THINKING...'
+      ? 'THINKING · PREPARING VOICE...'
       : status === 'speaking'
       ? 'SPEAKING...'
-      : 'TAP TO TALK';
+      : 'TAP MIC TO RESUME';
 
   if (!isOpen) return null;
 
@@ -654,24 +1081,32 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        {/* Top Header: ONLY Persona Name, Circular Voice Logo Button, and Cross Button */}
+        {/* Top Header: Persona Name, Timer/Quota Indicator, Circular Voice Logo Button & Cross Button */}
         <header className="relative z-20 flex items-center justify-between px-4 sm:px-6 pt-3.5 pb-2 gap-2">
-          {/* Left: Glowing Dot + Assistant Name Only */}
-          <div className="flex items-center gap-2.5">
+          {/* Left: Glowing Dot + Assistant Name + Session/Quota Countdown */}
+          <div className="flex items-center gap-2.5 min-w-0">
             <span
               className="w-3.5 h-3.5 rounded-full shrink-0"
               style={{
-                background: 'radial-gradient(circle at 35% 30%, #ffffff, #4cc3ff 45%, #1450c8)',
-                boxShadow: '0 0 14px #4cc3ff',
+                background: lockReason
+                  ? 'radial-gradient(circle at 35% 30%, #ffffff, #f59e0b 55%, #b45309)'
+                  : 'radial-gradient(circle at 35% 30%, #ffffff, #4cc3ff 45%, #1450c8)',
+                boxShadow: lockReason ? '0 0 12px #f59e0b' : '0 0 14px #4cc3ff',
               }}
             />
             <span className="font-extrabold tracking-[0.16em] text-sm sm:text-base text-[#0a2a66] uppercase">
               {personaName}
             </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-[#4cc3ff]/35 text-[11px] font-extrabold text-[#0a2a66] tabular-nums whitespace-nowrap">
+              <Clock size={11} className={lockReason ? 'text-amber-600' : 'text-[#1450c8]'} />
+              <span>
+                {formatMinSec(sessionSeconds)}/2:00 · {formatMinSec(Math.max(0, MAX_QUOTA_SECONDS - quotaUsedSeconds))} left
+              </span>
+            </span>
           </div>
 
           {/* Right Controls: Circular Voices Logo Button & Cross Button Only */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setIsVoiceDrawerOpen(true)}
@@ -698,24 +1133,24 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         <main className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 text-center">
           {/* Interactive Energy Video Orb */}
           <div
+            ref={orbScaleRef}
             onClick={handleOrbOrMicTap}
             role="button"
             aria-label="Tap to talk"
-            className="relative flex items-center justify-center cursor-pointer select-none"
+            className="relative flex items-center justify-center cursor-pointer select-none will-change-transform"
             style={{
               width: 'min(52vmin, 340px)',
               height: 'min(52vmin, 340px)',
-              transform: `scale(${(1 + audioLevel * 0.17).toFixed(3)})`,
               transition: 'transform 0.09s linear',
             }}
           >
             {/* Soft Sky Blue Radial Aura */}
             <div
+              ref={orbAuraRef}
               className="absolute -inset-[20%] rounded-full pointer-events-none blur-[14px]"
               style={{
-                background: `radial-gradient(circle, rgba(76, 195, 255, ${(0.16 + audioLevel * 0.5).toFixed(
-                  2
-                )}) 0%, transparent 66%)`,
+                background: 'radial-gradient(circle, rgba(76, 195, 255, 0.42) 0%, transparent 66%)',
+                opacity: 0.45,
               }}
             />
 
@@ -784,10 +1219,49 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
               dir="auto"
               className="max-h-[22dvh] overflow-y-auto px-2 text-base sm:text-xl font-extrabold text-[#0a2a66] leading-relaxed select-text"
             >
-              {aiSpeechText}
+              {status === 'thinking' && !aiSpeechText ? (
+                <span className="inline-flex items-center gap-2 text-sm sm:text-base font-bold text-[#4a6491] animate-pulse">
+                  <Loader2 size={15} className="animate-spin text-[#1450c8]" />
+                  Thinking &amp; preparing voice...
+                </span>
+              ) : (
+                aiSpeechText
+              )}
             </div>
 
-            {goToChatTopic && (
+            {lockReason && (
+              <div className="mt-3 mx-auto max-w-md rounded-2xl bg-amber-50/95 border border-amber-300 p-3.5 text-left shadow-sm space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-amber-950">
+                    <Lock size={15} className="text-amber-600 shrink-0" />
+                    <span>
+                      {lockReason === 'quota_exhausted'
+                        ? '20-Min / 5-Hr Quota Reached'
+                        : '2-Min Session Limit Reached'}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 text-[10px] font-extrabold uppercase">
+                    {voiceEngineMode === 'browser' ? 'Browser Voice Active' : 'Locked'}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-amber-900 leading-relaxed tabular-nums">
+                  {lockReason === 'quota_exhausted'
+                    ? `Next 20-minute quota window resets in ${formatResetCountdown(windowStartMs + QUOTA_WINDOW_MS - Date.now())}. Voice playback switched to your browser built-in voice.`
+                    : `Remaining 5-hour quota: ${formatMinSec(Math.max(0, MAX_QUOTA_SECONDS - quotaUsedSeconds))} (window resets in ${formatResetCountdown(windowStartMs + QUOTA_WINDOW_MS - Date.now())}). Active session ended with browser voice notice.`}
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="px-4 py-1.5 rounded-xl bg-[#0a2a66] hover:bg-[#1450c8] text-white text-xs font-extrabold cursor-pointer"
+                  >
+                    End &amp; Close Call
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {goToChatTopic && !lockReason && (
               <div className="pt-2 flex justify-center">
                 <button
                   type="button"
@@ -814,19 +1288,21 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
         {/* Bottom Dock: Pill Input (Camera icon when empty -> ArrowUp when typed) + Blue Mic/Stop Button */}
         <footer className="relative z-20 w-full max-w-[680px] mx-auto px-4 pb-5 pt-2">
           <form onSubmit={handleTextSubmit} className="flex items-center gap-2.5 sm:gap-3">
-            <div className="flex-1 flex items-center bg-white/80 backdrop-blur-md border border-[#4cc3ff]/45 focus-within:border-[#4cc3ff] rounded-full pl-5 pr-1.5 py-1.5 shadow-[0_10px_30px_rgba(20,80,200,0.1)] focus-within:shadow-[0_10px_34px_rgba(76,195,255,0.28)] transition-all">
+            <div className={`flex-1 flex items-center bg-white/80 backdrop-blur-md border border-[#4cc3ff]/45 focus-within:border-[#4cc3ff] rounded-full pl-5 pr-1.5 py-1.5 shadow-[0_10px_30px_rgba(20,80,200,0.1)] focus-within:shadow-[0_10px_34px_rgba(76,195,255,0.28)] transition-all ${lockReason ? 'opacity-50 pointer-events-none' : ''}`}>
               <input
                 type="text"
                 dir="auto"
+                disabled={Boolean(lockReason)}
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                placeholder={`Ask ${personaName} anything...`}
+                placeholder={lockReason ? 'Call locked — see notice above' : `Ask ${personaName} anything...`}
                 className="flex-1 min-w-0 bg-transparent border-0 outline-none text-sm sm:text-base font-semibold text-[#0a2a66] placeholder:text-[#6179a0]/80 py-2 pr-2"
               />
 
               {textInput.trim().length > 0 ? (
                 <button
                   type="submit"
+                  disabled={Boolean(lockReason)}
                   className="w-10 h-10 rounded-full bg-[#0a2a66] hover:bg-[#1450c8] text-white flex items-center justify-center shrink-0 transition-transform active:scale-95 cursor-pointer shadow-md"
                   title="Send message"
                   aria-label="Send message"
@@ -836,6 +1312,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
               ) : (
                 <button
                   type="button"
+                  disabled={Boolean(lockReason)}
                   onClick={() => {
                     stopAllActivity();
                     setCapturedImageDataUrl(null);
@@ -854,12 +1331,17 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             {/* Big Circular Blue Mic / Stop Button */}
             <button
               type="button"
+              disabled={Boolean(lockReason)}
               onClick={handleOrbOrMicTap}
-              aria-label={status === 'idle' ? 'Tap to Talk' : 'Stop'}
-              title={status === 'idle' ? 'Tap to Talk' : 'Stop'}
-              className="w-14 h-14 sm:w-[60px] sm:h-[60px] rounded-full text-white flex items-center justify-center shrink-0 cursor-pointer transition-all active:scale-95"
+              aria-label={lockReason ? 'Call Locked' : status === 'idle' ? 'Tap to Talk' : 'Stop'}
+              title={lockReason ? 'Call Locked' : status === 'idle' ? 'Tap to Talk' : 'Stop'}
+              className="w-14 h-14 sm:w-[60px] sm:h-[60px] rounded-full text-white flex items-center justify-center shrink-0 cursor-pointer transition-all active:scale-95 disabled:opacity-45 disabled:cursor-not-allowed"
               style={
-                status === 'idle'
+                lockReason
+                  ? {
+                      background: 'linear-gradient(145deg, #b45309, #78350f)',
+                    }
+                  : status === 'idle'
                   ? {
                       background: 'linear-gradient(145deg, #1450c8, #0a2a66)',
                       boxShadow:
@@ -872,7 +1354,9 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
                     }
               }
             >
-              {status === 'idle' ? (
+              {lockReason ? (
+                <Lock size={22} />
+              ) : status === 'idle' ? (
                 <Mic size={24} strokeWidth={2.2} />
               ) : (
                 <Square size={20} className="fill-current" />

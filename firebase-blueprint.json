@@ -68,6 +68,52 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "userId", "kind", "name"]
+    },
+    "UserProviderKey": {
+      "title": "UserProviderKey",
+      "description": "Server-side AES-256-GCM encrypted user API key and provider model preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 160 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "maxLength": 32 },
+        "encryptedKey": { "type": "string", "maxLength": 2048 },
+        "iv": { "type": "string", "maxLength": 128 },
+        "authTag": { "type": "string", "maxLength": 128 },
+        "maskedKey": { "type": "string", "maxLength": 64 },
+        "model": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "provider", "encryptedKey", "iv", "authTag", "maskedKey"]
+    },
+    "GeneratedImage": {
+      "title": "GeneratedImage",
+      "description": "Persisted generated or edited AI image metadata (binary image stored on disk storage)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "conversationId": { "type": "string", "maxLength": 128 },
+        "parentImageId": { "type": "string", "maxLength": 128 },
+        "mode": { "type": "string", "maxLength": 32 },
+        "provider": { "type": "string", "maxLength": 64 },
+        "model": { "type": "string", "maxLength": 128 },
+        "originalPrompt": { "type": "string", "maxLength": 4000 },
+        "optimizedPrompt": { "type": "string", "maxLength": 8000 },
+        "style": { "type": "string", "maxLength": 64 },
+        "size": { "type": "string", "maxLength": 32 },
+        "quality": { "type": "string", "maxLength": 32 },
+        "outputFormat": { "type": "string", "maxLength": 16 },
+        "fileName": { "type": "string", "maxLength": 256 },
+        "filePath": { "type": "string", "maxLength": 512 },
+        "mimeType": { "type": "string", "maxLength": 64 },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "bytes": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "provider", "model", "originalPrompt", "fileName", "mimeType", "createdAt"]
     }
   },
   "firestore": {
@@ -90,6 +136,14 @@
     "/custom_templates/{templateId}": {
       "schema": { "$ref": "#/entities/CustomTemplate" },
       "description": "User custom creative studio templates keyed by template ID"
+    },
+    "/user_provider_keys/{keyDocId}": {
+      "schema": { "$ref": "#/entities/UserProviderKey" },
+      "description": "User encrypted Groq/OpenAI API keys and preferred models"
+    },
+    "/generated_images/{imageId}": {
+      "schema": { "$ref": "#/entities/GeneratedImage" },
+      "description": "User generated and edited AI image records"
     }
   }
 }

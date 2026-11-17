@@ -736,7 +736,7 @@ const WEBSITE_STEPS = `IMPORTANT PRODUCT POLICY — WEBSITE & APP UI CREATION:
 This application does NOT build or output complete HTML/CSS/JS websites or App UIs.
 Whenever the user asks to create, build, make, or design a website, landing page, web app, or App UI:
 1. NEVER output a full <!DOCTYPE html>...</html> single-file website or complete HTML/CSS/JS website build.
-2. Clearly inform the user in Romanized script of their language (or English if asked in English): **"Go to Buildy (https://fluorescent-code-vault-flow.base44.app) to create your App or Web UI."**
+2. Clearly inform the user in Romanized script of their language (or English if asked in English): **"Open Buildy right here in the app (from the Buildy button or sidebar menu) to create your App or Web UI."**
 3. Provide high-value architectural guidance AND a detailed, copy-ready Buildy prompt inside a \`\`\`prompt code block tailored to their request (including layout sections, palette from the Design Library, typography, and interactive behaviors) so they can paste it directly into Buildy.
 4. If the user asks for backend logic, algorithms, scripts, or code in programming languages (Python, TypeScript, JavaScript logic, C++, Java, SQL, etc.) or detailed technical answers/prompts, answer thoroughly and accurately in those languages.`;
 
@@ -769,8 +769,11 @@ const APP_RENDER_NOTE = `\n\nThe app renders code boxes, interactive Recharts ch
 
 /** v2 system prompt with Design Library references for Buildy prompts and technical assistance. */
 export function buildDesignerSystemPrompt(isWebsiteTask: boolean): string {
+  if (!isWebsiteTask) {
+    return [HEADER, '', NON_WEBSITE_TAIL, '', IMAGE_FINDER_SYSTEM_PROMPT].join('\n');
+  }
   const libJson = buildDesignLibraryJson(false);
-  const parts = [
+  return [
     HEADER,
     '<DESIGN_LIBRARY>',
     libJson,
@@ -780,11 +783,9 @@ export function buildDesignerSystemPrompt(isWebsiteTask: boolean): string {
     '',
     STEP_0,
     '',
-  ];
-  if (isWebsiteTask) {
-    parts.push(WEBSITE_STEPS, APP_RENDER_NOTE, '', IMAGE_FINDER_SYSTEM_PROMPT);
-  } else {
-    parts.push(NON_WEBSITE_TAIL, '', IMAGE_FINDER_SYSTEM_PROMPT);
-  }
-  return parts.join('\n');
+    WEBSITE_STEPS,
+    APP_RENDER_NOTE,
+    '',
+    IMAGE_FINDER_SYSTEM_PROMPT,
+  ].join('\n');
 }

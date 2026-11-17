@@ -4,7 +4,6 @@ import { Menu, X, ArrowUpRight, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { subscribeToAuth, logOut } from '../firebase';
 import type { User as FirebaseUser } from '../firebase';
-import { ThemeToggle } from './ThemeToggle';
 import { useTheme } from '../context/ThemeContext';
 
 interface NavbarProps {
@@ -99,9 +98,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenChat, onNavigate, onOpenLo
 
         {/* Right Action & Mobile Toggle */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Theme Toggle Button in Desktop Navbar */}
-          <ThemeToggle showLabel={false} />
-
           {/* iOS Style Ask AI Button */}
           <motion.button
             id="nav-chat-btn"
@@ -140,14 +136,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenChat, onNavigate, onOpenLo
           className="md:hidden backdrop-blur-2xl border-b border-[var(--border)] px-6 py-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
           style={{ backgroundColor: 'var(--surface-card)' }}
         >
-          {/* Mobile Theme Toggle bar */}
-          <div className="flex items-center justify-between py-2 border-b border-[var(--border)]">
-            <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-              Theme Mode
-            </span>
-            <ThemeToggle showLabel={true} />
-          </div>
-
           {navLinks.map((link) => (
             <button
               key={link.id}

@@ -1,0 +1,174 @@
+{
+ "chatPreview": {
+  "maxWidthPx": 320,
+  "maxHeightPx": 380,
+  "note": "The chat box shows the chosen aspect ratio inside this box; never full screen. Full resolution is rendered/exported only on download."
+ },
+ "custom": {
+  "min": 200,
+  "max": 4096,
+  "note": "Allow user-typed sizes like 1200x628; clamp to min/max."
+ },
+ "presets": [
+  {
+   "id": "yt-thumbnail",
+   "name": "YouTube thumbnail",
+   "w": 1280,
+   "h": 720,
+   "note": "YouTube video cover",
+   "ratio": 1.7778
+  },
+  {
+   "id": "yt-banner",
+   "name": "YouTube channel banner",
+   "w": 2560,
+   "h": 1440,
+   "note": "Keep key content in centre 1546x423 safe area",
+   "ratio": 1.7778
+  },
+  {
+   "id": "ig-square",
+   "name": "Instagram post (square)",
+   "w": 1080,
+   "h": 1080,
+   "note": "Feed post",
+   "ratio": 1.0
+  },
+  {
+   "id": "ig-portrait",
+   "name": "Instagram post (4:5)",
+   "w": 1080,
+   "h": 1350,
+   "note": "Feed post, more screen space",
+   "ratio": 0.8
+  },
+  {
+   "id": "story-reel",
+   "name": "Story / Reel / Shorts cover",
+   "w": 1080,
+   "h": 1920,
+   "note": "Keep top 250px and bottom 340px free of key content",
+   "ratio": 0.5625
+  },
+  {
+   "id": "fb-post",
+   "name": "Facebook / link share",
+   "w": 1200,
+   "h": 630,
+   "note": "Landscape share image",
+   "ratio": 1.9048
+  },
+  {
+   "id": "fb-cover",
+   "name": "Facebook cover",
+   "w": 1640,
+   "h": 624,
+   "note": "Profile/page cover",
+   "ratio": 2.6282
+  },
+  {
+   "id": "x-post",
+   "name": "X (Twitter) post image",
+   "w": 1600,
+   "h": 900,
+   "note": "16:9 post image",
+   "ratio": 1.7778
+  },
+  {
+   "id": "x-header",
+   "name": "X (Twitter) header",
+   "w": 1500,
+   "h": 500,
+   "note": "Keep subject right of centre; avatar covers bottom-left",
+   "ratio": 3.0
+  },
+  {
+   "id": "linkedin-banner",
+   "name": "LinkedIn banner",
+   "w": 1584,
+   "h": 396,
+   "note": "Very wide; minimal text",
+   "ratio": 4.0
+  },
+  {
+   "id": "pinterest-pin",
+   "name": "Pinterest pin",
+   "w": 1000,
+   "h": 1500,
+   "note": "Tall 2:3",
+   "ratio": 0.6667
+  },
+  {
+   "id": "profile-dp",
+   "name": "Profile picture / DP",
+   "w": 1000,
+   "h": 1000,
+   "note": "Circular crop safe: keep subject inside central 80%",
+   "ratio": 1.0
+  },
+  {
+   "id": "a4-portrait",
+   "name": "A4 poster / flyer (portrait)",
+   "w": 2480,
+   "h": 3508,
+   "note": "Print 300dpi; chat preview is scaled down",
+   "ratio": 0.707
+  },
+  {
+   "id": "a4-landscape",
+   "name": "A4 landscape",
+   "w": 3508,
+   "h": 2480,
+   "note": "Certificates, landscape flyers",
+   "ratio": 1.4145
+  },
+  {
+   "id": "phone-wallpaper",
+   "name": "Phone wallpaper",
+   "w": 1080,
+   "h": 2340,
+   "note": "Keep clock area (top 25%) calm",
+   "ratio": 0.4615
+  },
+  {
+   "id": "desktop-wallpaper",
+   "name": "Desktop wallpaper",
+   "w": 1920,
+   "h": 1080,
+   "note": "16:9",
+   "ratio": 1.7778
+  },
+  {
+   "id": "logo-square",
+   "name": "Logo / wordmark",
+   "w": 1000,
+   "h": 1000,
+   "note": "Square artboard, generous padding",
+   "ratio": 1.0
+  },
+  {
+   "id": "business-card",
+   "name": "Business card",
+   "w": 1050,
+   "h": 600,
+   "note": "3.5x2 in at 300dpi",
+   "ratio": 1.75
+  },
+  {
+   "id": "album-cover",
+   "name": "Album / podcast cover",
+   "w": 1400,
+   "h": 1400,
+   "note": "Must read at 100px",
+   "ratio": 1.0
+  },
+  {
+   "id": "book-cover",
+   "name": "Book cover",
+   "w": 1600,
+   "h": 2560,
+   "note": "Title must read as thumbnail",
+   "ratio": 0.625
+  }
+ ]
+}

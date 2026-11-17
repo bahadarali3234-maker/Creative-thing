@@ -136,9 +136,8 @@ import { isCreativeThinkLibraryDocument } from './creativeThinkLibrary';
 export { isCreativeThinkLibraryDocument };
 
 /**
- * Detects prompts originating from or referencing the user's Code Vault Library
- * (https://fluorescent-code-vault-flow.base44.app) or Creative Think Library
- * containing pre-selected HTML/CSS design blocks.
+ * Detects prompts originating from or referencing the user's in-app Buildy /
+ * Code Vault Library or Creative Think Library containing pre-selected HTML/CSS blocks.
  * Library prompts must proceed directly to code assembly without discovery questionnaires.
  */
 export function isCodeVaultLibraryPrompt(text: string): boolean {
@@ -148,7 +147,7 @@ export function isCodeVaultLibraryPrompt(text: string): boolean {
   }
   const lower = text.toLowerCase();
 
-  if (lower.includes('fluorescent-code-vault-flow') || lower.includes('base44.app')) {
+  if (lower.includes('code vault') || lower.includes('buildy library')) {
     return true;
   }
   if (lower.includes('creative think') || lower.includes('creative_think_library')) {

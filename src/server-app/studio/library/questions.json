@@ -1,0 +1,219 @@
+{
+ "rules": [
+  "Ask at most 4 questions in ONE round, in the order: size, photo, style, text, web, language.",
+  "Never ask what the request already answers (platform words, quoted text, named style, uploads).",
+  "Every question has a default so the user can tap 'Generate now' and skip the rest.",
+  "Ask in the language of the user's message."
+ ],
+ "questions": [
+  {
+   "id": "size",
+   "ask": {
+    "en": "What size should the image be?",
+    "hi": "इमेज का साइज़ क्या रखना है?"
+   },
+   "type": "single",
+   "options": [
+    {
+     "id": "preset:yt-thumbnail",
+     "label": {
+      "en": "YouTube thumbnail 1280×720",
+      "hi": "YouTube थंबनेल 1280×720"
+     }
+    },
+    {
+     "id": "preset:ig-square",
+     "label": {
+      "en": "Instagram square 1080×1080",
+      "hi": "Instagram स्क्वायर 1080×1080"
+     }
+    },
+    {
+     "id": "preset:ig-portrait",
+     "label": {
+      "en": "Instagram 4:5 1080×1350",
+      "hi": "Instagram 4:5 1080×1350"
+     }
+    },
+    {
+     "id": "preset:story-reel",
+     "label": {
+      "en": "Story / Reel 1080×1920",
+      "hi": "स्टोरी / रील 1080×1920"
+     }
+    },
+    {
+     "id": "preset:a4-portrait",
+     "label": {
+      "en": "A4 poster",
+      "hi": "A4 पोस्टर"
+     }
+    },
+    {
+     "id": "custom",
+     "label": {
+      "en": "Custom size (type it)",
+      "hi": "अपना साइज़ (लिखें)"
+     }
+    }
+   ],
+   "askIf": "size_unknown",
+   "allowCustomText": true,
+   "hint": "options are generated from sizes.json presets; put the recipe's defaultSize first"
+  },
+  {
+   "id": "style",
+   "ask": {
+    "en": "Which style do you like?",
+    "hi": "कौन सा स्टाइल चाहिए?"
+   },
+   "type": "single",
+   "options": [
+    {
+     "id": "auto",
+     "label": {
+      "en": "You choose the best",
+      "hi": "आप चुन लो"
+     }
+    },
+    {
+     "id": "style:bold-yt-thumbnail",
+     "label": {
+      "en": "Bold & loud",
+      "hi": "बोल्ड और लाउड"
+     }
+    },
+    {
+     "id": "style:glassmorphism",
+     "label": {
+      "en": "Glass / modern",
+      "hi": "ग्लास / मॉडर्न"
+     }
+    },
+    {
+     "id": "style:dark-luxury",
+     "label": {
+      "en": "Dark luxury",
+      "hi": "डार्क लग्ज़री"
+     }
+    },
+    {
+     "id": "style:neon-cyberpunk",
+     "label": {
+      "en": "Neon cyberpunk",
+      "hi": "नियॉन साइबरपंक"
+     }
+    },
+    {
+     "id": "style:pastel-soft",
+     "label": {
+      "en": "Soft pastel",
+      "hi": "सॉफ्ट पेस्टल"
+     }
+    }
+   ],
+   "askIf": "style_unknown",
+   "hint": "top 4-5 styles come from the recipe's stylePrefs; keep 'auto' first"
+  },
+  {
+   "id": "text",
+   "ask": {
+    "en": "What text should be on it?",
+    "hi": "इस पर क्या लिखना है?"
+   },
+   "type": "text",
+   "askIf": "text_unknown",
+   "hint": "skip when recipe.needsText is false or the user quoted text"
+  },
+  {
+   "id": "photo",
+   "ask": {
+    "en": "Use your photo as the main subject?",
+    "hi": "आपकी फोटो मुख्य सब्जेक्ट में लगानी है?"
+   },
+   "type": "single",
+   "options": [
+    {
+     "id": "yes-cutout",
+     "label": {
+      "en": "Yes, remove its background",
+      "hi": "हाँ, बैकग्राउंड हटाकर"
+     }
+    },
+    {
+     "id": "yes-asis",
+     "label": {
+      "en": "Yes, keep as it is",
+      "hi": "हाँ, जैसी है वैसी"
+     }
+    },
+    {
+     "id": "no",
+     "label": {
+      "en": "No, don't use it",
+      "hi": "नहीं"
+     }
+    }
+   ],
+   "askIf": "has_upload"
+  },
+  {
+   "id": "web",
+   "ask": {
+    "en": "Should I also find real photos from the web for it?",
+    "hi": "ज़रूरत हो तो वेब से असली फोटो भी ढूंढ लूँ?"
+   },
+   "type": "single",
+   "options": [
+    {
+     "id": "auto",
+     "label": {
+      "en": "Yes, if it helps",
+      "hi": "हाँ, अगर ज़रूरी हो"
+     }
+    },
+    {
+     "id": "no",
+     "label": {
+      "en": "No, design only",
+      "hi": "नहीं, सिर्फ़ डिज़ाइन"
+     }
+    }
+   ],
+   "askIf": "subject_is_real_thing",
+   "hint": "only when subject is a real place/person(public)/product"
+  },
+  {
+   "id": "language",
+   "ask": {
+    "en": "Which language for the text?",
+    "hi": "टेक्स्ट किस भाषा में?"
+   },
+   "type": "single",
+   "options": [
+    {
+     "id": "hi",
+     "label": {
+      "en": "Hindi",
+      "hi": "हिंदी"
+     }
+    },
+    {
+     "id": "en",
+     "label": {
+      "en": "English",
+      "hi": "अंग्रेज़ी"
+     }
+    },
+    {
+     "id": "hinglish",
+     "label": {
+      "en": "Hinglish (Roman)",
+      "hi": "हिंग्लिश"
+     }
+    }
+   ],
+   "askIf": "language_ambiguous"
+  }
+ ]
+}

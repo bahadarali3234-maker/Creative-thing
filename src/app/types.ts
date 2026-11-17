@@ -40,6 +40,7 @@ export interface AttachedFile {
   type: string;
   preview?: string;
   isImage: boolean;
+  isVideo?: boolean;
   codeContent?: string;
   language?: string;
 }
