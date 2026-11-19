@@ -171,9 +171,11 @@ export interface StudioLogoSpec {
 
 export interface CanvasDesignSpec {
   recipe?: string;
+  renderMode?: 'direct-photo' | 'composite';
   style: string;
   palette: string;
   fonts: string;
+  fontPair?: string;
   layout: string;
   language?: string;
   title: string;
@@ -185,7 +187,7 @@ export interface CanvasDesignSpec {
   motifs?: string[];
   assets?: any[];
   logos?: StudioLogoSpec[];
-  backgroundSpec?: { mode: 'search' | 'gradient' | 'scene' | 'upload'; query?: string; mood?: string };
+  backgroundSpec?: { mode: 'search' | 'gradient' | 'scene' | 'upload' | 'none'; query?: string; mood?: string };
   characterSpec?: {
     needed: boolean;
     source: 'upload' | 'search' | 'none';
@@ -249,7 +251,7 @@ export interface ImageSceneLayer extends BaseSceneLayer {
   rimGlow?: boolean;
   rimColor?: string;
   dropShadow?: boolean;
-  placementRole?: 'character' | 'sticker' | 'photo';
+  placementRole?: 'character' | 'sticker' | 'photo' | 'direct-photo';
 }
 
 export interface LogoSceneLayer extends BaseSceneLayer {
@@ -1410,31 +1412,56 @@ export async function renderSceneGraph(graph: StudioSceneGraph): Promise<string>
     if (layer.kind === 'image') {
       try {
         const img = await loadImage(layer.dataUrl);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         const cx = layer.x + layer.w / 2;
         const cy = layer.y + layer.h / 2;
         ctx.translate(cx, cy);
         if (layer.rotation) ctx.rotate((layer.rotation * Math.PI) / 180);
         if (layer.flipX) ctx.scale(-1, 1);
 
-        if (layer.rimGlow) {
-          ctx.shadowColor = layer.rimColor || graph.background.accentHex || '#00e5ff';
-          ctx.shadowBlur = u * 2.4;
-          ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
-          ctx.shadowBlur = u * 1.1;
-        } else if (layer.dropShadow !== false) {
-          ctx.shadowColor = 'rgba(0,0,0,0.58)';
-          ctx.shadowBlur = u * 2.5;
-          ctx.shadowOffsetY = u * 1.1;
-        }
-
-        if (!layer.cutout && layer.placementRole !== 'photo') {
-          ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
-        } else if (!layer.cutout) {
-          rr(ctx, -layer.w / 2, -layer.h / 2, layer.w, layer.h, u * 1.4);
+        if (layer.placementRole === 'direct-photo') {
+          ctx.beginPath();
+          ctx.rect(-layer.w / 2, -layer.h / 2, layer.w, layer.h);
           ctx.clip();
-          ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+          const iw = img.width || 1;
+          const ih = img.height || 1;
+          const k = Math.max(layer.w / iw, layer.h / ih);
+          const dw = iw * k;
+          const dh = ih * k;
+          const dx = -dw / 2;
+          // Anchor at 24% height so heads/eyes in portraits are never cut off
+          const dy = -layer.h / 2 + (layer.h - dh) * 0.24;
+          ctx.drawImage(img, dx, dy, dw, dh);
+
+          // High-end studio key-light + subtle edge depth vignette
+          const vig = ctx.createRadialGradient(0, -layer.h * 0.1, Math.min(layer.w, layer.h) * 0.28, 0, 0, Math.max(layer.w, layer.h) * 0.72);
+          vig.addColorStop(0, 'rgba(255,255,255,0.03)');
+          vig.addColorStop(0.65, 'rgba(0,0,0,0)');
+          vig.addColorStop(1, 'rgba(2,6,14,0.28)');
+          ctx.fillStyle = vig;
+          ctx.fillRect(-layer.w / 2, -layer.h / 2, layer.w, layer.h);
         } else {
-          ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+          if (layer.rimGlow) {
+            ctx.shadowColor = layer.rimColor || graph.background.accentHex || '#00e5ff';
+            ctx.shadowBlur = u * 2.4;
+            ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+            ctx.shadowBlur = u * 1.1;
+          } else if (layer.dropShadow !== false) {
+            ctx.shadowColor = 'rgba(0,0,0,0.58)';
+            ctx.shadowBlur = u * 2.5;
+            ctx.shadowOffsetY = u * 1.1;
+          }
+
+          if (!layer.cutout && layer.placementRole !== 'photo') {
+            ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+          } else if (!layer.cutout) {
+            rr(ctx, -layer.w / 2, -layer.h / 2, layer.w, layer.h, u * 1.4);
+            ctx.clip();
+            ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+          } else {
+            ctx.drawImage(img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+          }
         }
       } catch {}
     } else if (layer.kind === 'logo') {
@@ -1555,8 +1582,9 @@ export async function renderSceneGraph(graph: StudioSceneGraph): Promise<string>
     ctx.restore();
   }
 
+  const isDirectPhoto = graph.layers.some((l) => l.kind === 'image' && l.placementRole === 'direct-photo');
   try {
-    const polished = await applyWebGpuSharpen(canvas, 0.16);
+    const polished = await applyWebGpuSharpen(canvas, isDirectPhoto ? 0.24 : 0.16);
     return polished.canvas.toDataURL('image/png');
   } catch {
     return canvas.toDataURL('image/png');
@@ -1650,50 +1678,83 @@ export async function composeSceneGraphFromSpec(
     });
   }
 
-  // Layer 2: Main Character Layer (corner-anchored cleanly)
+  const hasTitleText = Boolean(spec.title && spec.title.trim().length > 0);
+  const hasAnyText = Boolean(
+    hasTitleText ||
+    (spec.badge && spec.badge.trim().length > 0) ||
+    (spec.subtitle && spec.subtitle.trim().length > 0) ||
+    (spec.cta && spec.cta.trim().length > 0)
+  );
+  const isDirectPhotoMode =
+    spec.renderMode === 'direct-photo' ||
+    (!hasAnyText && !bgAsset && Boolean(subjAsset) && !subjAsset?.cutout && !(spec.logos || []).length);
+
+  // Layer 2: Main Character Layer (full-bleed studio portrait in direct-photo mode, or corner-anchored cutout)
   if (subjAsset) {
-    let subjBox = pxBox(LY.subject, W, H) || { x: W * 0.55, y: H * 0.06, w: W * 0.42, h: H * 0.92 };
-    if (placement === 'right-corner') {
-      subjBox = { x: W * 0.54, y: H * 0.04, w: W * 0.44, h: H * 0.96 };
-    } else if (placement === 'left-corner') {
-      subjBox = { x: W * 0.02, y: H * 0.04, w: W * 0.44, h: H * 0.96 };
-    } else if (placement === 'center') {
-      subjBox = { x: W * 0.25, y: H * 0.14, w: W * 0.5, h: H * 0.84 };
+    if (isDirectPhotoMode) {
+      layers.push({
+        id: 'layer_character',
+        kind: 'image',
+        name: subjAsset.name || 'Studio Subject',
+        x: 0,
+        y: 0,
+        w: W,
+        h: H,
+        opacity: 1,
+        visible: true,
+        locked: false,
+        dataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
+        originalDataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
+        cutout: false,
+        flipX: false,
+        rimGlow: false,
+        dropShadow: false,
+        placementRole: 'direct-photo',
+      });
+    } else {
+      let subjBox = pxBox(LY.subject, W, H) || { x: W * 0.55, y: H * 0.06, w: W * 0.42, h: H * 0.92 };
+      if (placement === 'right-corner') {
+        subjBox = { x: W * 0.54, y: H * 0.04, w: W * 0.44, h: H * 0.96 };
+      } else if (placement === 'left-corner') {
+        subjBox = { x: W * 0.02, y: H * 0.04, w: W * 0.44, h: H * 0.96 };
+      } else if (placement === 'center') {
+        subjBox = { x: W * 0.25, y: H * 0.14, w: W * 0.5, h: H * 0.84 };
+      }
+
+      const iw = subjAsset.img.width || 1;
+      const ih = subjAsset.img.height || 1;
+      const k = Math.min(subjBox.w / iw, subjBox.h / ih);
+      const dw = iw * k;
+      const dh = ih * k;
+      const dx =
+        placement === 'right-corner'
+          ? W - dw - W * 0.015
+          : placement === 'left-corner'
+            ? W * 0.015
+            : subjBox.x + (subjBox.w - dw) / 2;
+      const dy = subjAsset.cutout ? H - dh : subjBox.y + (subjBox.h - dh) / 2;
+
+      layers.push({
+        id: 'layer_character',
+        kind: 'image',
+        name: subjAsset.name || 'Main Character',
+        x: Math.round(dx),
+        y: Math.round(dy),
+        w: Math.round(dw),
+        h: Math.round(dh),
+        opacity: 1,
+        visible: true,
+        locked: false,
+        dataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
+        originalDataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
+        cutout: subjAsset.cutout,
+        flipX: false,
+        rimGlow: styleObj.fx === 'rim',
+        rimColor: P.accent,
+        dropShadow: true,
+        placementRole: 'character',
+      });
     }
-
-    const iw = subjAsset.img.width || 1;
-    const ih = subjAsset.img.height || 1;
-    const k = Math.min(subjBox.w / iw, subjBox.h / ih);
-    const dw = iw * k;
-    const dh = ih * k;
-    const dx =
-      placement === 'right-corner'
-        ? W - dw - W * 0.015
-        : placement === 'left-corner'
-          ? W * 0.015
-          : subjBox.x + (subjBox.w - dw) / 2;
-    const dy = subjAsset.cutout ? H - dh : subjBox.y + (subjBox.h - dh) / 2;
-
-    layers.push({
-      id: 'layer_character',
-      kind: 'image',
-      name: subjAsset.name || 'Main Character',
-      x: Math.round(dx),
-      y: Math.round(dy),
-      w: Math.round(dw),
-      h: Math.round(dh),
-      opacity: 1,
-      visible: true,
-      locked: false,
-      dataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
-      originalDataUrl: subjAsset.dataUrl || subjAsset.img.toDataURL('image/png'),
-      cutout: subjAsset.cutout,
-      flipX: false,
-      rimGlow: styleObj.fx === 'rim',
-      rimColor: P.accent,
-      dropShadow: true,
-      placementRole: 'character',
-    });
   }
 
   // Layer 3: Requested Brand Logos (Google, Google Flow, Google Gemini, etc.)
@@ -1803,42 +1864,44 @@ export async function composeSceneGraphFromSpec(
   const titleTop = Math.round(H * 0.19 + topLogoOffset * 0.85);
   const titleH = Math.round(H * 0.42);
   const useTextPlate = Boolean(spec.forcePlate || spec.creativeDirection?.useTextPlate);
-  layers.push({
-    id: 'layer_headline',
-    kind: 'text',
-    name: 'Headline',
-    textRole: 'headline',
-    text: spec.title || 'Featured Showcase',
-    accentWord: spec.accentWord || '',
-    fontPairId: pairId,
-    fontFamily: font.display,
-    fontWeight: Number(styleObj.weight || font.dw) || 800,
-    fontSize: Math.round(Math.min(titleH * 0.46, W * (textAlign === 'center' ? 0.11 : 0.088))),
-    color: textColor,
-    accentColor: P.accent === P.primary ? '#ffe600' : P.accent,
-    strokeColor: strokeColor || (useTextPlate ? undefined : isDarkBg ? 'rgba(0,0,0,0.65)' : undefined),
-    strokeWidth: strokeColor ? Math.max(2, Math.round(u * 0.7)) : useTextPlate ? 0 : isDarkBg ? Math.max(1, Math.round(u * 0.28)) : 0,
-    bgPlateColor: useTextPlate ? (isDarkBg ? 'rgba(6, 10, 22, 0.76)' : 'rgba(255, 255, 255, 0.84)') : undefined,
-    bgPlateRadius: useTextPlate ? Math.round(u * 1.6) : undefined,
-    align: textAlign,
-    uppercase: Boolean(styleObj.upper) && !isDeva(spec.title || ''),
-    shadowBlur: Math.round(u * 1.4),
-    x: Math.round(textAlign === 'center' ? (W - textZoneW) / 2 : textZoneLeft),
-    y: titleTop,
-    w: Math.round(textZoneW),
-    h: titleH,
-    opacity: 1,
-    visible: true,
-    locked: false,
-  });
+  if (hasTitleText) {
+    layers.push({
+      id: 'layer_headline',
+      kind: 'text',
+      name: 'Headline',
+      textRole: 'headline',
+      text: spec.title.trim(),
+      accentWord: spec.accentWord || '',
+      fontPairId: pairId,
+      fontFamily: font.display,
+      fontWeight: Number(styleObj.weight || font.dw) || 800,
+      fontSize: Math.round(Math.min(titleH * 0.46, W * (textAlign === 'center' ? 0.11 : 0.088))),
+      color: textColor,
+      accentColor: P.accent === P.primary ? '#ffe600' : P.accent,
+      strokeColor: strokeColor || (useTextPlate ? undefined : isDarkBg ? 'rgba(0,0,0,0.65)' : undefined),
+      strokeWidth: strokeColor ? Math.max(2, Math.round(u * 0.7)) : useTextPlate ? 0 : isDarkBg ? Math.max(1, Math.round(u * 0.28)) : 0,
+      bgPlateColor: useTextPlate ? (isDarkBg ? 'rgba(6, 10, 22, 0.76)' : 'rgba(255, 255, 255, 0.84)') : undefined,
+      bgPlateRadius: useTextPlate ? Math.round(u * 1.6) : undefined,
+      align: textAlign,
+      uppercase: Boolean(styleObj.upper) && !isDeva(spec.title || ''),
+      shadowBlur: Math.round(u * 1.4),
+      x: Math.round(textAlign === 'center' ? (W - textZoneW) / 2 : textZoneLeft),
+      y: titleTop,
+      w: Math.round(textZoneW),
+      h: titleH,
+      opacity: 1,
+      visible: true,
+      locked: false,
+    });
+  }
 
-  if (spec.subtitle) {
+  if (spec.subtitle && spec.subtitle.trim()) {
     layers.push({
       id: 'layer_subtitle',
       kind: 'text',
       name: 'Subtitle',
       textRole: 'subtitle',
-      text: spec.subtitle,
+      text: spec.subtitle.trim(),
       fontPairId: pairId,
       fontFamily: font.body,
       fontWeight: 600,
@@ -1848,7 +1911,7 @@ export async function composeSceneGraphFromSpec(
       align: textAlign,
       shadowBlur: Math.round(u * 0.8),
       x: Math.round(textAlign === 'center' ? (W - textZoneW) / 2 : textZoneLeft),
-      y: Math.round(titleTop + titleH + u * 1.2),
+      y: Math.round((hasTitleText ? titleTop + titleH : H * 0.35) + u * 1.2),
       w: Math.round(textZoneW),
       h: Math.round(H * 0.13),
       opacity: 1,
@@ -1857,7 +1920,7 @@ export async function composeSceneGraphFromSpec(
     });
   }
 
-  if (spec.cta) {
+  if (spec.cta && spec.cta.trim()) {
     const cw = Math.min(textZoneW * 0.75, Math.max(150, spec.cta.length * u * 2.3 + u * 5));
     const ch = Math.round(u * 5.2);
     layers.push({
@@ -1865,7 +1928,7 @@ export async function composeSceneGraphFromSpec(
       kind: 'text',
       name: 'CTA Button',
       textRole: 'cta',
-      text: spec.cta,
+      text: spec.cta.trim(),
       fontPairId: pairId,
       fontFamily: font.body,
       fontWeight: 800,
@@ -1996,8 +2059,10 @@ async function fetchWebPhotoCandidates(
         const w = Number(item.width) || 900;
         const h = Number(item.height) || 700;
         let score = 0;
-        if (w >= 1000) score += 3;
-        if (!watermarkRe.test(url) && !watermarkRe.test(domain)) score += 6;
+        if (w >= 1200) score += 5;
+        else if (w >= 900) score += 3;
+        if (w * h >= 900000) score += 3;
+        if (!watermarkRe.test(url) && !watermarkRe.test(domain)) score += 7;
         if (opts.preferLandscape && w > h) score += 2;
         if (opts.preferPortrait && h >= w) score += 2;
         return { item, score };
@@ -2015,7 +2080,8 @@ async function fetchWebPhotoCandidates(
       const proxied = `/api/studio/img-proxy?url=${encodeURIComponent(target)}`;
       try {
         const img = await loadImage(proxied);
-        const canvas = drawScaledElement(img, 1600);
+        if ((img.width || 0) < 340 || (img.height || 0) < 340) continue;
+        const canvas = drawScaledElement(img, 1800);
         out.push({ canvas, chosen: c, totalCount: rawList.length, score: entry.score });
         if (out.length >= 4) break;
       } catch {}
@@ -2553,9 +2619,12 @@ export async function runCanvasStudioPipeline(params: {
           const facts = await analyzeImageDataUrl(baseUrl, cand.chosen?.title || a.query).catch(() => ({ hasAlpha: false }));
 
           if (!a.removeBackground || facts.hasAlpha) {
-            acceptedCanvas = cand.canvas;
+            const gradePreset = spec.creativeDirection?.colorGrade || 'portrait-natural';
+            const graded = await applyWebGpuColorGrade(cand.canvas, gradePreset).catch(() => ({ canvas: cand.canvas }));
+            acceptedCanvas = graded.canvas;
             acceptedChosen = cand.chosen;
             acceptedCutout = Boolean(facts.hasAlpha);
+            emitStep('edit', `Enhanced high-res studio subject photo with ${gradePreset} WebGPU color grading.`);
             break;
           }
 
@@ -2682,7 +2751,8 @@ export async function runCanvasStudioPipeline(params: {
       if (!qc.approved) {
         onProgress?.(93, 'Applying automatic Quality Control repairs');
         const hints = qc.repairHints || {};
-        if (hints.increaseOverlay || hints.addTextPlate || qc.defects?.some((d: any) => d.area === 'text')) {
+        const hasTextLayers = composed.graph.layers.some((l) => l.kind === 'text');
+        if (hasTextLayers && (hints.increaseOverlay || hints.addTextPlate || qc.defects?.some((d: any) => d.area === 'text'))) {
           composed.graph.background.overlayOpacity = Math.min(0.82, (composed.graph.background.overlayOpacity || 0.5) + 0.2);
           for (const layer of composed.graph.layers) {
             if (layer.kind === 'text' && layer.textRole === 'headline') {
@@ -2700,7 +2770,7 @@ export async function runCanvasStudioPipeline(params: {
           const altUrl = graded.canvas.toDataURL('image/jpeg', 0.88);
           composed.graph.background.photoDataUrl = altUrl;
         }
-        if (hints.shiftTextZone) {
+        if (hasTextLayers && hints.shiftTextZone) {
           for (const layer of composed.graph.layers) {
             if (layer.kind === 'text' && layer.textRole === 'headline') {
               layer.y = Math.max(Math.round(resolved.size.h * 0.14), layer.y);

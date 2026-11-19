@@ -347,3 +347,124 @@ Decision rule:
     };
   }
 }
+
+export interface CutoutVisionInspectionResult {
+  inspectorAvailable: boolean;
+  inspectorModel?: string;
+  clean: boolean;
+  score: number;
+  issues: string[];
+  repairHints: {
+    tightenEdge?: boolean;
+    recoverHair?: boolean;
+    removeResidualIsland?: boolean;
+    decontaminateSpill?: boolean;
+  };
+}
+
+/**
+ * Inspects an extracted subject cutout diagnostic preview using Groq Vision
+ * (with Gemini fallback) to detect missing hair/limbs, jagged edges,
+ * residual background patches, or color-spill halos.
+ */
+export async function inspectCutoutMaskQuality(params: {
+  outlineOverlayDataUrl: string;
+  req?: any;
+}): Promise<CutoutVisionInspectionResult> {
+  const parsed = parseDataUrlBase64(params.outlineOverlayDataUrl);
+  if (!parsed) {
+    return {
+      inspectorAvailable: false,
+      clean: true,
+      score: 82,
+      issues: [],
+      repairHints: {},
+    };
+  }
+
+  const prompt = `You are the Independent Mask Quality Control Gate of ULTRA-PRO AI IMAGE ENGINE V2.
+Inspect this subject segmentation preview (cyan contour overlay marks the extracted foreground boundary against dimmed background).
+Evaluate strictly:
+1. Completeness: Are top of hair, ears, fingers, glasses, shoes, or product corners accidentally cut off?
+2. Background Separation: Are background regions or interior closed pockets accidentally left behind?
+3. Edge Halo & Spill: Is there obvious bright/dark fringe halo or harsh blocky clipping?
+
+Return ONLY valid JSON:
+{
+  "clean": true|false,
+  "score": 0-100,
+  "issues": ["concise defect descriptions, empty array if clean"],
+  "repairHints": {
+    "tightenEdge": false,
+    "recoverHair": false,
+    "removeResidualIsland": false,
+    "decontaminateSpill": false
+  }
+}`;
+
+  try {
+    const groqOut = await callGroqVisionInspector(prompt, params.outlineOverlayDataUrl, params.req);
+    if (groqOut?.text) {
+      const parsedJson = extractJson(groqOut.text);
+      if (parsedJson && typeof parsedJson === 'object') {
+        const score = Math.max(0, Math.min(100, Number(parsedJson.score) || 75));
+        const issues = Array.isArray(parsedJson.issues)
+          ? parsedJson.issues.map((x: any) => String(x || '').trim()).filter(Boolean).slice(0, 4)
+          : [];
+        const clean = typeof parsedJson.clean === 'boolean' ? parsedJson.clean : score >= 74 && issues.length === 0;
+        return {
+          inspectorAvailable: true,
+          inspectorModel: groqOut.model,
+          clean,
+          score,
+          issues,
+          repairHints: parsedJson.repairHints || {},
+        };
+      }
+    }
+  } catch {}
+
+  const gem = getGeminiInspectorClient();
+  if (gem) {
+    try {
+      const resp = await gem.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: parsed.mimeType, data: parsed.data } },
+            ],
+          },
+        ],
+        config: { temperature: 0.15, maxOutputTokens: 600 },
+      });
+      const txt = resp.text || '';
+      const parsedJson = extractJson(txt);
+      if (parsedJson && typeof parsedJson === 'object') {
+        const score = Math.max(0, Math.min(100, Number(parsedJson.score) || 75));
+        const issues = Array.isArray(parsedJson.issues)
+          ? parsedJson.issues.map((x: any) => String(x || '').trim()).filter(Boolean).slice(0, 4)
+          : [];
+        return {
+          inspectorAvailable: true,
+          inspectorModel: 'gemini-2.5-flash',
+          clean: typeof parsedJson.clean === 'boolean' ? parsedJson.clean : score >= 74 && issues.length === 0,
+          score,
+          issues,
+          repairHints: parsedJson.repairHints || {},
+        };
+      }
+    } catch {}
+  }
+
+  return {
+    inspectorAvailable: false,
+    clean: true,
+    score: 80,
+    issues: [],
+    repairHints: {},
+  };
+}
+

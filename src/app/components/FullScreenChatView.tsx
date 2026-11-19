@@ -115,6 +115,7 @@ import { ThemeOptionsCard } from './ThemeOptionsCard';
 import { BuildyExpandableCard } from './BuildyExpandableCard';
 import { BuildyWorkspaceModal } from './BuildyWorkspaceModal';
 import { AiApiSettingsModal } from './AiApiSettingsModal';
+import { PdfExportModal } from './PdfExportModal';
 import { buildWorkspaceAuthHeaders } from '../utils/workspaceSession';
 import {
   CompactGeneratedImageCard,
@@ -142,7 +143,6 @@ import {
   scanUploadedImageToSceneGraph,
 } from '../utils/studioCanvasEngine';
 import {
-  StudioConfirmDialog,
   StudioQuestionsDialog,
 } from './StudioConfirmationAndSetupModals';
 import {
@@ -2657,7 +2657,10 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
 
   const [isAiTyping, setIsAiTyping] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(false);
+  const [isDesktopHoverOpen, setIsDesktopHoverOpen] = useState<boolean>(false);
+  const hoverSidebarTimerRef = useRef<number | null>(null);
+  const [pendingDeleteChat, setPendingDeleteChat] = useState<{ topic: string; threadId?: string } | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('GPT-4o');
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
@@ -2739,19 +2742,6 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   const studioToolDepthRef = useRef<number>(0);
   const uploadedAssetsMapRef = useRef<Record<string, { dataUrl: string; name: string }>>({});
   const uploadedVideoFileMapRef = useRef<Record<string, File>>({});
-
-  const [pendingStudioConfirm, setPendingStudioConfirm] = useState<{
-    topicKey: string;
-    aiMsgId: string;
-    messageText: string;
-    attachments: AttachedFile[];
-    facts: any[];
-    popup: StudioPopupSpec;
-    recipe?: string | null;
-    intentOverride?: string | null;
-    previousPlan?: any;
-    isLoadingQuestions?: boolean;
-  } | null>(null);
 
   const [pendingStudioQuestions, setPendingStudioQuestions] = useState<{
     topicKey: string;
@@ -3070,6 +3060,11 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
 
   // AI Message Action States (three-dot menu, sources drawer, export)
   const [exportMenuMsgId, setExportMenuMsgId] = useState<string | null>(null);
+  const [pdfExportPayload, setPdfExportPayload] = useState<{
+    title: string;
+    rawMarkdown: string;
+    structuredContent?: any;
+  } | null>(null);
   const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null);
   const [activeSourcesMsg, setActiveSourcesMsg] = useState<ChatMessage | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -3767,44 +3762,11 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
       downloadBlob(standaloneHtml, `${filename}.html`, 'text/html;charset=utf-8;');
       showToast('Exported as HTML (.html)');
     } else if (format === 'pdf') {
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>${title} - PDF Export</title>
-            <style>
-              @media print {
-                body { padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; line-height: 1.6; }
-                h1 { color: #cc0000; border-bottom: 2px solid #cc0000; padding-bottom: 8px; font-size: 22pt; }
-                h2 { color: #222; margin-top: 18pt; border-bottom: 1px solid #ccc; padding-bottom: 4px; font-size: 15pt; }
-                pre { background: #f4f4f5; padding: 10pt; border-radius: 6pt; font-family: monospace; font-size: 9.5pt; white-space: pre-wrap; word-break: break-word; border: 1px solid #e4e4e7; }
-                ul { padding-left: 20pt; }
-                li { margin-bottom: 6pt; }
-                .footer { font-size: 9pt; color: #666; margin-top: 24pt; border-top: 1px solid #eee; padding-top: 8pt; }
-              }
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 30px; line-height: 1.6; color: #111; }
-              h1 { color: #cc0000; border-bottom: 2px solid #cc0000; padding-bottom: 8px; }
-              h2 { color: #222; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-              pre { background: #f4f4f5; padding: 14px; border-radius: 8px; font-family: monospace; border: 1px solid #ddd; }
-              ul { padding-left: 24px; }
-            </style>
-          </head>
-          <body>
-            <p style="color:#cc0000; font-weight:bold; font-size:10pt; text-transform:uppercase; letter-spacing:1px;">AI Intelligence Document</p>
-            <h1>${title}</h1>
-            <div>${fullMarkdown.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>')}</div>
-            <div class="footer">Generated by AI Studio Intelligence Workspace • ${new Date().toLocaleString()}</div>
-            <script>
-              window.onload = function() { window.print(); }
-            </script>
-          </body>
-          </html>
-        `);
-        printWindow.document.close();
-      }
-      showToast('Opening PDF print preview...');
+      setPdfExportPayload({
+        title,
+        rawMarkdown: fullMarkdown,
+        structuredContent: message.structuredContent,
+      });
     }
   };
 
@@ -3966,7 +3928,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
             width: res.width,
             height: res.height,
             summary: res.summary || [],
-            sources: (res.sources || []).map((s) => s.domain || s.url).filter(Boolean),
+            sources: [],
           },
         }),
       });
@@ -4542,33 +4504,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
     intentRes: { intent: string; recipe: string | null; lang: string; popup?: StudioPopupSpec },
     opts?: { recipeOverride?: string | null; intentOverride?: string | null; previousPlan?: any }
   ) => {
-    setIsSendLocked(false);
-    setChatThreads((prev) => {
-      const t = prev[topicKey];
-      if (!t) return prev;
-      return {
-        ...prev,
-        [topicKey]: {
-          ...t,
-          messages: t.messages.map((m) =>
-            m.id === aiMsgId ? { ...m, isStreaming: false, isImageLoading: false } : m
-          ),
-        },
-      };
-    });
-    setPendingStudioConfirm({
-      topicKey,
-      aiMsgId,
-      messageText,
-      attachments,
-      facts,
-      popup: intentRes.popup || {
-        title: 'Generate an image?',
-        body: 'Do you agree to generate this image?',
-        yes: 'Generate',
-        no: 'Cancel',
-      },
-      recipe: opts?.recipeOverride || intentRes.recipe,
+    launchStudioJob(topicKey, aiMsgId, messageText, attachments, facts, {}, {
+      recipeOverride: opts?.recipeOverride || intentRes.recipe,
       intentOverride: opts?.intentOverride || (intentRes.intent === 'edit' ? 'edit' : null),
       previousPlan: opts?.previousPlan,
     });
@@ -4944,8 +4881,36 @@ ${plan.fullText}`;
       messageText
     );
 
-    if (!isSimple && !isVideoRequest) {
+    if (!isSimple && !isVideoRequest && !isWebsiteOrAppUiBuildRequest(messageText, atts)) {
       try {
+        const lastStudioMsg = [...(chatThreads[topicKey]?.messages || [])]
+          .reverse()
+          .find((m) => m.sender === 'ai' && m.studioJob?.status === 'done');
+        const looksLikeFollowUpEdit =
+          Boolean(lastStudioMsg?.studioJob) &&
+          /\b(add\s+text|change\s+text|edit\s+text|title|headline|subtitle|badge|cta|background|bg|backdrop|cut\s*out|remove\s+background|color|style|font|bigger|smaller|darker|brighter|thumbnail|poster|banner|cover|regenerate|retry|try\s+again)\b|['"“‘].+['"”’]/i.test(
+            messageText
+          ) &&
+          !/\b(code|python|typescript|react|function|bug|error|explain|what\s+is|how\s+does|email|gmail)\b/i.test(messageText);
+
+        if (looksLikeFollowUpEdit && lastStudioMsg?.studioJob) {
+          const isRegen = /^(regenerate|retry|try\s+again)\b/i.test(messageText.trim());
+          launchStudioJob(
+            topicKey,
+            aiMsgId,
+            isRegen ? lastStudioMsg.studioJob.prompt : messageText,
+            atts,
+            facts,
+            {},
+            {
+              recipeOverride: lastStudioMsg.studioJob.recipe || lastStudioMsg.studioJob.plan?.recipe || null,
+              intentOverride: isRegen ? null : 'edit',
+              previousPlan: isRegen ? null : lastStudioMsg.studioJob.canvasSpec || lastStudioMsg.studioJob.plan,
+            }
+          );
+          return;
+        }
+
         const token = await getFirebaseIdToken().catch(() => null);
         const intentRes = await studioApi.intent(
           {
@@ -4954,10 +4919,13 @@ ${plan.fullText}`;
           },
           token
         );
-        if (intentRes.intent === 'edit' && atts.some((a) => a.isImage)) {
+        if (intentRes.intent === 'edit' && (atts.some((a) => a.isImage) || lastStudioMsg?.studioJob)) {
           launchStudioJob(topicKey, aiMsgId, messageText, atts, facts, {}, {
-            recipeOverride: intentRes.recipe,
+            recipeOverride: intentRes.recipe || lastStudioMsg?.studioJob?.recipe || null,
             intentOverride: 'edit',
+            previousPlan: !atts.some((a) => a.isImage)
+              ? lastStudioMsg?.studioJob?.canvasSpec || lastStudioMsg?.studioJob?.plan || null
+              : null,
           });
           return;
         }
@@ -6565,76 +6533,113 @@ ${plan.fullText}`;
         className="fixed inset-0 z-[10000] flex overflow-hidden font-sans select-none transition-colors duration-300 chat-workspace bg-background text-foreground"
       >
         {/* ------------------------------------------------------------- */}
-        {/* LEFT CURVED-BOX MENU: Obsidian Black Curved Menu */}
+        {/* LEFT CURVED-BOX MENU: Blue in Light Mode, Obsidian in Dark Mode */}
         {/* ------------------------------------------------------------- */}
         {(() => {
+          const openDesktopByHover = () => {
+            if (hoverSidebarTimerRef.current) {
+              window.clearTimeout(hoverSidebarTimerRef.current);
+              hoverSidebarTimerRef.current = null;
+            }
+            setIsDesktopHoverOpen(true);
+          };
+          const closeDesktopByHover = () => {
+            if (hoverSidebarTimerRef.current) {
+              window.clearTimeout(hoverSidebarTimerRef.current);
+            }
+            hoverSidebarTimerRef.current = window.setTimeout(() => {
+              setIsDesktopHoverOpen(false);
+            }, 140);
+          };
+
           const renderCurvedMenuCard = (isMobileOverlay: boolean) => (
             <div
               onClick={(e) => e.stopPropagation()}
               className={`relative w-full ${
-                isMobileOverlay ? 'max-w-[345px] sm:max-w-[365px] h-[92vh] max-h-[820px]' : 'w-[325px] lg:w-[348px] h-full'
-              } rounded-[34px] bg-[#0b0b10] border border-white/15 p-6 flex flex-col justify-between overflow-hidden select-none text-white`}
+                isMobileOverlay
+                  ? 'max-w-[258px] h-[92vh] max-h-[820px]'
+                  : 'w-[242px] lg:w-[252px] h-full'
+              } rounded-[26px] ${
+                isLight
+                  ? 'bg-gradient-to-b from-[#0b66eb] via-[#0952c7] to-[#073b94] border border-white/25'
+                  : 'bg-[#0b0b10] border border-white/15'
+              } p-4 flex flex-col justify-between overflow-hidden select-none text-white`}
               style={{
                 boxShadow: '0 22px 52px rgba(0,0,0,0.48)',
               }}
             >
               {/* TOP FIXED SECTION: BMW ///M Crest + Styled Close Button */}
               <div className="shrink-0 relative z-10">
-                <div className="flex items-center justify-between pt-1 pb-1">
+                <div className="flex items-center justify-between pt-0.5 pb-1">
                   <div className="flex items-center gap-2 select-none">
-                    <div className="flex items-center gap-1.5 -skew-x-[18deg]">
-                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px]" />
-                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#17205a] rounded-[1px]" />
-                      <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px]" />
+                    <div className="flex items-center gap-1 -skew-x-[18deg]">
+                      <span className="w-2 h-6 bg-[#0082CA] rounded-[1px]" />
+                      <span className="w-2 h-6 bg-[#17205a] rounded-[1px]" />
+                      <span className="w-2 h-6 bg-[#E21B23] rounded-[1px]" />
                     </div>
-                    <span className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 text-white">
+                    <span className="text-2xl sm:text-3xl font-black italic tracking-tighter ml-0.5 text-white">
                       M
                     </span>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => (isMobileOverlay ? setIsMobileSidebarOpen(false) : setIsDesktopSidebarOpen(false))}
-                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                    onClick={() => {
+                      if (isMobileOverlay) {
+                        setIsMobileSidebarOpen(false);
+                      } else {
+                        setIsDesktopSidebarOpen(false);
+                        setIsDesktopHoverOpen(false);
+                      }
+                    }}
+                    className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
                     aria-label="Close menu"
                     title="Close menu"
                   >
-                    <X size={16} />
+                    <X size={15} />
                   </button>
                 </div>
               </div>
 
               {/* Navigation + Saved Chats (Works with Browser Storage + Firestore) */}
               <>
-                <div className="shrink-0 space-y-4 pt-3 relative z-10">
+                <div className="shrink-0 space-y-3 pt-2.5 relative z-10">
                   {/* + New Chat Pill Button */}
                   <button
                     type="button"
-                    onClick={handleNewChat}
-                    className="w-full py-3 px-4 rounded-[20px] bg-[#11131b] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between hover:bg-[#161a25] transition-all cursor-pointer active:scale-98 group"
+                    onClick={() => {
+                      handleNewChat();
+                      setIsDesktopHoverOpen(false);
+                    }}
+                    className={`w-full py-2.5 px-3.5 rounded-[16px] border-[1.5px] text-white font-medium text-[14px] flex items-center justify-between transition-all cursor-pointer active:scale-98 group ${
+                      isLight
+                        ? 'bg-white/15 border-white/50 hover:bg-white/25'
+                        : 'bg-[#11131b] border-[#00a6ff] hover:bg-[#161a25]'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
+                    <div className="flex items-center gap-2.5">
+                      <Plus size={17} className="text-white group-hover:rotate-90 transition-transform" />
                       <span className="text-white tracking-wide">New Chat</span>
                     </div>
-                    <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
+                    <ChevronRight size={16} className={isLight ? 'text-white font-bold group-hover:translate-x-0.5 transition-transform' : 'text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform'} />
                   </button>
 
                   {/* Navigation Items: Daro & Zara, Explore Creative Skills, Buildy */}
-                  <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-zinc-200">
+                  <div className="space-y-1 pt-0.5 text-[13.5px] font-medium text-white/95">
                     <button
                       type="button"
                       onClick={() => {
                         setIsMobileSidebarOpen(false);
+                        setIsDesktopHoverOpen(false);
                         setIsVoiceCallOpen(true);
                       }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
+                      className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
                     >
-                      <div className="flex items-center gap-3.5">
-                        <AudioLines size={19} strokeWidth={1.9} className="text-[#38bdf8]" />
-                        <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <AudioLines size={17} strokeWidth={1.9} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                        <span className="tracking-wide font-semibold truncate">Daro &amp; Zara</span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold uppercase tracking-wider">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${isLight ? 'bg-white/20 text-white' : 'bg-[#0a7cf0]/20 text-[#38bdf8]'}`}>
                         {activePersona}
                       </span>
                     </button>
@@ -6643,20 +6648,21 @@ ${plan.fullText}`;
                       type="button"
                       onClick={() => {
                         setIsMobileSidebarOpen(false);
+                        setIsDesktopHoverOpen(false);
                         setIsExploreGptsOpen(true);
                       }}
-                      className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
+                      className={`w-full px-2.5 py-1.5 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
                         activeSkill
-                          ? 'bg-[#0a7cf0]/20 text-white font-semibold'
-                          : 'hover:bg-white/10 text-zinc-200'
+                          ? 'bg-white/20 text-white font-semibold'
+                          : 'hover:bg-white/12 text-white/90'
                       }`}
                     >
-                      <div className="flex items-center gap-3.5">
-                        <Wand2 size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#38bdf8]' : 'text-zinc-400'} />
-                        <span className="tracking-wide">Explore Creative Skills</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Wand2 size={17} strokeWidth={1.8} className={activeSkill ? 'text-white shrink-0' : isLight ? 'text-sky-100 shrink-0' : 'text-zinc-400 shrink-0'} />
+                        <span className="tracking-wide truncate">Creative Skills</span>
                       </div>
                       {activeSkill && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0] text-white font-bold">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white text-[#073b94] font-bold shrink-0">
                           Active
                         </span>
                       )}
@@ -6666,17 +6672,18 @@ ${plan.fullText}`;
                       type="button"
                       onClick={() => {
                         setIsMobileSidebarOpen(false);
+                        setIsDesktopHoverOpen(false);
                         setBuildyInitialPrompt(undefined);
                         setIsBuildyOpen(true);
                       }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                      className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer"
                     >
-                      <div className="flex items-center gap-3.5">
-                        <Hammer size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
-                        <span className="tracking-wide font-semibold">Buildy</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Hammer size={17} strokeWidth={1.8} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                        <span className="tracking-wide font-semibold truncate">Buildy</span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold">
-                        UI Studio
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${isLight ? 'bg-white/20 text-white' : 'bg-[#0a7cf0]/20 text-[#38bdf8]'}`}>
+                        UI
                       </span>
                     </button>
 
@@ -6684,15 +6691,16 @@ ${plan.fullText}`;
                       type="button"
                       onClick={() => {
                         setIsMobileSidebarOpen(false);
+                        setIsDesktopHoverOpen(false);
                         window.dispatchEvent(new CustomEvent('open-gmail-routine-modal', { detail: { tab: 'routine' } }));
                       }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                      className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer"
                     >
-                      <div className="flex items-center gap-3.5">
-                        <CalendarClock size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
-                        <span className="tracking-wide font-semibold">Daily Routine Gmail</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <CalendarClock size={17} strokeWidth={1.8} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                        <span className="tracking-wide font-semibold truncate">Daily Routine</span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${isLight ? 'bg-emerald-300/25 text-white' : 'bg-emerald-500/20 text-emerald-300'}`}>
                         Gmail
                       </span>
                     </button>
@@ -6700,15 +6708,15 @@ ${plan.fullText}`;
                 </div>
 
                 {/* ONLY RECENT SECTION SCROLLABLE */}
-                <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
-                  <span className="text-[13px] font-semibold text-zinc-400 px-3 tracking-wide mb-2 shrink-0">
+                <div className="flex-1 min-h-0 flex flex-col pt-2.5 relative z-10">
+                  <span className={`text-[12px] font-semibold px-2.5 tracking-wide mb-1.5 shrink-0 ${isLight ? 'text-white/80' : 'text-zinc-400'}`}>
                     Recent
                   </span>
 
-                  <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
+                  <div className="flex-1 overflow-y-auto pr-0.5 space-y-1 no-scrollbar">
                     {Object.keys(chatThreads).length === 0 ? (
-                      <div className="px-3 py-6 text-center text-xs text-zinc-500">
-                        No saved chats yet. Start a new conversation!
+                      <div className={`px-2.5 py-5 text-center text-xs ${isLight ? 'text-white/75' : 'text-zinc-500'}`}>
+                        No saved chats yet.
                       </div>
                     ) : (
                       Object.values(chatThreads).map((thread) => {
@@ -6716,45 +6724,50 @@ ${plan.fullText}`;
                         return (
                           <div
                             key={thread.id || topic}
-                            className={`w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
+                            className={`w-full px-2.5 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
                               topic === activeTopic
-                                ? 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
-                                : 'hover:bg-white/10 text-zinc-300 border-transparent'
+                                ? isLight
+                                  ? 'bg-white/22 text-white border-white/40 font-semibold'
+                                  : 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
+                                : isLight
+                                  ? 'hover:bg-white/14 text-white/90 border-transparent'
+                                  : 'hover:bg-white/10 text-zinc-300 border-transparent'
                             }`}
                           >
                             <button
                               type="button"
-                              onClick={() => handleSelectRecentChat(topic)}
-                              className="flex items-center gap-3 truncate text-left flex-1 min-w-0 cursor-pointer"
+                              onClick={() => {
+                                handleSelectRecentChat(topic);
+                                setIsDesktopHoverOpen(false);
+                              }}
+                              className="flex items-center gap-2 truncate text-left flex-1 min-w-0 cursor-pointer"
                             >
                               <MessageSquare
-                                size={17}
+                                size={15}
                                 strokeWidth={1.8}
-                                className={topic === activeTopic ? 'text-[#38bdf8] shrink-0' : 'text-zinc-500 shrink-0'}
+                                className={
+                                  topic === activeTopic
+                                    ? isLight ? 'text-white shrink-0' : 'text-[#38bdf8] shrink-0'
+                                    : isLight ? 'text-white/75 shrink-0' : 'text-zinc-500 shrink-0'
+                                }
                               />
-                              <span className="truncate text-[14px]">
+                              <span className="truncate text-[13px]">
                                 {topic}
                               </span>
                             </button>
                             <button
                               type="button"
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                if (currentUser?.uid && !currentUser.isAnonymous && thread.id) {
-                                  await deleteChatThreadFromFirestore(thread.id, currentUser.uid).catch(() => {});
-                                }
-                                setChatThreads((prev) => {
-                                  const next = { ...prev };
-                                  delete next[topic];
-                                  return next;
-                                });
-                                if (activeTopic === topic) {
-                                  const remaining = Object.keys(chatThreads).filter((k) => k !== topic);
-                                  setActiveTopic(remaining[0] || '');
-                                }
+                                setPendingDeleteChat({ topic, threadId: thread.id });
                               }}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-400 transition-opacity ml-1 shrink-0 cursor-pointer"
+                              className={`p-1 rounded-md transition-colors ml-1 shrink-0 cursor-pointer ${
+                                isLight
+                                  ? 'text-white/80 hover:text-red-200 hover:bg-red-500/30'
+                                  : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/15'
+                              }`}
                               title="Delete chat"
+                              aria-label={`Delete ${topic}`}
                             >
                               <Trash2 size={13} />
                             </button>
@@ -6767,17 +6780,21 @@ ${plan.fullText}`;
               </>
 
               {/* BOTTOM ACTIONS: ← Welcome + Icon-Only Settings on Right + Account Card */}
-              <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-white/10">
-                <div className="flex items-center gap-2.5">
+              <div className={`shrink-0 space-y-2.5 pt-3 pb-0.5 relative z-10 border-t ${isLight ? 'border-white/20' : 'border-white/10'}`}>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setIsMobileSidebarOpen(false);
+                      setIsDesktopSidebarOpen(false);
+                      setIsDesktopHoverOpen(false);
                       onClose();
                     }}
-                    className="flex-1 py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 bg-[#0a7cf0] hover:bg-[#096dd4]"
+                    className={`flex-1 py-2 px-3 rounded-[14px] text-white font-semibold text-[13px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 ${
+                      isLight ? 'bg-white/20 hover:bg-white/30 border border-white/25' : 'bg-[#0a7cf0] hover:bg-[#096dd4]'
+                    }`}
                   >
-                    <ArrowLeft size={17} className="text-white" />
+                    <ArrowLeft size={15} className="text-white" />
                     <span>Welcome</span>
                   </button>
 
@@ -6787,30 +6804,31 @@ ${plan.fullText}`;
                       setApiSettingsTab('voices');
                       setIsApiSettingsOpen(true);
                       setIsMobileSidebarOpen(false);
+                      setIsDesktopHoverOpen(false);
                     }}
-                    className="w-11 h-11 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0"
+                    className="w-10 h-10 rounded-[14px] bg-white/12 hover:bg-white/22 border border-white/20 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0"
                     title="Settings"
                     aria-label="Settings"
                   >
-                    <Settings size={18} />
+                    <Settings size={16} />
                   </button>
                 </div>
 
                 {currentUser && !currentUser.isAnonymous ? (
-                  <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-[#14141d] border border-white/10">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                      <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-[#0a7cf0] flex items-center justify-center text-[#38bdf8] shrink-0 overflow-hidden">
+                  <div className={`flex items-center justify-between gap-2 px-2.5 py-2.5 select-none rounded-2xl border ${isLight ? 'bg-white/14 border-white/25' : 'bg-[#14141d] border-white/10'}`}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                      <div className={`w-8 h-8 rounded-full border-[1.5px] flex items-center justify-center shrink-0 overflow-hidden ${isLight ? 'bg-white/15 border-white/50 text-white' : 'bg-[#1c1c28] border-[#0a7cf0] text-[#38bdf8]'}`}>
                         {currentUser?.photoURL ? (
                           <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                          <UserIcon size={17} className="fill-[#0a7cf0] text-[#0a7cf0]" />
+                          <UserIcon size={15} />
                         )}
                       </div>
                       <div className="flex flex-col min-w-0 truncate">
-                        <span className="text-[13px] font-bold text-white leading-tight truncate">
+                        <span className="text-[12.5px] font-bold text-white leading-tight truncate">
                           {currentUser.displayName || currentUser.email?.split('@')[0]}
                         </span>
-                        <span className="text-[11px] text-zinc-400 truncate">
+                        <span className={`text-[10.5px] truncate ${isLight ? 'text-white/75' : 'text-zinc-400'}`}>
                           {currentUser.email || 'Cloud Account'}
                         </span>
                       </div>
@@ -6823,29 +6841,37 @@ ${plan.fullText}`;
                         await logOut();
                         showToast('Signed out successfully');
                       }}
-                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/25 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                      className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                        isLight
+                          ? 'bg-red-500/30 hover:bg-red-500/45 text-white border-red-300/40'
+                          : 'bg-red-500/15 hover:bg-red-500/25 text-red-400 border-red-500/25'
+                      }`}
                       title="Sign Out"
                     >
-                      <LogOut size={13} />
-                      <span>Sign Out</span>
+                      <LogOut size={12} />
+                      <span>Out</span>
                     </button>
                   </div>
                 ) : (
                   <div
                     onClick={handleOpenLogin}
-                    className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer bg-[#14141d] border border-white/10 hover:border-white/20 rounded-2xl transition-colors"
+                    className={`flex items-center justify-between gap-2 px-2.5 py-2.5 select-none cursor-pointer border rounded-2xl transition-colors ${
+                      isLight
+                        ? 'bg-white/14 border-white/25 hover:border-white/40'
+                        : 'bg-[#14141d] border-white/10 hover:border-white/20'
+                    }`}
                     title="Click to sign in"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                      <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-white/20 flex items-center justify-center text-zinc-300 shrink-0">
-                        <UserIcon size={16} />
+                    <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                      <div className={`w-8 h-8 rounded-full border-[1.5px] flex items-center justify-center shrink-0 ${isLight ? 'bg-white/15 border-white/40 text-white' : 'bg-[#1c1c28] border-white/20 text-zinc-300'}`}>
+                        <UserIcon size={15} />
                       </div>
                       <div className="flex flex-col min-w-0 truncate">
-                        <span className="text-[13px] font-bold text-white leading-tight truncate">
+                        <span className="text-[12.5px] font-bold text-white leading-tight truncate">
                           Guest User
                         </span>
-                        <span className="text-[11px] text-zinc-400 truncate">
-                          Saved in Browser
+                        <span className={`text-[10.5px] truncate ${isLight ? 'text-white/75' : 'text-zinc-400'}`}>
+                          Browser Saved
                         </span>
                       </div>
                     </div>
@@ -6856,7 +6882,11 @@ ${plan.fullText}`;
                         e.stopPropagation();
                         handleOpenLogin();
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-[#0a7cf0] hover:bg-[#096dd4] text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                        isLight
+                          ? 'bg-white text-[#073b94] hover:bg-white/90'
+                          : 'bg-[#0a7cf0] hover:bg-[#096dd4] text-white'
+                      }`}
                     >
                       Sign In
                     </button>
@@ -6866,14 +6896,51 @@ ${plan.fullText}`;
             </div>
           );
 
+          const isDesktopDrawerShown = isDesktopSidebarOpen || isDesktopHoverOpen;
+
           return (
             <>
-              {/* Desktop Floating Curved-Box Sidebar (Closable for Full-Screen Chat) */}
-              {isDesktopSidebarOpen && (
-                <div className="hidden md:flex md:p-4 md:pr-2 h-full shrink-0 z-20">
-                  {renderCurvedMenuCard(false)}
-                </div>
-              )}
+              {/* Desktop Leftmost Screen-Edge Hover Hot-Zone (Always triggers menu when arrow moves to left edge) */}
+              <div
+                onMouseEnter={openDesktopByHover}
+                className="hidden md:block fixed left-0 top-0 bottom-0 w-3.5 z-[45]"
+                aria-hidden="true"
+              />
+
+              {/* Desktop Floating Slide-Over Menu (Closed by default; opens on 3-line click OR left-edge hover; closes on mouse leave if opened by hover) */}
+              <AnimatePresence>
+                {isDesktopDrawerShown && (
+                  <>
+                    {isDesktopSidebarOpen && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => {
+                          setIsDesktopSidebarOpen(false);
+                          setIsDesktopHoverOpen(false);
+                        }}
+                        className="hidden md:block fixed inset-0 bg-black/35 z-[48]"
+                      />
+                    )}
+                    <motion.div
+                      initial={{ opacity: 0, x: -32 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -32 }}
+                      transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+                      onMouseEnter={openDesktopByHover}
+                      onMouseLeave={() => {
+                        if (!isDesktopSidebarOpen) {
+                          closeDesktopByHover();
+                        }
+                      }}
+                      className="hidden md:flex fixed left-0 top-0 bottom-0 p-3.5 h-full z-50 pointer-events-auto"
+                    >
+                      {renderCurvedMenuCard(false)}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
 
               {/* Mobile Floating Curved-Box Modal Overlay */}
               <AnimatePresence>
@@ -6883,7 +6950,7 @@ ${plan.fullText}`;
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => setIsMobileSidebarOpen(false)}
-                    className="fixed inset-0 bg-black/65 z-50 flex items-center justify-start p-2 sm:p-6 md:hidden"
+                    className="fixed inset-0 bg-black/65 z-50 flex items-center justify-start p-2 sm:p-4 md:hidden"
                   >
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95, x: -40 }}
@@ -6916,16 +6983,19 @@ ${plan.fullText}`;
                 <Menu size={18} />
                 <span>Menu</span>
               </button>
-              {!isDesktopSidebarOpen && (
-                <button
-                  type="button"
-                  onClick={() => setIsDesktopSidebarOpen(true)}
-                  className="hidden md:flex p-2 px-3 rounded-xl neu-raise items-center gap-2 text-sm text-foreground cursor-pointer"
-                >
-                  <Menu size={18} />
-                  <span>Menu</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                  setIsDesktopHoverOpen(false);
+                }}
+                className="hidden md:flex p-2 px-3 rounded-xl neu-raise items-center gap-2 text-sm text-foreground cursor-pointer"
+                title="Toggle Menu"
+                aria-label="Toggle Menu"
+              >
+                <Menu size={18} />
+                <span>Menu</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -8466,66 +8536,6 @@ ${plan.fullText}`;
           onVoiceChanged={() => setActivePersona(getActiveAssistantPersona())}
         />
 
-        {/* Creative Studio Confirmation Popup */}
-        <StudioConfirmDialog
-          isOpen={Boolean(pendingStudioConfirm)}
-          popup={
-            pendingStudioConfirm?.popup || {
-              title: 'Generate an image?',
-              body: 'Do you agree to generate this image?',
-              yes: 'Generate',
-              no: 'Cancel',
-            }
-          }
-          promptPreview={pendingStudioConfirm?.messageText || ''}
-          recipe={pendingStudioConfirm?.recipe}
-          isLoadingQuestions={Boolean(pendingStudioConfirm?.isLoadingQuestions)}
-          onCancel={() => {
-            if (pendingStudioConfirm) {
-              removePendingPlaceholder(pendingStudioConfirm.topicKey, pendingStudioConfirm.aiMsgId);
-            }
-            setPendingStudioConfirm(null);
-            setIsSendLocked(false);
-          }}
-          onConfirm={async () => {
-            if (!pendingStudioConfirm) return;
-            const ctx = pendingStudioConfirm;
-            setPendingStudioConfirm((curr) => (curr ? { ...curr, isLoadingQuestions: true } : null));
-            try {
-              const token = await getFirebaseIdToken().catch(() => null);
-              const qRes = await studioApi.questions(
-                {
-                  message: ctx.messageText,
-                  attachments: buildStudioAttachmentsMeta(ctx.attachments, ctx.facts),
-                  recipeOverride: ctx.recipe || null,
-                  intentOverride: ctx.intentOverride || null,
-                },
-                token
-              );
-              setPendingStudioConfirm(null);
-              if (qRes.questions && qRes.questions.length > 0) {
-                setPendingStudioQuestions({
-                  ...ctx,
-                  questions: qRes.questions,
-                });
-              } else {
-                launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, {}, {
-                  recipeOverride: ctx.recipe || null,
-                  intentOverride: ctx.intentOverride || null,
-                  previousPlan: ctx.previousPlan,
-                });
-              }
-            } catch {
-              setPendingStudioConfirm(null);
-              launchStudioJob(ctx.topicKey, ctx.aiMsgId, ctx.messageText, ctx.attachments, ctx.facts, {}, {
-                recipeOverride: ctx.recipe || null,
-                intentOverride: ctx.intentOverride || null,
-                previousPlan: ctx.previousPlan,
-              });
-            }
-          }}
-        />
-
         {/* Creative Studio Quick-Setup Questions Dialog */}
         <StudioQuestionsDialog
           isOpen={Boolean(pendingStudioQuestions)}
@@ -8670,6 +8680,79 @@ ${plan.fullText}`;
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* One-Time Delete Chat Confirmation Modal */}
+        <AnimatePresence>
+          {pendingDeleteChat && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPendingDeleteChat(null)}
+              className="fixed inset-0 z-[20050] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-[340px] rounded-2xl bg-surface border border-border/30 p-5 shadow-2xl text-foreground space-y-4"
+              >
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold">Delete chat?</h4>
+                  <p className="text-xs text-foreground/70 truncate">
+                    Are you sure you want to delete &ldquo;{pendingDeleteChat.topic}&rdquo;?
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteChat(null)}
+                    className="h-9 px-4 rounded-xl neu-raise text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const target = pendingDeleteChat;
+                      setPendingDeleteChat(null);
+                      if (!target) return;
+                      if (currentUser?.uid && !currentUser.isAnonymous && target.threadId) {
+                        await deleteChatThreadFromFirestore(target.threadId, currentUser.uid).catch(() => {});
+                      }
+                      setChatThreads((prev) => {
+                        const next = { ...prev };
+                        delete next[target.topic];
+                        return next;
+                      });
+                      if (activeTopic === target.topic) {
+                        const remaining = Object.keys(chatThreads).filter((k) => k !== target.topic);
+                        setActiveTopic(remaining[0] || '');
+                      }
+                      showToast('Chat deleted');
+                    }}
+                    className="h-9 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {/* Smart Content-Aware PDF Export Modal */}
+        <PdfExportModal
+          isOpen={Boolean(pdfExportPayload)}
+          initialTitle={pdfExportPayload?.title || activeTopic || 'Think Creative Document'}
+          rawMarkdown={pdfExportPayload?.rawMarkdown || ''}
+          structuredContent={pdfExportPayload?.structuredContent}
+          authorName={getUserDisplayName(currentUser) || undefined}
+          onClose={() => setPdfExportPayload(null)}
+          onExported={(_filename, pageCount, categoryLabel) => {
+            showToast(`Downloaded ${categoryLabel} PDF (${pageCount} page${pageCount === 1 ? '' : 's'})`);
+          }}
+        />
       </div>
   );
 };

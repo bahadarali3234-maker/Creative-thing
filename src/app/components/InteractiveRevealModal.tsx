@@ -93,6 +93,9 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerHoverOpen, setIsDrawerHoverOpen] = useState(false);
+  const hoverCloseTimerRef = useRef<number | null>(null);
+  const [pendingDeleteChat, setPendingDeleteChat] = useState<{ topic: string; threadId?: string } | null>(null);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState<PromptChatMode>('Chat');
@@ -272,7 +275,9 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
     isVoiceCallOpen ||
     isExploreGptsOpen ||
     isVoiceSettingsOpen ||
-    isDrawerOpen;
+    isDrawerOpen ||
+    isDrawerHoverOpen ||
+    Boolean(pendingDeleteChat);
   const isOverlayActiveRef = useRef<boolean>(false);
   isOverlayActiveRef.current = isOverlayActive;
 
@@ -928,14 +933,30 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-black/75 to-transparent pointer-events-none" />
         </div>
 
-        {/* TOP CORNER: Three Lines Menu Button (No top-right X or API Keys buttons) */}
+        {/* Desktop Leftmost Screen-Edge Hover Hot-Zone (Auto-opens sidebar on cursor entry) */}
+        <div
+          onMouseEnter={() => {
+            if (hoverCloseTimerRef.current) {
+              window.clearTimeout(hoverCloseTimerRef.current);
+              hoverCloseTimerRef.current = null;
+            }
+            setIsDrawerHoverOpen(true);
+          }}
+          className="hidden md:block fixed left-0 top-0 bottom-0 w-3.5 z-40 pointer-events-auto"
+          aria-hidden="true"
+        />
+
+        {/* TOP CORNER: Three Lines Menu Button (Toggle menu open/closed) */}
         <div className="absolute top-5 sm:top-6 left-5 sm:left-6 z-40 pointer-events-auto">
           <button
             id="reveal-three-lines-menu-btn"
             type="button"
-            onClick={() => setIsDrawerOpen(true)}
-            aria-label="Open Menu"
-            title="Open Menu"
+            onClick={() => {
+              setIsDrawerHoverOpen(false);
+              setIsDrawerOpen((prev) => !prev);
+            }}
+            aria-label="Toggle Menu"
+            title="Toggle Menu"
             className="w-11 h-11 rounded-2xl bg-black/65 hover:bg-black/85 text-white flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.45)] active:scale-95 group"
           >
             <span className="w-5 h-[2px] bg-white rounded-full transition-all group-hover:w-6" />
@@ -1306,87 +1327,120 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* SIDEBAR MENU BAR (Matches Image 2 Exactly: Authentic BMW ///M Red Glowing Neon Cockpit) */}
+        {/* SIDEBAR MENU BAR (Blue in Light Mode, Narrower Width, Hover Auto-Show/Hide on Desktop) */}
         <AnimatePresence>
-          {isDrawerOpen && (
+          {(isDrawerOpen || isDrawerHoverOpen) && (
             <>
-              {/* Dim backdrop to close on outside click */}
+              {/* Dim backdrop to close on outside click when opened via click */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                onClick={() => setIsDrawerOpen(false)}
-                className="absolute inset-0 bg-black/65 z-50 pointer-events-auto flex items-center justify-start p-2 sm:p-6"
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  setIsDrawerHoverOpen(false);
+                }}
+                className={`absolute inset-0 z-50 flex items-center justify-start p-2 sm:p-4 ${
+                  isDrawerOpen ? 'bg-black/60 pointer-events-auto' : 'bg-transparent pointer-events-none'
+                }`}
               >
-                {/* Obsidian Black Curved Menu Card */}
+                {/* Narrow Curved Menu Card (Blue in Light Mode, Obsidian in Dark Mode) */}
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, x: -40 }}
+                  initial={{ opacity: 0, scale: 0.96, x: -32 }}
                   animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, x: -40 }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                  exit={{ opacity: 0, scale: 0.96, x: -32 }}
+                  transition={{ type: 'spring', damping: 27, stiffness: 310 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="relative w-full max-w-[345px] sm:max-w-[365px] h-[92vh] max-h-[820px] rounded-[34px] bg-[#0b0b10] border border-white/15 p-6 flex flex-col justify-between overflow-hidden select-none text-white"
+                  onMouseEnter={() => {
+                    if (hoverCloseTimerRef.current) {
+                      window.clearTimeout(hoverCloseTimerRef.current);
+                      hoverCloseTimerRef.current = null;
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (!isDrawerOpen) {
+                      hoverCloseTimerRef.current = window.setTimeout(() => {
+                        setIsDrawerHoverOpen(false);
+                      }, 140);
+                    }
+                  }}
+                  className={`pointer-events-auto relative w-full max-w-[258px] h-[92vh] max-h-[820px] rounded-[26px] ${
+                    isLight
+                      ? 'bg-gradient-to-b from-[#0b66eb] via-[#0952c7] to-[#073b94] border border-white/25'
+                      : 'bg-[#0b0b10] border border-white/15'
+                  } p-4 flex flex-col justify-between overflow-hidden select-none text-white`}
                   style={{
                     boxShadow: '0 22px 52px rgba(0,0,0,0.48)',
                   }}
                 >
                   {/* TOP FIXED SECTION: BMW ///M Logo + Styled Close Button */}
                   <div className="shrink-0 relative z-10">
-                    <div className="flex items-center justify-between pt-1 pb-1">
+                    <div className="flex items-center justify-between pt-0.5 pb-1">
                       <div className="flex items-center gap-2 select-none">
-                        <div className="flex items-center gap-1.5 -skew-x-[18deg]">
-                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#0082CA] rounded-[1px]" />
-                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#17205a] rounded-[1px]" />
-                          <span className="w-2.5 h-7 sm:w-3 sm:h-8 bg-[#E21B23] rounded-[1px]" />
+                        <div className="flex items-center gap-1 -skew-x-[18deg]">
+                          <span className="w-2 h-6 bg-[#0082CA] rounded-[1px]" />
+                          <span className="w-2 h-6 bg-[#17205a] rounded-[1px]" />
+                          <span className="w-2 h-6 bg-[#E21B23] rounded-[1px]" />
                         </div>
-                        <span className="text-3xl sm:text-4xl font-black italic tracking-tighter ml-1 text-white">
+                        <span className="text-2xl sm:text-3xl font-black italic tracking-tighter ml-0.5 text-white">
                           M
                         </span>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => setIsDrawerOpen(false)}
-                        className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                        onClick={() => {
+                          setIsDrawerOpen(false);
+                          setIsDrawerHoverOpen(false);
+                        }}
+                        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
                         aria-label="Close menu"
                         title="Close menu"
                       >
-                        <X size={16} />
+                        <X size={15} />
                       </button>
                     </div>
                   </div>
 
                   {/* Navigation + Saved Chats (Browser Storage + Firestore) */}
                   <>
-                    <div className="shrink-0 space-y-4 pt-3 relative z-10">
+                    <div className="shrink-0 space-y-3 pt-2.5 relative z-10">
                       {/* + New Chat Pill Button */}
                       <button
                         type="button"
-                        onClick={handleNewChat}
-                        className="w-full py-3 px-4 rounded-[20px] bg-[#11131b] border-[1.5px] border-[#00a6ff] text-white font-medium text-[15px] flex items-center justify-between hover:bg-[#161a25] transition-all cursor-pointer active:scale-98 group"
+                        onClick={() => {
+                          setIsDrawerHoverOpen(false);
+                          handleNewChat();
+                        }}
+                        className={`w-full py-2.5 px-3.5 rounded-[16px] border-[1.5px] text-white font-medium text-[14px] flex items-center justify-between transition-all cursor-pointer active:scale-98 group ${
+                          isLight
+                            ? 'bg-white/15 border-white/50 hover:bg-white/25'
+                            : 'bg-[#11131b] border-[#00a6ff] hover:bg-[#161a25]'
+                        }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <Plus size={19} className="text-white group-hover:rotate-90 transition-transform" />
+                        <div className="flex items-center gap-2.5">
+                          <Plus size={17} className="text-white group-hover:rotate-90 transition-transform" />
                           <span className="text-white tracking-wide">New Chat</span>
                         </div>
-                        <ChevronRight size={18} className="text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform" />
+                        <ChevronRight size={16} className={isLight ? 'text-white font-bold group-hover:translate-x-0.5 transition-transform' : 'text-[#00a6ff] font-bold group-hover:translate-x-0.5 transition-transform'} />
                       </button>
 
-                      {/* Navigation List Items: Daro & Zara, Explore Creative Skills, Buildy */}
-                      <div className="space-y-1.5 pt-0.5 text-[15px] font-medium text-zinc-200">
+                      {/* Navigation List Items */}
+                      <div className="space-y-1 pt-0.5 text-[13.5px] font-medium text-white/95">
                         <button
                           type="button"
                           onClick={() => {
                             setIsDrawerOpen(false);
+                            setIsDrawerHoverOpen(false);
                             setIsVoiceCallOpen(true);
                           }}
-                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
+                          className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer group"
                         >
-                          <div className="flex items-center gap-3.5">
-                            <PhoneCall size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
-                            <span className="tracking-wide font-semibold">Daro &amp; Zara</span>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <PhoneCall size={17} strokeWidth={1.8} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                            <span className="tracking-wide font-semibold truncate">Daro &amp; Zara</span>
                           </div>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold uppercase tracking-wider">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${isLight ? 'bg-white/20 text-white' : 'bg-[#0a7cf0]/20 text-[#38bdf8]'}`}>
                             {activePersona}
                           </span>
                         </button>
@@ -1394,20 +1448,21 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                           type="button"
                           onClick={() => {
                             setIsDrawerOpen(false);
+                            setIsDrawerHoverOpen(false);
                             setIsExploreGptsOpen(true);
                           }}
-                          className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
+                          className={`w-full px-2.5 py-1.5 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
                             activeSkill
-                              ? 'bg-[#0a7cf0]/20 text-white font-semibold'
-                              : 'hover:bg-white/10 text-zinc-200'
+                              ? 'bg-white/20 text-white font-semibold'
+                              : 'hover:bg-white/12 text-white/90'
                           }`}
                         >
-                          <div className="flex items-center gap-3.5">
-                            <LayoutGrid size={19} strokeWidth={1.8} className={activeSkill ? 'text-[#38bdf8]' : 'text-zinc-400'} />
-                            <span className="tracking-wide">Explore Creative Skills</span>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <LayoutGrid size={17} strokeWidth={1.8} className={activeSkill ? 'text-white shrink-0' : isLight ? 'text-sky-100 shrink-0' : 'text-zinc-400 shrink-0'} />
+                            <span className="tracking-wide truncate">Creative Skills</span>
                           </div>
                           {activeSkill && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0] text-white font-bold">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white text-[#073b94] font-bold shrink-0">
                               Active
                             </span>
                           )}
@@ -1416,32 +1471,34 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                           type="button"
                           onClick={() => {
                             setIsDrawerOpen(false);
+                            setIsDrawerHoverOpen(false);
                             setBuildyInitialPrompt(undefined);
                             setIsBuildyOpen(true);
                           }}
-                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                          className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer"
                         >
-                          <div className="flex items-center gap-3.5">
-                            <Hammer size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
-                            <span className="tracking-wide font-semibold">Buildy</span>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Hammer size={17} strokeWidth={1.8} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                            <span className="tracking-wide font-semibold truncate">Buildy</span>
                           </div>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0a7cf0]/20 text-[#38bdf8] font-bold">
-                            UI Studio
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${isLight ? 'bg-white/20 text-white' : 'bg-[#0a7cf0]/20 text-[#38bdf8]'}`}>
+                            UI
                           </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => {
                             setIsDrawerOpen(false);
+                            setIsDrawerHoverOpen(false);
                             window.dispatchEvent(new CustomEvent('open-gmail-routine-modal', { detail: { tab: 'routine' } }));
                           }}
-                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                          className="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/12 text-left flex items-center justify-between text-white transition-all cursor-pointer"
                         >
-                          <div className="flex items-center gap-3.5">
-                            <CalendarClock size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
-                            <span className="tracking-wide font-semibold">Daily Routine Gmail</span>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <CalendarClock size={17} strokeWidth={1.8} className={isLight ? 'text-sky-100 shrink-0' : 'text-[#38bdf8] shrink-0'} />
+                            <span className="tracking-wide font-semibold truncate">Daily Routine</span>
                           </div>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${isLight ? 'bg-emerald-300/25 text-white' : 'bg-emerald-500/20 text-emerald-300'}`}>
                             Gmail
                           </span>
                         </button>
@@ -1449,15 +1506,15 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                     </div>
 
                     {/* ONLY RECENT SECTION SCROLLABLE */}
-                    <div className="flex-1 min-h-0 flex flex-col pt-3 relative z-10">
-                      <span className="text-[13px] font-semibold text-zinc-400 px-3 tracking-wide mb-2 shrink-0">
+                    <div className="flex-1 min-h-0 flex flex-col pt-2.5 relative z-10">
+                      <span className={`text-[12px] font-semibold px-2.5 tracking-wide mb-1.5 shrink-0 ${isLight ? 'text-white/80' : 'text-zinc-400'}`}>
                         Recent
                       </span>
 
-                      <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
+                      <div className="flex-1 overflow-y-auto pr-0.5 space-y-1 no-scrollbar">
                         {Object.keys(userChatThreads).length === 0 ? (
-                          <div className="px-3 py-6 text-center text-xs text-zinc-500">
-                            No saved chats yet. Start a new conversation!
+                          <div className={`px-2.5 py-5 text-center text-xs ${isLight ? 'text-white/75' : 'text-zinc-500'}`}>
+                            No saved chats yet.
                           </div>
                         ) : (
                           Object.values(userChatThreads).map((thread: any) => {
@@ -1465,39 +1522,48 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             return (
                               <div
                                 key={thread.id || topic}
-                                className={`w-full px-3 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
+                                className={`w-full px-2.5 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer border group ${
                                   topic === activeRecentItem
-                                    ? 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
-                                    : 'hover:bg-white/10 text-zinc-300 border-transparent'
+                                    ? isLight
+                                      ? 'bg-white/22 text-white border-white/40 font-semibold'
+                                      : 'bg-[#0a7cf0]/20 text-white border-[#0a7cf0]/50 font-semibold'
+                                    : isLight
+                                      ? 'hover:bg-white/14 text-white/90 border-transparent'
+                                      : 'hover:bg-white/10 text-zinc-300 border-transparent'
                                 }`}
                               >
                                 <button
                                   type="button"
-                                  onClick={() => handleSelectRecent(topic)}
-                                  className="flex items-center gap-3 truncate text-left flex-1 min-w-0 cursor-pointer"
+                                  onClick={() => {
+                                    setIsDrawerHoverOpen(false);
+                                    handleSelectRecent(topic);
+                                  }}
+                                  className="flex items-center gap-2 truncate text-left flex-1 min-w-0 cursor-pointer"
                                 >
                                   <MessageSquare
-                                    size={17}
+                                    size={15}
                                     strokeWidth={1.8}
-                                    className={topic === activeRecentItem ? 'text-[#38bdf8] shrink-0' : 'text-zinc-500 shrink-0'}
+                                    className={
+                                      topic === activeRecentItem
+                                        ? isLight ? 'text-white shrink-0' : 'text-[#38bdf8] shrink-0'
+                                        : isLight ? 'text-white/75 shrink-0' : 'text-zinc-500 shrink-0'
+                                    }
                                   />
-                                  <span className="truncate text-[14px]">{topic}</span>
+                                  <span className="truncate text-[13px]">{topic}</span>
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.stopPropagation();
-                                    if (currentUser?.uid && !currentUser.isAnonymous && thread.id) {
-                                      await deleteChatThreadFromFirestore(thread.id, currentUser.uid).catch(() => {});
-                                    }
-                                    const scope = getUserStorageScope(currentUser);
-                                    const nextThreads = { ...userChatThreads };
-                                    delete nextThreads[topic];
-                                    setUserChatThreads(nextThreads);
-                                    saveChatThreadsToStorage(scope, nextThreads);
+                                    setPendingDeleteChat({ topic, threadId: thread.id });
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zinc-400 hover:text-red-400 transition-opacity ml-1 shrink-0 cursor-pointer"
+                                  className={`p-1 rounded-md transition-colors ml-1 shrink-0 cursor-pointer ${
+                                    isLight
+                                      ? 'text-white/80 hover:text-red-200 hover:bg-red-500/30'
+                                      : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/15'
+                                  }`}
                                   title="Delete chat"
+                                  aria-label={`Delete ${topic}`}
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -1509,35 +1575,38 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                     </div>
                   </>
 
-                  {/* BOTTOM ACTIONS: Full-Width Blue Settings Button + Compact Account Row */}
-                  <div className="shrink-0 space-y-3 pt-4 pb-1 relative z-10 border-t border-white/10">
+                  {/* BOTTOM ACTIONS: Full-Width Settings Button + Compact Account Row */}
+                  <div className={`shrink-0 space-y-2.5 pt-3 pb-0.5 relative z-10 border-t ${isLight ? 'border-white/20' : 'border-white/10'}`}>
                     <button
                       type="button"
                       onClick={() => {
                         setIsDrawerOpen(false);
+                        setIsDrawerHoverOpen(false);
                         setIsVoiceSettingsOpen(true);
                       }}
-                      className="w-full py-2.5 px-4 rounded-[18px] text-white font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-98 bg-[#0a7cf0] hover:bg-[#096dd4]"
+                      className={`w-full py-2 px-3 rounded-[14px] text-white font-semibold text-[13px] flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 ${
+                        isLight ? 'bg-white/20 hover:bg-white/30 border border-white/25' : 'bg-[#0a7cf0] hover:bg-[#096dd4]'
+                      }`}
                     >
-                      <Settings size={17} className="text-white" />
+                      <Settings size={15} className="text-white" />
                       <span>Settings</span>
                     </button>
 
                     {currentUser && !currentUser.isAnonymous ? (
-                      <div className="flex items-center justify-between gap-2.5 px-3 py-3 select-none rounded-2xl bg-[#14141d] border border-white/10">
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                          <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-[#0a7cf0] flex items-center justify-center text-[#38bdf8] shrink-0 overflow-hidden">
+                      <div className={`flex items-center justify-between gap-2 px-2.5 py-2.5 select-none rounded-2xl border ${isLight ? 'bg-white/14 border-white/25' : 'bg-[#14141d] border-white/10'}`}>
+                        <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                          <div className={`w-8 h-8 rounded-full border-[1.5px] flex items-center justify-center shrink-0 overflow-hidden ${isLight ? 'bg-white/15 border-white/50 text-white' : 'bg-[#1c1c28] border-[#0a7cf0] text-[#38bdf8]'}`}>
                             {currentUser?.photoURL ? (
                               <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
-                              <UserIcon size={17} className="fill-[#0a7cf0] text-[#0a7cf0]" />
+                              <UserIcon size={15} />
                             )}
                           </div>
                           <div className="flex flex-col min-w-0 truncate">
-                            <span className="text-[13px] font-bold text-white leading-tight truncate">
+                            <span className="text-[12.5px] font-bold text-white leading-tight truncate">
                               {currentUser.displayName || currentUser.email?.split('@')[0]}
                             </span>
-                            <span className="text-[11px] text-zinc-400 truncate">
+                            <span className={`text-[10.5px] truncate ${isLight ? 'text-white/75' : 'text-zinc-400'}`}>
                               {currentUser.email || 'Cloud Account'}
                             </span>
                           </div>
@@ -1549,29 +1618,37 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             e.stopPropagation();
                             await logOut();
                           }}
-                          className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/25 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                          className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                            isLight
+                              ? 'bg-red-500/30 hover:bg-red-500/45 text-white border-red-300/40'
+                              : 'bg-red-500/15 hover:bg-red-500/25 text-red-400 border-red-500/25'
+                          }`}
                           title="Sign Out"
                         >
-                          <LogOut size={13} />
-                          <span>Sign Out</span>
+                          <LogOut size={12} />
+                          <span>Out</span>
                         </button>
                       </div>
                     ) : (
                       <div
                         onClick={onOpenLogin}
-                        className="flex items-center justify-between gap-2.5 px-3 py-3 select-none cursor-pointer bg-[#14141d] border border-white/10 hover:border-white/20 rounded-2xl transition-colors"
+                        className={`flex items-center justify-between gap-2 px-2.5 py-2.5 select-none cursor-pointer border rounded-2xl transition-colors ${
+                          isLight
+                            ? 'bg-white/14 border-white/25 hover:border-white/40'
+                            : 'bg-[#14141d] border-white/10 hover:border-white/20'
+                        }`}
                         title="Click to sign in"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1 truncate">
-                          <div className="w-9 h-9 rounded-full bg-[#1c1c28] border-[1.5px] border-white/20 flex items-center justify-center text-zinc-300 shrink-0">
-                            <UserIcon size={16} />
+                        <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                          <div className={`w-8 h-8 rounded-full border-[1.5px] flex items-center justify-center shrink-0 ${isLight ? 'bg-white/15 border-white/40 text-white' : 'bg-[#1c1c28] border-white/20 text-zinc-300'}`}>
+                            <UserIcon size={15} />
                           </div>
                           <div className="flex flex-col min-w-0 truncate">
-                            <span className="text-[13px] font-bold text-white leading-tight truncate">
+                            <span className="text-[12.5px] font-bold text-white leading-tight truncate">
                               Guest User
                             </span>
-                            <span className="text-[11px] text-zinc-400 truncate">
-                              Saved in Browser
+                            <span className={`text-[10.5px] truncate ${isLight ? 'text-white/75' : 'text-zinc-400'}`}>
+                              Browser Saved
                             </span>
                           </div>
                         </div>
@@ -1582,7 +1659,11 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             e.stopPropagation();
                             onOpenLogin?.();
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-[#0a7cf0] hover:bg-[#096dd4] text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                            isLight
+                              ? 'bg-white text-[#073b94] hover:bg-white/90'
+                              : 'bg-[#0a7cf0] hover:bg-[#096dd4] text-white'
+                          }`}
                         >
                           Sign In
                         </button>
@@ -1592,6 +1673,62 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                 </motion.div>
               </motion.div>
             </>
+          )}
+        </AnimatePresence>
+
+        {/* One-Time Delete Chat Confirmation Modal */}
+        <AnimatePresence>
+          {pendingDeleteChat && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPendingDeleteChat(null)}
+              className="fixed inset-0 z-[20050] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-[340px] rounded-2xl bg-[#141720] border border-white/15 p-5 shadow-2xl text-white space-y-4"
+              >
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold">Delete chat?</h4>
+                  <p className="text-xs text-zinc-300 truncate">
+                    Are you sure you want to delete &ldquo;{pendingDeleteChat.topic}&rdquo;?
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteChat(null)}
+                    className="h-9 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const target = pendingDeleteChat;
+                      setPendingDeleteChat(null);
+                      if (!target) return;
+                      if (currentUser?.uid && !currentUser.isAnonymous && target.threadId) {
+                        await deleteChatThreadFromFirestore(target.threadId, currentUser.uid).catch(() => {});
+                      }
+                      const scope = getUserStorageScope(currentUser);
+                      const nextThreads = { ...userChatThreads };
+                      delete nextThreads[target.topic];
+                      setUserChatThreads(nextThreads);
+                      saveChatThreadsToStorage(scope, nextThreads);
+                    }}
+                    className="h-9 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 

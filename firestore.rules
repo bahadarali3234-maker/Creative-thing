@@ -168,5 +168,62 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
+
+    // Email preferences & Islamic footer state: strictly owner-isolated
+    match /user_email_preferences/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create, update: if isOwner(userId)
+        && isValidId(userId)
+        && request.resource.data.userId == userId
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 256
+        && request.resource.data.frequency in ['daily', 'weekly', 'important_only', 'unsubscribed']
+        && request.resource.data.islamicFooterEnabled is bool
+        && (!('dailyEmailsEnabled' in request.resource.data) || request.resource.data.dailyEmailsEnabled is bool)
+        && (!('dailyRoutineEnabled' in request.resource.data) || request.resource.data.dailyRoutineEnabled is bool)
+        && (!('focusGoal' in request.resource.data) || (request.resource.data.focusGoal is string && request.resource.data.focusGoal.size() <= 512))
+        && (!('sentQuotationIds' in request.resource.data) || (request.resource.data.sentQuotationIds is list && request.resource.data.sentQuotationIds.size() <= 50));
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    // Email delivery logs: strictly owner-isolated audit trail
+    match /email_delivery_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(logId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == logId
+        && request.resource.data.recipientEmail is string
+        && request.resource.data.recipientEmail.size() <= 256
+        && request.resource.data.emailType in ['welcome', 'daily_update', 'weekly_digest', 'daily_routine']
+        && request.resource.data.status in ['sent', 'failed', 'skipped']
+        && request.resource.data.sentAt is string
+        && request.resource.data.sentAt.size() <= 64;
+      allow update, delete: if false;
+    }
+
+    // Email automation queue: strictly owner-isolated
+    match /email_automation_queue/{jobId} {
+      allow get: if isSignedIn() && isValidId(jobId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(jobId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == jobId
+        && request.resource.data.emailType in ['welcome', 'daily_update', 'weekly_digest', 'daily_routine']
+        && request.resource.data.status in ['pending', 'processing', 'completed', 'failed']
+        && request.resource.data.scheduledFor is string
+        && request.resource.data.scheduledFor.size() <= 64
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 64;
+      allow update: if isSignedIn()
+        && isValidId(jobId)
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status in ['pending', 'processing', 'completed', 'failed'];
+      allow delete: if isSignedIn() && isValidId(jobId) && resource.data.userId == request.auth.uid;
+    }
   }
 }

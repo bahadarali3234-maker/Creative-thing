@@ -35,6 +35,11 @@ import {
   loadImageElement,
   fileToDataURL,
 } from '../utils/mythoriaLib';
+import {
+  composeSmartBackgroundPreview,
+  cutoutWithUltraProV2,
+  type UltraProCutoutResult,
+} from '../utils/webgpuVision';
 import { subscribeToAuth, subscribeToCustomTemplates } from '../firebase';
 import { speakWithGeminiTts, stopGeminiTts } from '../utils/geminiTts';
 import { AttachedFile } from '../types';
@@ -176,12 +181,16 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
   // Voice tester state
   const [testingVoiceId, setTestingVoiceId] = useState<string | null>(null);
 
-  // Background Remover state
+  // Background Remover (Ultra-Pro V2) state
   const [cutoutBusy, setCutoutBusy] = useState(false);
   const [cutoutOrigUrl, setCutoutOrigUrl] = useState<string | null>(null);
   const [cutoutResultUrl, setCutoutResultUrl] = useState<string | null>(null);
-  const [cutoutMethod, setCutoutMethod] = useState<'ai' | 'simple' | null>(null);
+  const [cutoutMethod, setCutoutMethod] = useState<string | null>(null);
   const [cutoutFileName, setCutoutFileName] = useState<string>('cutout.png');
+  const [cutoutV2, setCutoutV2] = useState<UltraProCutoutResult | null>(null);
+  const [cutoutCompositeUrl, setCutoutCompositeUrl] = useState<string | null>(null);
+  const [cutoutViewMode, setCutoutViewMode] = useState<'3way' | 'checkerboard' | 'diagnostics'>('3way');
+  const [cutoutBgPreset, setCutoutBgPreset] = useState<'studio-blue' | 'crisp-white' | 'editorial' | 'noir'>('studio-blue');
 
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
   const cutoutInputRef = useRef<HTMLInputElement | null>(null);
@@ -321,24 +330,64 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
     }
   };
 
+  const CUTOUT_BG_PRESETS: Record<
+    'studio-blue' | 'crisp-white' | 'editorial' | 'noir',
+    { label: string; kind: 'gradient' | 'solid'; colors: string[]; accent?: string }
+  > = {
+    'studio-blue': { label: 'Candy Studio Blue', kind: 'gradient', colors: ['#0A2A66', '#0F172A'], accent: '#00A6FF' },
+    'crisp-white': { label: 'Crisp Studio White', kind: 'solid', colors: ['#F8FAFC'], accent: '#0284C7' },
+    editorial: { label: 'Warm Editorial', kind: 'gradient', colors: ['#2A1810', '#0F0E17'], accent: '#F59E0B' },
+    noir: { label: 'Deep Noir', kind: 'gradient', colors: ['#090D16', '#020617'], accent: '#38BDF8' },
+  };
+
+  const executeUltraProCutout = async (origDataUrl: string, maxPasses = 3) => {
+    setCutoutBusy(true);
+    setCutoutResultUrl(null);
+    setCutoutCompositeUrl(null);
+    setCutoutV2(null);
+    try {
+      const res = await cutoutWithUltraProV2(origDataUrl, {
+        maxPasses,
+        enableVisionInspect: true,
+        bgPreviewSpec: CUTOUT_BG_PRESETS[cutoutBgPreset],
+      });
+      setCutoutV2(res);
+      setCutoutResultUrl(res.cutoutDataUrl);
+      setCutoutCompositeUrl(res.compositePreviewDataUrl);
+      setCutoutMethod(res.usedWebGpuMatte ? `${res.method} · WGSL Matte` : res.method);
+    } catch {
+      try {
+        const res = await removeBackground(origDataUrl);
+        setCutoutResultUrl(res.dataURL);
+        setCutoutMethod(res.method);
+      } catch {
+        showToast('Background removal failed');
+      }
+    } finally {
+      setCutoutBusy(false);
+    }
+  };
+
   const handleRunCutout = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setCutoutFileName(file.name.replace(/\.[^.]+$/, '') + '_cutout.png');
-    setCutoutBusy(true);
-    setCutoutResultUrl(null);
     try {
       const orig = await fileToDataURL(file);
       setCutoutOrigUrl(orig);
-      const res = await removeBackground(file);
-      setCutoutResultUrl(res.dataURL);
-      setCutoutMethod(res.method);
+      await executeUltraProCutout(orig, 3);
     } catch {
-      showToast('Background removal failed');
+      showToast('Could not read uploaded image');
     } finally {
-      setCutoutBusy(false);
       e.target.value = '';
     }
+  };
+
+  const handleSwapCutoutBg = async (presetId: 'studio-blue' | 'crisp-white' | 'editorial' | 'noir') => {
+    setCutoutBgPreset(presetId);
+    if (!cutoutResultUrl) return;
+    const comp = await composeSmartBackgroundPreview(cutoutResultUrl, CUTOUT_BG_PRESETS[presetId]);
+    setCutoutCompositeUrl(comp);
   };
 
   const launchPrompt = (prompt: string, attachedDataUrl?: string, attachedName?: string) => {
@@ -733,10 +782,10 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-extrabold text-[#0A2A66]">
-                      Background Remover (Subject Cutout)
+                      Ultra-Pro V2 Background Remover · WebGPU WGSL + Vision QC
                     </h3>
                     <p className="text-xs text-zinc-600 mt-0.5">
-                      Runs on-device AI segmentation with instant corner color-key fallback if offline.
+                      Preserves hair strands, glasses &amp; fine silhouettes with 3-pass alpha-matting, spill decontamination, and smart background matching.
                     </p>
                   </div>
                   <input
@@ -746,59 +795,209 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                     onChange={handleRunCutout}
                     className="hidden"
                   />
-                  <button
-                    type="button"
-                    onClick={() => cutoutInputRef.current?.click()}
-                    disabled={cutoutBusy}
-                    className="min-h-[44px] px-4 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer"
-                  >
-                    {cutoutBusy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                    <span>{cutoutBusy ? 'Removing Background...' : 'Upload Image to Cut Out'}</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {cutoutOrigUrl && (
+                      <button
+                        type="button"
+                        onClick={() => executeUltraProCutout(cutoutOrigUrl, 3)}
+                        disabled={cutoutBusy}
+                        className="min-h-[42px] px-3.5 rounded-xl border border-zinc-200 hover:border-[#00A6FF] text-[#0A2A66] text-xs font-bold whitespace-nowrap cursor-pointer disabled:opacity-50"
+                      >
+                        Re-run Repair Passes
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => cutoutInputRef.current?.click()}
+                      disabled={cutoutBusy}
+                      className="min-h-[42px] px-4 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-2 whitespace-nowrap cursor-pointer"
+                    >
+                      {cutoutBusy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                      <span>{cutoutBusy ? 'Running V2 Alpha-Matte...' : 'Upload Image to Extract'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {(cutoutOrigUrl || cutoutResultUrl) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
-                      <div className="text-xs font-bold text-zinc-500">Original Image</div>
-                      <div className="h-64 rounded-lg bg-zinc-100 flex items-center justify-center overflow-hidden">
-                        {cutoutOrigUrl && (
-                          <img src={cutoutOrigUrl} alt="Original" className="max-h-full max-w-full object-contain" />
-                        )}
+                  <>
+                    {/* View Switcher & Smart Backdrop Presets */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-3">
+                      <div className="flex items-center gap-1.5">
+                        {([
+                          { id: '3way', label: '3-Way Compare' },
+                          { id: 'checkerboard', label: 'Cutout Checkerboard' },
+                          { id: 'diagnostics', label: 'Edge Contour QC' },
+                        ] as const).map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setCutoutViewMode(m.id)}
+                            className={`min-h-[36px] px-3 rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                              cutoutViewMode === m.id
+                                ? 'bg-[#00A6FF] text-white'
+                                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
                       </div>
+
+                      {cutoutResultUrl && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-zinc-500 mr-1">Smart Scene:</span>
+                          {(Object.keys(CUTOUT_BG_PRESETS) as Array<'studio-blue' | 'crisp-white' | 'editorial' | 'noir'>).map(
+                            (pid) => (
+                              <button
+                                key={pid}
+                                type="button"
+                                onClick={() => handleSwapCutoutBg(pid)}
+                                className={`min-h-[32px] px-2.5 rounded-lg text-[11px] font-bold border cursor-pointer transition-colors ${
+                                  cutoutBgPreset === pid
+                                    ? 'border-[#00A6FF] bg-sky-50 text-[#0A2A66]'
+                                    : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'
+                                }`}
+                              >
+                                {CUTOUT_BG_PRESETS[pid].label}
+                              </button>
+                            )
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#0A2A66]">Transparent Cutout PNG</span>
-                        {cutoutMethod && (
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                            {cutoutMethod === 'ai' ? 'AI Cutout' : 'Edge Color Cutout'}
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className="h-64 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-200"
-                        style={{
-                          backgroundImage:
-                            'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
-                          backgroundSize: '20px 20px',
-                          backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-                        }}
-                      >
-                        {cutoutBusy ? (
-                          <div className="flex items-center gap-2 text-xs font-bold text-[#0A2A66] bg-white/90 px-3 py-2 rounded-lg">
-                            <Loader2 size={14} className="animate-spin text-[#00A6FF]" />
-                            <span>Processing subject edges...</span>
+                    {/* Stages */}
+                    {cutoutViewMode === '3way' && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="text-xs font-bold text-zinc-600">1. Untouched Original</div>
+                          <div className="h-64 rounded-lg bg-zinc-100 flex items-center justify-center overflow-hidden">
+                            {cutoutOrigUrl && (
+                              <img src={cutoutOrigUrl} alt="Original" className="max-h-full max-w-full object-contain" />
+                            )}
                           </div>
-                        ) : (
-                          cutoutResultUrl && (
-                            <img src={cutoutResultUrl} alt="Cutout" className="max-h-full max-w-full object-contain" />
-                          )
+                        </div>
+
+                        <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-[#0A2A66]">2. Transparent Subject</span>
+                            {cutoutMethod && (
+                              <span className="text-[11px] font-mono text-emerald-700">
+                                {cutoutMethod}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            className="h-64 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-200"
+                            style={{
+                              backgroundImage:
+                                'linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)',
+                              backgroundSize: '20px 20px',
+                              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                            }}
+                          >
+                            {cutoutBusy ? (
+                              <div className="flex items-center gap-2 text-xs font-bold text-[#0A2A66] bg-white/95 px-3 py-2 rounded-lg">
+                                <Loader2 size={14} className="animate-spin text-[#00A6FF]" />
+                                <span>Inspecting contours &amp; hair...</span>
+                              </div>
+                            ) : (
+                              cutoutResultUrl && (
+                                <img src={cutoutResultUrl} alt="Transparent Cutout" className="max-h-full max-w-full object-contain" />
+                              )
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-[#0A2A66]">3. Smart Composite</span>
+                            <span className="text-[11px] font-semibold text-zinc-500">
+                              {CUTOUT_BG_PRESETS[cutoutBgPreset].label}
+                            </span>
+                          </div>
+                          <div className="h-64 rounded-lg bg-zinc-900 flex items-center justify-center overflow-hidden border border-zinc-200">
+                            {cutoutBusy ? (
+                              <Loader2 size={18} className="animate-spin text-[#00A6FF]" />
+                            ) : (
+                              cutoutCompositeUrl && (
+                                <img src={cutoutCompositeUrl} alt="Smart Composite" className="max-h-full max-w-full object-contain" />
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {cutoutViewMode === 'checkerboard' && (
+                      <div className="rounded-xl border border-zinc-200 p-4 space-y-2">
+                        <div className="text-xs font-bold text-[#0A2A66]">Full Checkerboard Alpha Inspection</div>
+                        <div
+                          className="h-80 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-200"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)',
+                            backgroundSize: '24px 24px',
+                            backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0px',
+                          }}
+                        >
+                          {cutoutResultUrl && (
+                            <img src={cutoutResultUrl} alt="Full Checkerboard Cutout" className="max-h-full max-w-full object-contain" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {cutoutViewMode === 'diagnostics' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="text-xs font-bold text-[#0A2A66]">Cyan Boundary Trace Overlay</div>
+                          <div className="h-72 rounded-lg bg-zinc-950 flex items-center justify-center overflow-hidden">
+                            {cutoutV2?.outlineScreenshotDataUrl && (
+                              <img
+                                src={cutoutV2.outlineScreenshotDataUrl}
+                                alt="Contour Trace Overlay"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            )}
+                          </div>
+                        </div>
+                        {cutoutV2?.qualityReport && (
+                          <div className="rounded-xl border border-zinc-200 p-4 space-y-3 bg-[#F8FAFC]">
+                            <div className="text-xs font-extrabold uppercase tracking-wider text-[#0284C7]">
+                              Independent Mask Quality Control
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-xs tabular-nums">
+                              <div>
+                                <div className="text-zinc-500">Overall Quality</div>
+                                <div className="text-lg font-extrabold text-[#0A2A66]">
+                                  {cutoutV2.qualityReport.overallScore}/100
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-zinc-500">Passes Run</div>
+                                <div className="text-lg font-extrabold text-[#0A2A66]">
+                                  {cutoutV2.passesUsed} / 3
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-zinc-500">Boundary Accuracy</div>
+                                <div className="font-bold text-zinc-900">{cutoutV2.qualityReport.boundaryAccuracy}%</div>
+                              </div>
+                              <div>
+                                <div className="text-zinc-500">Hair Detail Preservation</div>
+                                <div className="font-bold text-zinc-900">{cutoutV2.qualityReport.hairPreservation}%</div>
+                              </div>
+                            </div>
+                            <div className="text-xs text-zinc-700 border-l-2 border-[#00A6FF] pl-2.5">
+                              {cutoutV2.qualityReport.reason}
+                              {cutoutV2.qualityReport.visionModel ? ` · Checked by ${cutoutV2.qualityReport.visionModel}` : ''}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
+                    )}
+                  </>
                 )}
 
                 {cutoutResultUrl && (
@@ -806,11 +1005,21 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                     <a
                       href={cutoutResultUrl}
                       download={cutoutFileName}
-                      className="min-h-[44px] px-4 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] text-white text-xs font-extrabold flex items-center gap-2"
+                      className="min-h-[42px] px-4 rounded-xl bg-[#0A2A66] hover:bg-[#1450C8] text-white text-xs font-extrabold flex items-center gap-2 whitespace-nowrap"
                     >
                       <Download size={14} />
-                      <span>Download PNG</span>
+                      <span>Download Transparent PNG</span>
                     </a>
+                    {cutoutCompositeUrl && (
+                      <a
+                        href={cutoutCompositeUrl}
+                        download={cutoutFileName.replace('_cutout.png', '_composite.png')}
+                        className="min-h-[42px] px-4 rounded-xl border border-zinc-200 hover:border-[#00A6FF] text-[#0A2A66] text-xs font-bold flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <Download size={14} />
+                        <span>Download Composite PNG</span>
+                      </a>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -818,7 +1027,7 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                         setActiveTab('thumbnails');
                         showToast('Cutout applied to thumbnail previews');
                       }}
-                      className="min-h-[44px] px-4 rounded-xl border border-zinc-200 hover:border-[#00A6FF] text-[#0A2A66] text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-[42px] px-4 rounded-xl border border-zinc-200 hover:border-[#00A6FF] text-[#0A2A66] text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
                     >
                       <Check size={14} />
                       <span>Apply to Thumbnails</span>
@@ -833,7 +1042,7 @@ export const CreativeStudioModal: React.FC<CreativeStudioModalProps> = ({
                             cutoutFileName
                           )
                         }
-                        className="min-h-[44px] px-4 rounded-xl bg-[#00A6FF] hover:bg-[#0094E6] text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-[42px] px-4 rounded-xl bg-[#00A6FF] hover:bg-[#0094E6] text-white text-xs font-extrabold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
                       >
                         <ArrowUpRight size={14} />
                         <span>Use Cutout in Chat</span>

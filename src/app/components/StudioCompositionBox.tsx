@@ -8,7 +8,6 @@ import {
   Maximize2,
   Loader2,
   AlertCircle,
-  ExternalLink,
   Layers,
 } from 'lucide-react';
 import {
@@ -460,31 +459,6 @@ export const StudioCompositionBox: React.FC<{
               <span>Regenerate</span>
             </button>
           )}
-        </div>
-      )}
-
-      {/* Unboxed quiet source attribution metadata when web photos are used */}
-      {studioJob.status === 'done' && studioJob.sources && studioJob.sources.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-foreground/60">
-          <span>photos:</span>
-          {studioJob.sources.slice(0, 3).map((s, idx) => (
-            <React.Fragment key={`${s.domain || 'src'}-${idx}`}>
-              {idx > 0 && <span aria-hidden="true">·</span>}
-              {s.url ? (
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 hover:text-foreground underline decoration-border/40"
-                >
-                  <span>{s.domain || 'source'}</span>
-                  <ExternalLink size={10} />
-                </a>
-              ) : (
-                <span>{s.domain || 'web'}</span>
-              )}
-            </React.Fragment>
-          ))}
         </div>
       )}
     </div>

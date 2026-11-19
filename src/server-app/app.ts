@@ -93,9 +93,21 @@ import {
   searchGoogleScrapeImages,
 } from './imageFinderModule';
 import { mountStudioRoutes } from './studioBridge';
+import { inspectCutoutMaskQuality } from './studioInspector';
+import {
+  getOrCreateUserEmailPreferences,
+  getUserEmailLogs,
+  isBackendMailConfigured,
+  prepareAndSendEmail,
+  recordClientEmailDelivery,
+  startEmailAutomationScheduler,
+  unsubscribeByToken,
+  updateUserEmailPreferences,
+} from './emailAutomation';
 
 
 export function registerRoutes(app: MiniApp) {
+  startEmailAutomationScheduler();
 
   const jsonParser = express.json({ limit: '25mb' });
   if (typeof jsonParser === 'function') {
@@ -2685,22 +2697,22 @@ CRITICAL CALLING MODE RULES (STRICTLY MANDATORY):
       const simpleIntent = classifyCasualMessage(promptText);
       const studioGuideNote = `\n\n[CREATIVE STUDIO, THINKING SUMMARIES & BEHAVIOUR MODULE]:
 1. IMAGE GENERATION HAND-OFF (studio-request):
-- Do NOT write raw HTML or SVG code for images/thumbnails/posters in chat. The backend Creative Studio runs it via confirmation ("Do you agree to generate this image?") + tappable setup questions.
-- If the user clearly asks to design/create an image (thumbnail, poster, banner, logo, wallpaper, post, card, invitation, certificate, flyer, cover, DP, "image generate karo") OR edit an uploaded image (background removal / change title / darker / style change) and you received the message, output ONE short 1-line lead-in in the user's language (e.g. "Ye lo — pehle ek chhota sa confirm 👇") + ONE \`\`\`studio-request JSON block and STOP (do not ask size/style questions yourself):
+- Do NOT write raw HTML or SVG code for images/thumbnails/posters in chat. The Creative Studio executes generation directly once triggered.
+- If the user clearly asks to design/create an image (thumbnail, poster, banner, logo, wallpaper, post, card, invitation, certificate, flyer, cover, DP, "image generate karo") OR edit an uploaded image (background removal / change title / darker / style change) and you received the message, output ONE short 1-line lead-in in the user's language + ONE \`\`\`studio-request JSON block and STOP (do not ask size/style questions yourself):
 \`\`\`studio-request
 {"kind":"generate","recipe":"thumbnail","prompt":"<user request in their words>","lang":"en|hi|hinglish"}
 \`\`\`
-Valid recipes: thumbnail, poster, ig-post, story-reel, banner, quote-card, logo, infographic, wallpaper, product-ad, profile-dp, invitation, certificate, business-card, flyer, album-cover, book-cover, news-card, menu, generic.
+Valid recipes: thumbnail, poster, ig-post, story-reel, banner, quote-card, logo, infographic, wallpaper, product-ad, profile-dp, invitation, certificate, business-card, flyer, album-cover, book-cover, news-card, menu, portrait, generic.
 - Routing:
   * Design/create/edit -> \`studio-request\`
   * Find/show/dikhao/dhundo real web photos -> \`\`\`image-card (Image Finder), NOT studio-request
   * Both ("find Taj Mahal photo and make a poster") -> \`\`\`image-card first, then \`\`\`studio-request
 2. SAFETY REFUSALS:
-- Refuse requests involving private individuals, anyone under 18, sexual/graphic/humiliating content, impersonation/fake endorsements, misleading ads/news, or copying copyrighted brand logos as main subject. Decline in ONE friendly sentence in the user's language and offer a safe alternative (e.g. public figure, user's own photo, or product). No studio-request block when refusing.
+- Everyday individuals, social-media portraits, and public figures ARE ALLOWED for clean portraits, thumbnails, posters, and background edits. Only refuse requests involving anyone under 18 in unsafe/exploitative contexts, sexual/nude/humiliating content, extreme gore, or fraudulent impersonation/doxxing. Decline in ONE friendly sentence in the user's language without a studio-request block when refusing.
 3. VIDEO POLICY:
 - Video generation is currently TURNED OFF. If asked for a video, reply in ONE concise line in the user's language (e.g. "Video abhi band hai, par main thumbnail/poster/storyboard bana sakta hoon.") and offer an image/thumbnail/poster instead. Never output VideoPlan or window.VIDEO.
 4. POST-RESULT RECAP (studio_result):
-- If \`studio_result: {ok, width, height, style, text, warnings, sources}\` is provided: reply in 1-3 short lines in the user's language summarizing what was made (size, style, headline), give one honest note if \`warnings\` is non-empty, mention \`sources\` domains ONLY if non-empty ("photos: wikimedia.org"), and offer one specific next tweak (e.g. larger headline or dark version). Do not repeat the thinking summary.
+- If \`studio_result: {ok, width, height, style, text, warnings}\` is provided: reply in 1-2 short lines in the user's language summarizing what was created cleanly, NEVER list photo source links or domains ("photos: ..."), and offer one helpful edit idea (e.g. add custom text, change background, or refine lighting). Do not repeat the thinking summary.
 5. THINKING SUMMARY (\`\`\`thinking-summary):
 - When replying to normal chat (especially with uploaded files/images/videos), emit ONE \`\`\`thinking-summary JSON block: {"steps":[{"kind":"understand|analysis|search|edit|decision|check|result","file":"optional","text":"..."}]} (3-7 factual steps, user's language).
 - Ground every line strictly in \`attachment_facts\` or real decisions — NEVER use canned filler ("Analyzing your request...", "Creating something amazing"). If an attachment has NO facts, state "Received <name>, but couldn't analyse it."
@@ -3823,7 +3835,7 @@ ${recentHist || 'Fresh planning session'}`;
           } Emphasize important points in **bold**. Include a Markdown table or \`\`\`chart JSON block whenever comparisons or numeric data make the answer clearer.`;
 
     const imageSearchSafetyNetNote = isExplicitImageSearch
-      ? `\n\n[SYSTEM INTENT NOTE]: The user wants web photographs. Unless the request violates safety rules (private individual, minor under 18, sexual/graphic/humiliating content, face-identification, or stalking), output ONE short intro line (<= 12 words) followed immediately by a valid \`\`\`image-card JSON block. Public figures are ALLOWED.`
+      ? `\n\n[SYSTEM INTENT NOTE]: The user wants web photographs. Everyday individuals, social-media portraits, and public figures are ALLOWED. Unless the request violates severe harm rules (minor under 18 in unsafe contexts, sexual/nude/humiliating content, gore, or non-consensual stalking/doxxing), output ONE short intro line (<= 12 words) followed immediately by a valid \`\`\`image-card JSON block.`
       : '';
 
     const videoOffNote = isVideoOffAsk
@@ -3831,7 +3843,7 @@ ${recentHist || 'Fresh planning session'}`;
       : '';
 
     let effectivePrompt = studio_result
-      ? `Studio finished designing for "${String(prompt || '').slice(0, 200)}". Write strictly 1-3 concise lines in ${detectedLanguage === 'English' ? 'English' : `Roman ${detectedLanguage}`}: state the size, style, and headline used; mention any warnings honestly if non-empty; cite source domains ONLY if sources is non-empty ("photos: ..."); and end with one specific tweak offer (e.g. bigger headline or dark version). Do NOT output studio-request or thinking-summary blocks.`
+      ? `Studio finished designing for "${String(prompt || '').slice(0, 200)}". Write strictly 1-2 concise lines in ${detectedLanguage === 'English' ? 'English' : `Roman ${detectedLanguage}`}: describe the finished visual cleanly without mentioning any photo URLs, source domains, or "photos: ..." links, and offer one natural follow-up edit (e.g. add text, change background, or adjust lighting). Do NOT output studio-request or thinking-summary blocks.`
       : isBuildyWebsiteOrUi
         ? `${prompt}\n\nIMPORTANT PRODUCT RULE:\nWebsites and App UIs are built inside the integrated **Buildy Studio**.\n1. Tell the user clearly to open Buildy right inside the app (via the Buildy button or sidebar menu).\n2. NEVER generate a full <!DOCTYPE html>...</html> website in chat.\n3. Instead, give them a detailed architectural answer and a copy-ready Buildy UI specification prompt inside a \`\`\`prompt code block.${romanEnforcementNote}`
         : isCreativeStudio
@@ -4008,10 +4020,7 @@ ${recentHist || 'Fresh planning session'}`;
         const h = studio_result.height || 1080;
         const styleName = studio_result.style || 'Creative Studio';
         const headline = studio_result.text?.title ? ` ("${String(studio_result.text.title).slice(0, 60)}")` : '';
-        const srcDomains = Array.isArray(studio_result.sources) && studio_result.sources.length
-          ? ` Photos: ${[...new Set(studio_result.sources.map((s: any) => s?.domain || s).filter(Boolean))].join(', ')}.`
-          : '';
-        fallbackText = `Designed your **${w}×${h}** **${styleName}** graphic${headline}.${srcDomains}\nTap the preview to open **Cut / Download PNG**, or choose a quick tweak below (e.g., *Bigger headline* or *Dark version*).`;
+        fallbackText = `Created your **${w}×${h}** **${styleName}** image${headline}.\nTap the preview to **Download PNG**, open **Edit Layers**, or reply with any edit you'd like.`;
       } else {
         console.warn('Groq/Grok providers unavailable or rate-limited. Streaming structured notice...');
         fallbackText = generateStructuredFallback(String(prompt || ''), attachments, isCreativeStudio ? null : contextPackage);
@@ -4865,6 +4874,173 @@ ${recentHist || 'Fresh planning session'}`;
     } catch (err: any) {
       return res.status(500).json({ error: err?.message || 'Failed to delete conversation.' });
     }
+  });
+
+  // ============================================================================
+  // ULTRA-PRO V2 VISION CUTOUT EDGE QUALITY GATE
+  // ============================================================================
+  app.post('/api/vision/inspect-cutout', async (req, res) => {
+    try {
+      const outlineOverlayDataUrl = String(req.body?.outlineOverlayDataUrl || '').trim();
+      if (!outlineOverlayDataUrl.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'outlineOverlayDataUrl image is required.' });
+      }
+      const inspection = await inspectCutoutMaskQuality({ outlineOverlayDataUrl, req });
+      return res.json(inspection);
+    } catch (err: any) {
+      return res.json({
+        inspectorAvailable: false,
+        clean: true,
+        score: 80,
+        issues: [],
+        repairHints: {},
+      });
+    }
+  });
+
+  // ============================================================================
+  // SMART EMAIL AUTOMATION + VERIFIED ISLAMIC FOOTER ENDPOINTS
+  // ============================================================================
+  async function resolveEmailUserContext(req: any): Promise<{ uid: string; email: string; displayName: string } | null> {
+    const verified = await extractVerifiedUserFromRequest(req).catch(() => null);
+    if (verified?.uid) {
+      return {
+        uid: verified.uid,
+        email: verified.email || String(req.body?.email || req.query?.email || '').trim(),
+        displayName: String(req.body?.displayName || req.query?.displayName || verified.email?.split('@')[0] || 'Creator').trim(),
+      };
+    }
+    const bodyUid = String(req.body?.uid || req.query?.uid || '').trim();
+    const bodyEmail = String(req.body?.email || req.query?.email || '').trim();
+    if (bodyUid && bodyEmail) {
+      return {
+        uid: bodyUid,
+        email: bodyEmail,
+        displayName: String(req.body?.displayName || bodyEmail.split('@')[0] || 'Creator').trim(),
+      };
+    }
+    return null;
+  }
+
+  app.get('/api/email/preferences', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx) return res.status(401).json({ error: 'Authentication or user email context required.' });
+      const preferences = getOrCreateUserEmailPreferences(ctx);
+      return res.json({
+        preferences,
+        backendMailConfigured: isBackendMailConfigured(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to load email preferences.' });
+    }
+  });
+
+  app.post('/api/email/preferences', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx) return res.status(401).json({ error: 'Authentication required.' });
+      const body = req.body || {};
+      const preferences = updateUserEmailPreferences(ctx.uid, {
+        email: ctx.email || body.email,
+        displayName: ctx.displayName || body.displayName,
+        frequency: body.frequency,
+        dailyEmailsEnabled: body.dailyEmailsEnabled,
+        dailyRoutineEnabled: body.dailyRoutineEnabled,
+        islamicFooterEnabled: body.islamicFooterEnabled,
+        preferredSendTime: body.preferredSendTime,
+        focusGoal: body.focusGoal,
+        routineItems: body.routineItems,
+      });
+      return res.json({
+        preferences,
+        backendMailConfigured: isBackendMailConfigured(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to save email preferences.' });
+    }
+  });
+
+  app.post('/api/email/trigger-welcome', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx || !ctx.email) return res.status(400).json({ error: 'Verified account email required.' });
+      const result = await prepareAndSendEmail({
+        uid: ctx.uid,
+        email: ctx.email,
+        displayName: ctx.displayName,
+        emailType: 'welcome',
+        forceResend: Boolean(req.body?.forceResend),
+      });
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Welcome email dispatch failed.' });
+    }
+  });
+
+  app.post('/api/email/send-now', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx || !ctx.email) return res.status(400).json({ error: 'Verified account email required.' });
+      const emailType = (req.body?.emailType || 'daily_update') as any;
+      const result = await prepareAndSendEmail({
+        uid: ctx.uid,
+        email: ctx.email,
+        displayName: ctx.displayName,
+        emailType,
+        forceResend: true,
+        customFocusGoal: typeof req.body?.focusGoal === 'string' ? req.body.focusGoal : undefined,
+        customRoutineItems: Array.isArray(req.body?.routineItems) ? req.body.routineItems : undefined,
+      });
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Email dispatch failed.' });
+    }
+  });
+
+  app.post('/api/email/log-client-delivery', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx || !ctx.email) return res.status(400).json({ error: 'Account email required.' });
+      const preferences = recordClientEmailDelivery({
+        uid: ctx.uid,
+        email: ctx.email,
+        emailType: req.body?.emailType || 'welcome',
+        quotationId: req.body?.quotationId || null,
+      });
+      return res.json({ ok: true, preferences });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to log client email delivery.' });
+    }
+  });
+
+  app.get('/api/email/logs', async (req, res) => {
+    try {
+      const ctx = await resolveEmailUserContext(req);
+      if (!ctx) return res.status(401).json({ error: 'Authentication required.' });
+      return res.json({ logs: getUserEmailLogs(ctx.uid) });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to load delivery logs.' });
+    }
+  });
+
+  app.get('/api/email/unsubscribe', (req, res) => {
+    const token = String(req.query?.token || '').trim();
+    const out = token ? unsubscribeByToken(token) : { ok: false };
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(out.ok ? 200 : 400).send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Think Creative · Unsubscribe</title></head>
+<body style="margin:0;padding:40px 20px;background:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0F172A;display:flex;justify-content:center;">
+  <div style="max-width:460px;width:100%;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;padding:28px;">
+    <div style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:#0284C7;text-transform:uppercase;">Think Creative</div>
+    <h1 style="font-size:20px;margin:8px 0 10px 0;">${out.ok ? 'You have been unsubscribed' : 'Invalid unsubscribe link'}</h1>
+    <p style="font-size:14px;line-height:1.6;color:#475569;margin:0;">
+      ${out.ok ? `Scheduled daily and weekly email updates for <strong>${out.email || 'your account'}</strong> are now turned off. You can re-enable them anytime inside Email Preferences.` : 'This unsubscribe link appears invalid or expired. Sign in to Think Creative to update your email preferences directly.'}
+    </p>
+  </div>
+</body>
+</html>`);
   });
 
   function buildStudioImageFallbackHtml(promptText = ''): string {

@@ -564,13 +564,14 @@ export function mountStudioRoutes(app: any) {
       }
 
       const workingPlan =
-        rawPlan || fallbackSpec(cleanMsg, resolved, recipeId, incomingUploads, safeAnalyses);
+        rawPlan || fallbackSpec(cleanMsg, resolved, recipeId, incomingUploads, safeAnalyses, previousSpec);
       const normalized = normalizeCanvasSpec(workingPlan, {
         resolved,
         recipeId,
         uploads: incomingUploads,
         uploadAnalyses: safeAnalyses,
         message: cleanMsg,
+        previousSpec,
       });
 
       if (normalized.refused) {

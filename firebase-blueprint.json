@@ -114,6 +114,60 @@
         "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "userId", "provider", "model", "originalPrompt", "fileName", "mimeType", "createdAt"]
+    },
+    "UserEmailPreference": {
+      "title": "UserEmailPreference",
+      "description": "User automated email schedule, routine blocks, and verified Islamic footer preference",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "frequency": { "type": "string", "maxLength": 32 },
+        "dailyEmailsEnabled": { "type": "boolean" },
+        "dailyRoutineEnabled": { "type": "boolean" },
+        "islamicFooterEnabled": { "type": "boolean" },
+        "preferredSendTime": { "type": "string", "maxLength": 16 },
+        "focusGoal": { "type": "string", "maxLength": 512 },
+        "welcomeEmailSentAt": { "type": "string", "maxLength": 64 },
+        "lastDailySentDate": { "type": "string", "maxLength": 32 },
+        "sentQuotationIds": { "type": "array" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "email", "frequency", "islamicFooterEnabled"]
+    },
+    "EmailDeliveryLog": {
+      "title": "EmailDeliveryLog",
+      "description": "Audit log of delivered welcome and scheduled emails per user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "recipientEmail": { "type": "string", "maxLength": 256 },
+        "emailType": { "type": "string", "maxLength": 32 },
+        "idempotencyKey": { "type": "string", "maxLength": 160 },
+        "quotationId": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "maxLength": 32 },
+        "providerUsed": { "type": "string", "maxLength": 48 },
+        "sentAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "recipientEmail", "emailType", "status", "sentAt"]
+    },
+    "EmailAutomationQueue": {
+      "title": "EmailAutomationQueue",
+      "description": "Scheduled automated email queue jobs with retry tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "emailType": { "type": "string", "maxLength": 32 },
+        "scheduledFor": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "maxLength": 32 },
+        "attempts": { "type": "number" },
+        "idempotencyKey": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "emailType", "scheduledFor", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -144,6 +198,18 @@
     "/generated_images/{imageId}": {
       "schema": { "$ref": "#/entities/GeneratedImage" },
       "description": "User generated and edited AI image records"
+    },
+    "/user_email_preferences/{userId}": {
+      "schema": { "$ref": "#/entities/UserEmailPreference" },
+      "description": "User email schedule, routine items, and verified Islamic footer preference keyed by UID"
+    },
+    "/email_delivery_logs/{logId}": {
+      "schema": { "$ref": "#/entities/EmailDeliveryLog" },
+      "description": "Per-user email delivery audit trail"
+    },
+    "/email_automation_queue/{jobId}": {
+      "schema": { "$ref": "#/entities/EmailAutomationQueue" },
+      "description": "Per-user scheduled email queue records"
     }
   }
 }

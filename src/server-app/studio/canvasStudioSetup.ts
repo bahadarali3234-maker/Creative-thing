@@ -305,30 +305,32 @@ CRITICAL RULES
 - NEVER refuse normal creative designs, public figures, celebrities, brand logos, or user-uploaded face/character edits. Only refuse extreme CSAM or explicit pornography ("refuse":null otherwise).
 - Choose ONE clean, high-craft visual direction tailored to the topic. Avoid unnecessary effects, random clutter, or excessive glow.
 - Use ONLY valid IDs listed below.
+- TEXT & RENDER MODE POLICY (VERY IMPORTANT):
+  - Check whether the user actually asked for text, titles, quotes, or a text-bearing graphic (thumbnail, poster, banner, flyer, quote-card, news-card, certificate, invitation, business-card, menu).
+  - If the user asked for a pure photograph, portrait, or image of a person/subject/scene (e.g. "create an image of Imran Khan", "image of a lion") WITHOUT mentioning any text and NOT specifying thumbnail/poster/banner/card:
+    - Set "renderMode": "direct-photo", "title": "", "subtitle": "", "badge": "", "cta": "", "accentWord": "". Do NOT invent an unsolicited headline!
+    - Set "characterSpec": {"needed":true,"source":"search","query":"<subject name + portrait editorial studio photography>","placement":"center","removeBackground":false}.
+  - If the user DID request text (quoted text, "add text...", "with title...") OR requested a graphic format (thumbnail, poster, banner, flyer, card) OR uploaded a text-bearing reference OR is editing an existing graphic:
+    - Set "renderMode": "composite" and put exact text in "title", optional "subtitle", "badge", "cta". Never invent unrelated headlines.
 - UPLOADED FILES & IDENTITY PRESERVATION:
   - Inspect "uploadAnalyses" carefully! Respect each file's detected role: "main-character", "face-reference", "background-reference", "design-reference", or "object".
   - When the user supplies a character/person (and is not requesting a face-swap onto a different body), PRESERVE their identity by using that upload (source:"upload", uploadId:"...", role:"subject"). Never randomly replace the user's character with a web stranger!
   - If an upload is a "background-reference", map it as role:"background", source:"upload".
 - TOPIC-SPECIFIC BACKGROUND RESEARCH (Visual A-Z Engine):
-  - When no background upload is given, prefer "backgroundSpec":{"mode":"search","query":"<specific realistic scene/location matching exact topic, 4-8 words>"} for photo-led designs (thumbnails, posters, banners, flyers, portraits, product ads, news cards). Never use generic keywords like "abstract background" when a real topic location/environment exists (e.g., "cricketer" -> "cricket stadium floodlights night crowd photography"; "AI SaaS" -> "modern dark glass server room dramatic lighting").
-  - Also optionally list up to 2 topic-relevant "supportingObjects": [{"query":"<specific single object cutout photo>", "placement":"top-right|bottom-left|mid-right"}] ONLY when it genuinely elevates the visual story without clutter.
-- TEXT INTELLIGENCE & HIERARCHY:
-  - Priority: (1) Exact text explicitly provided by the user, (2) Relevant OCR text detected in uploaded reference images ("detectedOcrText"), (3) Short, crisp headline (2-6 words) strictly relevant to the topic. Never invent unrelated headlines.
-  - "accentWord": 1-2 exact words from title to highlight in accent color, or "".
-  - "subtitle", "badge", "cta": concise optional supporting copy only when helpful.
-  - Hindi/Devanagari -> choose a font id starting with "hi-".
+  - When compositing a scene and no background upload is given, use "backgroundSpec":{"mode":"search","query":"<specific realistic scene/location matching exact topic, 4-8 words>"} for photo-led designs. Never use generic keywords like "abstract background" when a real topic environment exists.
+  - Optionally list up to 2 topic-relevant "supportingObjects" ONLY when they genuinely elevate the visual story.
 - "characterSpec": {
     "needed": true|false,
     "source": "upload"|"search"|"none",
     "query": "specific subject query if searched",
     "placement": "right-corner"|"left-corner"|"center",
-    "removeBackground": true
+    "removeBackground": true|false
   }
 - "logos": array of requested brand logos e.g. [{"id":"logo_1","brandId":"google-gemini","label":"Google Gemini","placement":"top-left"}]. Built-in brandIds: google, google-flow, google-gemini, youtube, instagram, android, chrome, openai, github, x, whatsapp, tiktok, figma, apple. For unlisted brands, brandId:"custom" + "query":"<brand> logo transparent png".
 - "faceSwap": if user uploaded a face/selfie and wants their face placed into a scene or uploaded body, set {"needed":true,"proPortraitQuery":"<5-8 word photography query matching outfit/lighting/role>"}. Otherwise {"needed":false}.
 - "creativeDirection": {
     "colorGrade": "cinematic-teal-orange|golden-editorial|neon-pop|luxury-noir|portrait-natural",
-    "overlayOpacity": 0.48,
+    "overlayOpacity": 0.45,
     "lighting": "concise lighting & depth note",
     "useTextPlate": false
   }
@@ -341,14 +343,61 @@ LAYOUTS: text-left-subject-right, subject-left-text-right, centered-hero, center
 MOTIFS: lightning, heart, starburst, sparkle, check, blob, quote, arrow
 
 OUTPUT (JSON only, no markdown):
-{"refuse":null,"brief":{"goal":"","audience":"","message":""},"rationale":"","recipe":"thumbnail|poster|ig-post|story-reel|banner|quote-card|logo|infographic|wallpaper|product-ad|profile-dp|invitation|certificate|business-card|flyer|album-cover|book-cover|news-card|menu|portrait|generic","style":"id","palette":"id","fonts":"id","layout":"id","language":"hi|en|hinglish","title":"","accentWord":"","subtitle":"","badge":"","cta":"","hero":{"type":"asset","id":"a1"},"motifs":["sparkle"],"backgroundSpec":{"mode":"search|gradient","query":"","mood":""},"characterSpec":{"needed":true,"source":"search|upload|none","query":"","placement":"right-corner|left-corner|center","removeBackground":true},"supportingObjects":[],"logos":[],"faceSwap":{"needed":false,"proPortraitQuery":""},"creativeDirection":{"colorGrade":"portrait-natural","overlayOpacity":0.5,"lighting":"","useTextPlate":false},"assets":[]}`;
+{"refuse":null,"renderMode":"direct-photo|composite","brief":{"goal":"","audience":"","message":""},"rationale":"","recipe":"thumbnail|poster|ig-post|story-reel|banner|quote-card|logo|infographic|wallpaper|product-ad|profile-dp|invitation|certificate|business-card|flyer|album-cover|book-cover|news-card|menu|portrait|generic","style":"id","palette":"id","fonts":"id","layout":"id","language":"hi|en|hinglish","title":"","accentWord":"","subtitle":"","badge":"","cta":"","hero":{"type":"asset","id":"a1"},"motifs":[],"backgroundSpec":{"mode":"search|gradient|none","query":"","mood":""},"characterSpec":{"needed":true,"source":"search|upload|none","query":"","placement":"center|right-corner|left-corner","removeBackground":false},"supportingObjects":[],"logos":[],"faceSwap":{"needed":false,"proPortraitQuery":""},"creativeDirection":{"colorGrade":"portrait-natural","overlayOpacity":0.35,"lighting":"","useTextPlate":false},"assets":[]}`;
+}
+
+export const TEXT_BEARING_RECIPES = new Set([
+  'thumbnail',
+  'poster',
+  'banner',
+  'flyer',
+  'quote-card',
+  'news-card',
+  'certificate',
+  'invitation',
+  'business-card',
+  'menu',
+  'ig-post',
+  'story-reel',
+  'book-cover',
+  'album-cover',
+]);
+
+export function analyzeTextAndRenderIntent(message: string): {
+  explicitlyAskedText: boolean;
+  explicitlyNoText: boolean;
+  extractedText: string | null;
+  hasCustomBackgroundReq: boolean;
+} {
+  const txt = String(message || '').trim();
+  const explicitlyNoText = /\b(no\s+text|without\s+text|textless|remove\s+text|no\s+words|bina\s+text)\b/i.test(txt);
+
+  const quotedMatch = /["“”'‘’「」]([^"“”'‘’「」]{2,110})["“”'‘’「」]/.exec(txt);
+  const colonMatch = /\b(?:with\s+text|add\s+text|text|title|headline|heading|caption|slogan|write|likho)\s*(?::|=|is|as|that\s+says)?\s+["“”']?([A-Za-z0-9\u0900-\u097F][\w\s\u0900-\u097F!?.,&-]{1,70})/i.exec(txt);
+  const extractedText = (quotedMatch?.[1] || colonMatch?.[1] || '').trim() || null;
+
+  const explicitlyAskedText =
+    !explicitlyNoText &&
+    Boolean(
+      extractedText ||
+        /\b(with\s+text|add\s+text|put\s+text|write\s+|likho|text\s+on|title\s+on|headline|caption|quote|slogan|typography|badge|subtitle|cta)\b/i.test(
+          txt
+        )
+    );
+
+  const hasCustomBackgroundReq =
+    /\b(background|backdrop|bg|stadium|mountains?|galaxy|beach|city|sunset|forest|space|desert|street|stage|office|studio\s+backdrop|dark\s+bg|black\s+bg|change\s+background|replace\s+background)\b/i.test(
+      txt
+    );
+
+  return { explicitlyAskedText, explicitlyNoText, extractedText, hasCustomBackgroundReq };
 }
 
 export function cleanTitleFromRequest(msg: string): string {
   const t = String(msg || '')
     .replace(/["“”]/g, '')
-    .replace(/\b(youtube|yt|instagram|insta|facebook|thumbnail|poster|banner|logo|logos|wallpaper|post|story|reel|card|image|design|please|bana|banao|do|de|ek|ka|ki|ke|for|a|an|the|make|create|generate|right|left|corner|center|with|and|on|in|put|show|google\s*flow|google\s*gemini|google)\b/gi, ' ')
-    .replace(/बनाओ|बना|दो|एक|का|की|के|थंबनेल|पोस्टर|लोगो|बैनर|इमेज/g, ' ')
+    .replace(/\b(youtube|yt|instagram|insta|facebook|thumbnail|poster|banner|logo|logos|wallpaper|post|story|reel|card|image|images|photo|photos|picture|pictures|pic|pics|portrait|design|please|bana|banao|do|de|ek|ka|ki|ke|for|of|about|a|an|the|make|create|generate|draw|render|right|left|corner|center|with|and|on|in|into|to|put|show|google\s*flow|google\s*gemini|google)\b/gi, ' ')
+    .replace(/बनाओ|बना|दो|एक|का|की|के|थंबनेल|पोस्टर|लोगो|बैनर|इमेज|तस्वीर/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const w = t.split(' ').filter(Boolean).slice(0, 6);
@@ -401,8 +450,8 @@ export interface StudioUploadAnalysis {
   preserveIdentity?: boolean;
 }
 
-function buildTopicBackgroundQuery(message: string, title: string, recipeId: string): string {
-  const base = cleanTitleFromRequest(message) || title;
+function buildTopicBackgroundQuery(message: string, subjectHint: string, recipeId: string): string {
+  const base = cleanTitleFromRequest(message) || subjectHint;
   if (/\b(cricket|ipl|stadium|match)\b/i.test(message)) return `${base} cricket stadium night floodlights atmosphere`;
   if (/\b(ai|tech|coding|software|saas|gemini|google|cyber|robot)\b/i.test(message)) return `${base} modern dark futuristic tech studio environment`;
   if (/\b(food|recipe|burger|pizza|coffee|restaurant|menu)\b/i.test(message)) return `${base} moody restaurant kitchen table lighting photography`;
@@ -419,13 +468,28 @@ export function fallbackSpec(
   resolved: { style?: string | null; text?: string | null; language?: string; photo?: string | null },
   recipeId: string,
   uploads: Array<{ id: string; name?: string }> = [],
-  uploadAnalyses: StudioUploadAnalysis[] = []
+  uploadAnalyses: StudioUploadAnalysis[] = [],
+  previousSpec: any = null
 ) {
   const [st, pal, defLay] = RECIPE_DEFAULTS[recipeId] || RECIPE_DEFAULTS.generic;
+  const textIntent = analyzeTextAndRenderIntent(message);
   const ocrHeadline = uploadAnalyses.flatMap((u) => u.ocrText || []).find((t) => t && t.trim().length >= 3);
-  const title = resolved.text || ocrHeadline || cleanTitleFromRequest(message);
+  const isTextBearingRecipe = TEXT_BEARING_RECIPES.has(recipeId);
+  const shouldIncludeText =
+    !textIntent.explicitlyNoText &&
+    (textIntent.explicitlyAskedText ||
+      Boolean(resolved.text) ||
+      Boolean(ocrHeadline) ||
+      isTextBearingRecipe ||
+      Boolean(previousSpec?.title));
+
+  const subjectHint = cleanTitleFromRequest(message);
+  const title = shouldIncludeText
+    ? String(resolved.text || textIntent.extractedText || ocrHeadline || previousSpec?.title || subjectHint).trim()
+    : '';
+
   const hindi = isDevaStr(title) || resolved.language === 'hi';
-  const mappedStyle = mapExtendedStyleToCanvasStyle(resolved.style) || st;
+  const mappedStyle = mapExtendedStyleToCanvasStyle(resolved.style) || previousSpec?.style || st;
   const hasUpload = uploads.length > 0 && resolved.photo !== 'no';
   const placement = detectCharacterPlacement(message);
   const logos = detectPromptBrandLogos(message);
@@ -436,32 +500,44 @@ export function fallbackSpec(
     uploadAnalyses.find((u) => u.role === 'main-character' || u.role === 'face-reference' || u.role === 'object') ||
     (uploads[0] ? { uploadId: uploads[0].id, role: 'main-character' as const } : undefined);
 
+  const isDirectPhoto =
+    !shouldIncludeText &&
+    !bgUpload &&
+    !textIntent.hasCustomBackgroundReq &&
+    logos.length === 0 &&
+    !isFaceSwap &&
+    ['generic', 'portrait', 'wallpaper', 'profile-dp', 'product-ad'].includes(recipeId);
+
+  const effPlacement = isDirectPhoto ? 'center' : placement;
+
   const lay =
-    placement === 'left-corner'
+    effPlacement === 'left-corner'
       ? 'subject-left-text-right'
-      : placement === 'center'
+      : effPlacement === 'center'
         ? 'centered-hero'
-        : placement === 'right-corner' && ['thumbnail', 'news-card', 'business-card', 'generic', 'ig-post'].includes(recipeId)
+        : effPlacement === 'right-corner' && ['thumbnail', 'news-card', 'business-card', 'generic', 'ig-post'].includes(recipeId)
           ? 'text-left-subject-right'
           : defLay;
 
   const photoLedRecipe = ['thumbnail', 'poster', 'portrait', 'banner', 'flyer', 'product-ad', 'news-card', 'ig-post'].includes(recipeId);
+  const hasSearchableSubject = subjectHint && subjectHint !== 'Featured Showcase';
   const wantsSearchSubject =
     !hasUpload &&
     resolved.photo !== 'no' &&
-    (/\b(photo|portrait|celebrity|cricketer|player|actor|leader|man|woman|character|person|mountain|car|bike|coffee|product|khan|kohli|elon|tech|ai)\b/i.test(
-      message
-    ) ||
-      placement !== 'right-corner') &&
+    Boolean(hasSearchableSubject) &&
     !['quote-card', 'logo', 'certificate', 'invitation', 'menu'].includes(recipeId);
 
   const wantsSearchBg =
     !bgUpload &&
-    (photoLedRecipe ||
-      /\b(studio|galaxy|city|office|stadium|stage|mountain|forest|background|backdrop|abstract|cyber|street|beach|sunset|night)\b/i.test(
-        message
-      )) &&
+    !isDirectPhoto &&
+    (photoLedRecipe || textIntent.hasCustomBackgroundReq) &&
     !['quote-card', 'logo', 'certificate', 'menu'].includes(recipeId);
+
+  const subjectQuery = isFaceSwap
+    ? buildProPortraitKeyword(message)
+    : isDirectPhoto
+      ? `${subjectHint} studio portrait editorial photography`.slice(0, 80)
+      : subjectHint.slice(0, 80);
 
   const assets: any[] = [];
   if (hasUpload && !isFaceSwap && charUpload) {
@@ -470,18 +546,27 @@ export function fallbackSpec(
       source: 'upload',
       uploadId: charUpload.uploadId,
       role: 'subject',
-      removeBackground: resolved.photo !== 'yes-asis',
-      adjust: { brightness: 1.03, contrast: 1.07, saturate: 1.06 },
+      removeBackground: !isDirectPhoto && resolved.photo !== 'yes-asis',
+      adjust: { brightness: 1.03, contrast: 1.08, saturate: 1.08 },
     });
   } else if (wantsSearchSubject || isFaceSwap) {
     assets.push({
       id: 'a1',
       source: 'search',
-      query: (isFaceSwap ? buildProPortraitKeyword(message) : cleanTitleFromRequest(message)).slice(0, 80),
+      query: subjectQuery,
       role: 'subject',
-      removeBackground: true,
-      adjust: { brightness: 1.03, contrast: 1.06, saturate: 1.06 },
+      removeBackground: !isDirectPhoto && resolved.photo !== 'yes-asis',
+      adjust: { brightness: 1.04, contrast: 1.08, saturate: 1.08 },
     });
+  } else if (previousSpec?.assets?.length) {
+    for (const prevAsset of previousSpec.assets) {
+      if (prevAsset?.source === 'search' && prevAsset?.role === 'subject') {
+        assets.push({
+          ...prevAsset,
+          removeBackground: textIntent.hasCustomBackgroundReq ? true : prevAsset.removeBackground,
+        });
+      }
+    }
   }
 
   if (bgUpload) {
@@ -495,9 +580,10 @@ export function fallbackSpec(
     });
   }
 
-  const bgQuery = buildTopicBackgroundQuery(message, title, recipeId);
+  const bgQuery = buildTopicBackgroundQuery(message, subjectHint, recipeId);
 
   return {
+    renderMode: isDirectPhoto ? 'direct-photo' : 'composite',
     recipe: recipeId,
     style: mappedStyle,
     palette: (STYLE_PAL[mappedStyle] && STYLE_PAL[mappedStyle][0]) || pal,
@@ -505,21 +591,21 @@ export function fallbackSpec(
     layout: lay,
     language: resolved.language || 'en',
     title,
-    accentWord: title.split(' ').slice(-1)[0] || '',
+    accentWord: title ? title.split(' ').slice(-1)[0] || '' : '',
     subtitle: '',
     badge: '',
     cta: '',
     backgroundSpec: {
-      mode: bgUpload ? 'upload' : wantsSearchBg ? 'search' : 'gradient',
+      mode: bgUpload ? 'upload' : wantsSearchBg ? 'search' : isDirectPhoto ? 'none' : 'gradient',
       query: bgQuery,
       mood: mappedStyle,
     },
     characterSpec: {
-      needed: hasUpload || wantsSearchSubject || isFaceSwap,
+      needed: hasUpload || wantsSearchSubject || isFaceSwap || assets.some((a) => a.role === 'subject'),
       source: isFaceSwap ? 'search' : hasUpload ? 'upload' : wantsSearchSubject ? 'search' : 'none',
-      query: isFaceSwap ? buildProPortraitKeyword(message) : cleanTitleFromRequest(message),
-      placement,
-      removeBackground: resolved.photo !== 'yes-asis',
+      query: subjectQuery,
+      placement: effPlacement,
+      removeBackground: !isDirectPhoto && resolved.photo !== 'yes-asis',
     },
     supportingObjects: [],
     logos,
@@ -535,21 +621,23 @@ export function fallbackSpec(
             : mappedStyle === 'luxury'
               ? 'luxury-noir'
               : 'portrait-natural',
-      overlayOpacity: 0.52,
+      overlayOpacity: isDirectPhoto ? 0.22 : 0.48,
       lighting: 'soft key light with clean subject-background separation',
       useTextPlate: false,
     },
     hero:
-      hasUpload || wantsSearchSubject || isFaceSwap
+      hasUpload || wantsSearchSubject || isFaceSwap || assets.some((a) => a.role === 'subject')
         ? { type: 'asset', id: 'a1' }
         : {
             type: ['quote-card', 'logo', 'certificate', 'invitation', 'menu'].includes(recipeId) ? 'none' : 'emoji',
-            char: pickEmoji(message + ' ' + title),
+            char: pickEmoji(message + ' ' + subjectHint),
           },
-    motifs: ['sparkle'],
+    motifs: shouldIncludeText ? ['sparkle'] : [],
     assets,
-    brief: { goal: `Design a crisp ${RECIPES_NAME[recipeId] || 'image'}`, audience: 'viewer', message: title },
-    rationale: `Selected ${STYLE_NAMES[mappedStyle] || mappedStyle} with topic-matched scene backdrop and layered typography.`,
+    brief: { goal: `Design a crisp ${RECIPES_NAME[recipeId] || 'image'}`, audience: 'viewer', message: title || subjectHint },
+    rationale: isDirectPhoto
+      ? `Selected high-resolution studio portrait framing with natural editorial color grading.`
+      : `Selected ${STYLE_NAMES[mappedStyle] || mappedStyle} with topic-matched scene backdrop.`,
   };
 }
 
@@ -561,9 +649,10 @@ export function normalizeCanvasSpec(
     uploads?: Array<{ id: string; name?: string }>;
     uploadAnalyses?: StudioUploadAnalysis[];
     message?: string;
+    previousSpec?: any;
   }
 ) {
-  const { resolved, recipeId, uploads = [], uploadAnalyses = [], message = '' } = opts;
+  const { resolved, recipeId, uploads = [], uploadAnalyses = [], message = '', previousSpec = null } = opts;
   const warn: string[] = [];
 
   // Permissive policy: only allow refusal if strictly extreme CSAM/explicit gore/pornography keywords
@@ -577,15 +666,15 @@ export function normalizeCanvasSpec(
 
   const s: any = { ...(raw || {}) };
   if (raw?.refuse) {
-    Object.assign(s, fallbackSpec(message, resolved, recipeId, uploads, uploadAnalyses));
+    Object.assign(s, fallbackSpec(message, resolved, recipeId, uploads, uploadAnalyses, previousSpec));
   }
 
-  s.recipe = RECIPE_DEFAULTS[s.recipe] ? s.recipe : RECIPE_DEFAULTS[recipeId] ? recipeId : 'generic';
+  s.recipe = RECIPE_DEFAULTS[s.recipe] ? s.recipe : RECIPE_DEFAULTS[recipeId] ? recipeId : previousSpec?.recipe || 'generic';
   const def = RECIPE_DEFAULTS[s.recipe];
 
   const forcedStyle = mapExtendedStyleToCanvasStyle(resolved.style);
   const rawStyle = mapExtendedStyleToCanvasStyle(s.style);
-  s.style = forcedStyle || rawStyle || def[0];
+  s.style = forcedStyle || rawStyle || previousSpec?.style || def[0];
 
   if (!STUDIO_DATA.PALETTES[s.palette as keyof typeof STUDIO_DATA.PALETTES]) {
     s.palette = (STYLE_PAL[s.style] || [def[1]])[0];
@@ -593,9 +682,41 @@ export function normalizeCanvasSpec(
   }
 
   s.language = ['hi', 'en', 'hinglish'].includes(s.language) ? s.language : resolved.language || 'en';
+  const textIntent = analyzeTextAndRenderIntent(message);
   const firstOcr = uploadAnalyses.flatMap((u) => u.ocrText || []).find((t) => t && t.trim().length >= 3);
-  s.title = String(resolved.text || s.title || firstOcr || '').trim().slice(0, 140) || cleanTitleFromRequest(message);
-  const hindi = isDevaStr(s.title + (s.subtitle || '') + (s.badge || ''));
+  const isTextBearingRecipe = TEXT_BEARING_RECIPES.has(s.recipe);
+
+  // Only render text when user asked for text, it is a text-bearing design format, OCR text was supplied, or editing an existing text-bearing spec
+  const allowText =
+    !textIntent.explicitlyNoText &&
+    (textIntent.explicitlyAskedText ||
+      Boolean(resolved.text) ||
+      Boolean(firstOcr) ||
+      isTextBearingRecipe ||
+      Boolean(previousSpec?.title));
+
+  if (!allowText) {
+    s.title = '';
+    s.accentWord = '';
+    s.subtitle = '';
+    s.badge = '';
+    s.cta = '';
+  } else {
+    const rawTitle = String(resolved.text || textIntent.extractedText || s.title || firstOcr || previousSpec?.title || '').trim();
+    s.title = rawTitle ? rawTitle.slice(0, 140) : cleanTitleFromRequest(message);
+    s.accentWord =
+      s.accentWord && s.title.toLowerCase().includes(String(s.accentWord).toLowerCase()) ? String(s.accentWord) : '';
+    for (const k of ['subtitle', 'badge', 'cta']) {
+      s[k] = String(s[k] || '').trim().slice(0, 60);
+    }
+  }
+
+  if (s.recipe === 'quote-card') {
+    s.badge = '';
+    s.cta = '';
+  }
+
+  const hindi = isDevaStr((s.title || '') + (s.subtitle || '') + (s.badge || ''));
 
   const fontEntry = STUDIO_DATA.FONTS[s.fonts as keyof typeof STUDIO_DATA.FONTS];
   if (!fontEntry) {
@@ -605,40 +726,10 @@ export function normalizeCanvasSpec(
     s.fonts = 'hi-bold-poppins';
   }
 
-  // Placement & Corner Resolution
-  const promptPlacement = detectCharacterPlacement(message);
-  const rawPlace = String(s.characterSpec?.placement || '').toLowerCase();
-  const validPlace =
-    rawPlace === 'left-corner' || rawPlace === 'right-corner' || rawPlace === 'center'
-      ? (rawPlace as 'left-corner' | 'right-corner' | 'center')
-      : promptPlacement;
-
-  if (!s.layout) {
-    s.layout =
-      validPlace === 'left-corner'
-        ? 'subject-left-text-right'
-        : validPlace === 'center'
-          ? 'centered-hero'
-          : def[2];
-  } else if (promptPlacement === 'left-corner' && s.layout === 'text-left-subject-right') {
-    s.layout = 'subject-left-text-right';
-  } else if (promptPlacement === 'right-corner' && s.layout === 'subject-left-text-right') {
-    s.layout = 'text-left-subject-right';
-  }
-
-  s.accentWord =
-    s.accentWord && s.title.toLowerCase().includes(String(s.accentWord).toLowerCase()) ? String(s.accentWord) : '';
-  for (const k of ['subtitle', 'badge', 'cta']) {
-    s[k] = String(s[k] || '').trim().slice(0, 60);
-  }
-  if (s.recipe === 'quote-card') {
-    s.badge = '';
-    s.cta = '';
-  }
-
-  s.motifs = (Array.isArray(s.motifs) ? s.motifs : [])
-    .filter((m: string) => VALID_MOTIFS.has(m))
-    .slice(0, 2);
+  const bgUpload = uploadAnalyses.find((u) => u.role === 'background-reference');
+  const charUpload = uploadAnalyses.find(
+    (u) => u.role === 'main-character' || u.role === 'face-reference' || u.role === 'object'
+  );
 
   // Merge LLM logos with deterministic detected logos from prompt
   const promptLogos = detectPromptBrandLogos(message);
@@ -666,21 +757,63 @@ export function normalizeCanvasSpec(
   }
   s.logos = mergedLogos.slice(0, 5);
 
-  const bgUpload = uploadAnalyses.find((u) => u.role === 'background-reference');
-  const charUpload = uploadAnalyses.find(
-    (u) => u.role === 'main-character' || u.role === 'face-reference' || u.role === 'object'
-  );
+  const detectedFaceSwap = detectFaceSwapIntent(message, uploads.length);
+  const wantsFaceSwap = Boolean(s.faceSwap?.needed || detectedFaceSwap) && uploads.length > 0;
 
-  // Photo-led designs search for topic-specific background unless uploaded
+  const isDirectPhoto =
+    !allowText &&
+    !bgUpload &&
+    !textIntent.hasCustomBackgroundReq &&
+    !wantsFaceSwap &&
+    s.logos.length === 0 &&
+    !previousSpec?.backgroundSpec?.query &&
+    ['generic', 'portrait', 'wallpaper', 'profile-dp', 'product-ad'].includes(s.recipe);
+
+  s.renderMode = isDirectPhoto ? 'direct-photo' : 'composite';
+
+  // Placement & Corner Resolution
+  const promptPlacement = detectCharacterPlacement(message);
+  const rawPlace = String(s.characterSpec?.placement || '').toLowerCase();
+  const validPlace = isDirectPhoto
+    ? 'center'
+    : rawPlace === 'left-corner' || rawPlace === 'right-corner' || rawPlace === 'center'
+      ? (rawPlace as 'left-corner' | 'right-corner' | 'center')
+      : promptPlacement;
+
+  if (!s.layout) {
+    s.layout =
+      validPlace === 'left-corner'
+        ? 'subject-left-text-right'
+        : validPlace === 'center'
+          ? 'centered-hero'
+          : def[2];
+  } else if (promptPlacement === 'left-corner' && s.layout === 'text-left-subject-right') {
+    s.layout = 'subject-left-text-right';
+  } else if (promptPlacement === 'right-corner' && s.layout === 'subject-left-text-right') {
+    s.layout = 'text-left-subject-right';
+  }
+
+  s.motifs = allowText
+    ? (Array.isArray(s.motifs) ? s.motifs : [])
+        .filter((m: string) => VALID_MOTIFS.has(m))
+        .slice(0, 2)
+    : [];
+
+  // Photo-led designs search for topic-specific background unless uploaded or direct-photo
   const photoLedRecipe = ['thumbnail', 'poster', 'portrait', 'banner', 'flyer', 'product-ad', 'news-card', 'ig-post'].includes(s.recipe);
   const defaultBgMode = bgUpload
     ? 'upload'
-    : s.backgroundSpec?.mode === 'search' || (photoLedRecipe && !['quote-card', 'logo', 'certificate', 'menu'].includes(s.recipe))
-      ? 'search'
-      : 'gradient';
+    : isDirectPhoto
+      ? 'none'
+      : s.backgroundSpec?.mode === 'search' || textIntent.hasCustomBackgroundReq || (photoLedRecipe && !['quote-card', 'logo', 'certificate', 'menu'].includes(s.recipe))
+        ? 'search'
+        : 'gradient';
   s.backgroundSpec = {
     mode: defaultBgMode,
-    query: String(s.backgroundSpec?.query || buildTopicBackgroundQuery(message, s.title, s.recipe)).trim().slice(0, 80),
+    query:
+      defaultBgMode === 'search'
+        ? String(s.backgroundSpec?.query || buildTopicBackgroundQuery(message, cleanTitleFromRequest(message), s.recipe)).trim().slice(0, 80)
+        : '',
     mood: String(s.backgroundSpec?.mood || s.style),
   };
 
@@ -711,16 +844,16 @@ export function normalizeCanvasSpec(
           : s.style === 'luxury'
             ? 'luxury-noir'
             : 'portrait-natural',
-    overlayOpacity: Number.isFinite(Number(cd.overlayOpacity))
-      ? Math.max(0.25, Math.min(0.85, Number(cd.overlayOpacity)))
-      : 0.52,
+    overlayOpacity: isDirectPhoto
+      ? 0.22
+      : Number.isFinite(Number(cd.overlayOpacity))
+        ? Math.max(0.25, Math.min(0.85, Number(cd.overlayOpacity)))
+        : 0.48,
     lighting: String(cd.lighting || 'Clean key light and depth separation').slice(0, 120),
     useTextPlate: Boolean(cd.useTextPlate),
   };
 
   // Face swap metadata
-  const detectedFaceSwap = detectFaceSwapIntent(message, uploads.length);
-  const wantsFaceSwap = Boolean(s.faceSwap?.needed || detectedFaceSwap) && uploads.length > 0;
   s.faceSwap = {
     needed: wantsFaceSwap,
     proPortraitQuery: wantsFaceSwap
@@ -728,21 +861,42 @@ export function normalizeCanvasSpec(
       : '',
   };
 
-  // Character spec (preserve uploaded character identity unless face-swap or explicit web search requested)
+  const subjQueryHint = cleanTitleFromRequest(message);
+  const canSearchSubject =
+    !charUpload &&
+    !bgUpload &&
+    !wantsFaceSwap &&
+    resolved.photo !== 'no' &&
+    subjQueryHint &&
+    subjQueryHint !== 'Featured Showcase' &&
+    !['quote-card', 'logo', 'certificate', 'invitation', 'menu'].includes(s.recipe);
+
+  const prevSubjectAsset = Array.isArray(previousSpec?.assets)
+    ? previousSpec.assets.find((a: any) => a?.role === 'subject')
+    : null;
+
+  // Character spec (preserve uploaded character or prior generated subject on follow-up edits)
   s.characterSpec = {
-    needed: s.characterSpec?.needed !== false && (uploads.length > 0 || s.assets?.length > 0 || wantsFaceSwap),
+    needed: s.characterSpec?.needed !== false && (uploads.length > 0 || s.assets?.length > 0 || wantsFaceSwap || canSearchSubject || Boolean(prevSubjectAsset)),
     source: wantsFaceSwap
       ? 'search'
       : charUpload || (uploads.length > 0 && !bgUpload)
         ? 'upload'
-        : s.characterSpec?.source === 'search'
+        : s.characterSpec?.source === 'search' || canSearchSubject || prevSubjectAsset?.source === 'search'
           ? 'search'
           : uploads.length > 0 && !bgUpload
             ? 'upload'
             : 'none',
-    query: String(s.characterSpec?.query || s.faceSwap.proPortraitQuery || '').trim().slice(0, 80),
+    query: String(
+      s.characterSpec?.query ||
+        s.faceSwap.proPortraitQuery ||
+        prevSubjectAsset?.query ||
+        (canSearchSubject ? `${subjQueryHint}${isDirectPhoto ? ' studio portrait photography' : ''}` : '')
+    ).trim().slice(0, 80),
     placement: validPlace,
-    removeBackground: s.characterSpec?.removeBackground !== false && resolved.photo !== 'yes-asis',
+    removeBackground: isDirectPhoto
+      ? false
+      : s.characterSpec?.removeBackground !== false && resolved.photo !== 'yes-asis',
   };
 
   // Normalize assets list safely
@@ -768,7 +922,7 @@ export function normalizeCanvasSpec(
         uploadId: targetUpId,
         role: inferredRole,
         removeBackground:
-          inferredRole === 'background'
+          inferredRole === 'background' || isDirectPhoto
             ? false
             : resolved.photo === 'yes-cutout'
               ? true
@@ -778,14 +932,14 @@ export function normalizeCanvasSpec(
         adjust: a.adjust && typeof a.adjust === 'object' ? a.adjust : { brightness: 1.03, contrast: 1.08, saturate: 1.08 },
       });
     } else if (a.source === 'search' && a.query) {
-      // Preserve uploaded character identity instead of searching a stranger when user uploaded a character
+      if (a.role === 'background' && isDirectPhoto) continue;
       if (a.role !== 'background' && charUpload && !wantsFaceSwap && resolved.photo !== 'no') {
         normAssets.push({
           id,
           source: 'upload',
           uploadId: charUpload.uploadId,
           role: 'subject',
-          removeBackground: resolved.photo !== 'yes-asis',
+          removeBackground: !isDirectPhoto && resolved.photo !== 'yes-asis',
           adjust: { brightness: 1.03, contrast: 1.07, saturate: 1.06 },
         });
       } else {
@@ -794,14 +948,14 @@ export function normalizeCanvasSpec(
           source: 'search',
           query: String(a.query).trim().slice(0, 80),
           role: a.role === 'background' ? 'background' : 'subject',
-          removeBackground: a.role === 'background' ? false : a.removeBackground !== false,
-          adjust: a.adjust && typeof a.adjust === 'object' ? a.adjust : {},
+          removeBackground: a.role === 'background' || isDirectPhoto ? false : a.removeBackground !== false,
+          adjust: a.adjust && typeof a.adjust === 'object' ? a.adjust : { brightness: 1.03, contrast: 1.07, saturate: 1.07 },
         });
       }
     }
   }
 
-  // Ensure uploaded background is included if detected
+  // Ensure uploaded or topic background is included for composite mode
   if (bgUpload && !normAssets.some((a) => a.role === 'background')) {
     normAssets.push({
       id: 'bg1',
@@ -812,6 +966,7 @@ export function normalizeCanvasSpec(
       adjust: {},
     });
   } else if (
+    !isDirectPhoto &&
     s.backgroundSpec.mode === 'search' &&
     s.backgroundSpec.query &&
     !normAssets.some((a) => a.role === 'background')
@@ -843,7 +998,7 @@ export function normalizeCanvasSpec(
         source: 'upload',
         uploadId: uid,
         role: 'subject',
-        removeBackground: resolved.photo !== 'yes-asis',
+        removeBackground: !isDirectPhoto && resolved.photo !== 'yes-asis',
         adjust: { brightness: 1.03, contrast: 1.08, saturate: 1.08 },
       });
     } else if (s.characterSpec.source === 'search' && s.characterSpec.query) {
@@ -852,8 +1007,13 @@ export function normalizeCanvasSpec(
         source: 'search',
         query: s.characterSpec.query,
         role: 'subject',
-        removeBackground: s.characterSpec.removeBackground !== false,
-        adjust: { brightness: 1.03, contrast: 1.06, saturate: 1.08 },
+        removeBackground: isDirectPhoto ? false : s.characterSpec.removeBackground !== false,
+        adjust: { brightness: 1.04, contrast: 1.08, saturate: 1.08 },
+      });
+    } else if (prevSubjectAsset) {
+      normAssets.unshift({
+        ...prevSubjectAsset,
+        removeBackground: textIntent.hasCustomBackgroundReq ? true : Boolean(prevSubjectAsset.removeBackground),
       });
     }
   }
@@ -869,10 +1029,10 @@ export function normalizeCanvasSpec(
       s.hero = { type: 'asset', id: subj.id };
     } else {
       warn.push('asset-missing');
-      s.hero = { type: 'emoji', char: pickEmoji(s.title) };
+      s.hero = allowText ? { type: 'emoji', char: pickEmoji(s.title || message) } : { type: 'none' };
     }
   } else if (h.type === 'emoji') {
-    s.hero = { type: 'emoji', char: String(h.char || '').trim().slice(0, 4) || pickEmoji(s.title) };
+    s.hero = allowText ? { type: 'emoji', char: String(h.char || '').trim().slice(0, 4) || pickEmoji(s.title || message) } : { type: 'none' };
   } else if (h.type === 'motif' && VALID_MOTIFS.has(h.id)) {
     s.hero = h;
   } else {

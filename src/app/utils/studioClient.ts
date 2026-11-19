@@ -3,6 +3,7 @@ import { buildWorkspaceAuthHeaders } from './workspaceSession';
 import {
   applyWebGpuColorGrade,
   ColorGradePreset,
+  cutoutWithUltraProV2,
   enhancedBackgroundRemove,
   extractDominantColorsFromDataUrl,
   performWebGpuFaceSwap,
@@ -571,7 +572,7 @@ export async function runStudioClientTask(
   let method = 'none';
   if (p.removeBackground) {
     try {
-      const cut = await enhancedBackgroundRemove(baseDataUrl);
+      const cut = await cutoutWithUltraProV2(baseDataUrl, { maxPasses: 3, enableVisionInspect: true });
       const cutImg = await loadImage(cut.cutoutDataUrl);
       const cutCanvas = document.createElement('canvas');
       cutCanvas.width = cutImg.width;
@@ -582,7 +583,20 @@ export async function runStudioClientTask(
       palette = cut.palette || palette;
       method = cut.method;
     } catch {
-      method = 'none';
+      try {
+        const fallbackCut = await enhancedBackgroundRemove(baseDataUrl);
+        const cutImg = await loadImage(fallbackCut.cutoutDataUrl);
+        const cutCanvas = document.createElement('canvas');
+        cutCanvas.width = cutImg.width;
+        cutCanvas.height = cutImg.height;
+        cutCanvas.getContext('2d')?.drawImage(cutImg, 0, 0);
+        canvas = cutCanvas;
+        outlineScreenshotDataUrl = fallbackCut.outlineScreenshotDataUrl;
+        palette = fallbackCut.palette || palette;
+        method = fallbackCut.method;
+      } catch {
+        method = 'none';
+      }
     }
   }
 
