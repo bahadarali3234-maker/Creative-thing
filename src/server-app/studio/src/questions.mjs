@@ -12,7 +12,7 @@ export function pickQuestions({ message, intent, attachments = [], answers = {},
   if (!answers.size && !sig.sizeKnown) {
     const q = library.idx.questions.size;
     const def = library.size(recipe.defaultSize);
-    const presetOpts = [recipe.defaultSize, ...recipe.altSizes, 'ig-square', 'yt-thumbnail', 'story-reel', 'a4-portrait'];
+    const presetOpts = [recipe.defaultSize, ...recipe.altSizes, 'ig-square', 'yt-thumbnail', 'story-reel', 'poster-2-3'];
     const seen = new Set(); const opts = [];
     for (const id of presetOpts) { const s = library.size(id); if (s && !seen.has(id) && opts.length < 5) { seen.add(id); opts.push({ id: 'preset:' + id, label: { en: `${s.name} ${s.w}×${s.h}`, hi: `${s.name} ${s.w}×${s.h}` } }); } }
     opts.push(q.options.find((o) => o.id === 'custom'));

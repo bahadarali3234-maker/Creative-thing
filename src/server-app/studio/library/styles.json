@@ -10,19 +10,23 @@
   "palettes": [
    "money-red",
    "neon-night",
+   "crimson-cinema",
+   "obsidian-amber",
    "sunset-pop",
    "cyber-lime"
   ],
   "fonts": [
-   "hi-bold-poppins",
+   "punch-oswald",
    "anton-oswald",
+   "hi-bold-poppins",
    "hi-news-khand"
   ],
-  "background": "Saturated gradient or sunburst; subject cut-out with white sticker outline and glow",
+  "background": "Saturated gradient or sunburst with studio keylight; subject cut-out with white sticker outline and rim bloom",
   "shapes": "Large circles, arrows, burst shapes behind subject; 1-2 accent bars",
   "textTreatment": "3-5 words max, 14-18% of canvas width per letter row height, thick stroke (text-shadow ring) + drop shadow, one keyword in accent colour",
   "effects": [
    "sunburst",
+   "rim-bloom",
    "sticker-outline",
    "text-stroke-shadow",
    "vignette"
@@ -222,18 +226,24 @@
   ],
   "palettes": [
    "teal-orange",
+   "obsidian-amber",
+   "crimson-cinema",
    "blood-moon",
    "ink-gold"
   ],
   "fonts": [
+   "magazine-fraunces",
    "editorial-playfair",
    "royal-cinzel",
    "hi-rozha"
   ],
-  "background": "Teal-orange graded photo/gradient, letterbox bars, heavy vignette",
-  "shapes": "Light rays, dust particles, title block at bottom third",
-  "textTreatment": "Serif/cinzel title with wide tracking, small credits line",
+  "background": "Teal-orange or obsidian-amber studio stage backdrop, volumetric keylight, letterbox bars, heavy vignette",
+  "shapes": "Light rays, rim-bloom aura, floor contact shadows, title block at bottom third",
+  "textTreatment": "Expressive display serif/cinzel title with balanced highlight word, small credits line",
   "effects": [
+   "studio-stage",
+   "key-light",
+   "split-light",
    "vignette",
    "light-leak",
    "grain",
@@ -248,22 +258,27 @@
   "mood": "stylish, premium print",
   "bestFor": [
    "poster",
+   "portrait",
    "cover",
    "banner"
   ],
   "palettes": [
+   "studio-porcelain",
    "desert-sand",
+   "emerald-editorial",
    "coral-cream",
    "mono-clean"
   ],
   "fonts": [
+   "magazine-fraunces",
+   "editorial-bricolage",
    "editorial-playfair",
    "luxe-dm-serif",
    "hi-serif"
   ],
-  "background": "Warm paper tone or full-bleed photo with plain colour band",
+  "background": "Warm editorial paper tone or emerald backdrop with full-bleed framed subject",
   "shapes": "Thin rules, masthead, cover lines, issue number",
-  "textTreatment": "Mix of huge serif title and tiny sans captions",
+  "textTreatment": "Mix of expressive serif title and crisp geometric sans captions",
   "effects": [
    "paper-texture",
    "thin-rule"
@@ -283,19 +298,24 @@
   ],
   "palettes": [
    "ink-gold",
+   "obsidian-amber",
+   "emerald-editorial",
    "royal-gold",
    "midnight-emerald"
   ],
   "fonts": [
+   "luxury-cormorant",
    "luxe-dm-serif",
    "royal-cinzel",
    "hi-tiro"
   ],
-  "background": "Black with subtle radial spotlight, fine gold lines",
-  "shapes": "Thin gold borders, ornamental corners, soft glow",
-  "textTreatment": "Gold gradient text or flat gold, wide letter spacing, small caps for details",
+  "background": "Deep obsidian or velvet charcoal with volumetric studio spotlight and fine gold lines",
+  "shapes": "Thin gold borders, ornamental corners, soft spotlight pedestal",
+  "textTreatment": "Gold gradient text or luminous amber, wide letter spacing, small caps for details",
   "effects": [
+   "studio-stage",
    "spotlight",
+   "key-light",
    "gold-text",
    "grain",
    "corner-brackets"

@@ -349,6 +349,46 @@
    "exportSafe": false,
    "usage": "Wrap in a parent with perspective:calc(var(--u)*120).",
    "code": ".fx-iso{transform:rotateX(55deg) rotateZ(-45deg);transform-style:preserve-3d;box-shadow:calc(var(--u)*1.6) calc(var(--u)*1.6) calc(var(--u)*2.4) rgba(0,0,0,.35)}"
+  },
+  {
+   "id": "studio-stage",
+   "name": "Studio stage floor & depth horizon",
+   "type": "css",
+   "exportSafe": true,
+   "usage": "Full-canvas studio floor horizon with ambient occlusion falloff.",
+   "code": ".fx-stage{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 90% 58% at 50% 22%,rgba(255,255,255,.08) 0%,transparent 65%),linear-gradient(180deg,transparent 56%,rgba(0,0,0,.58) 76%,rgba(0,0,0,.84) 100%)}"
+  },
+  {
+   "id": "key-light",
+   "name": "Volumetric studio key light",
+   "type": "css",
+   "exportSafe": true,
+   "usage": "Dramatic overhead or side studio light beam.",
+   "code": ".fx-keylight{position:absolute;inset:0;pointer-events:none;background:conic-gradient(from 155deg at 68% -8%,rgba(255,255,255,.22) 0deg,var(--accent) 18deg,transparent 52deg,transparent 360deg);opacity:.36}"
+  },
+  {
+   "id": "rim-bloom",
+   "name": "Subject ambient rim bloom",
+   "type": "css",
+   "exportSafe": true,
+   "usage": "Soft glowing backdrop halo behind hero subjects and portraits.",
+   "code": ".fx-rimbloom{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 65% 44%,var(--accent) 0%,var(--primary) 26%,transparent 62%);opacity:.28}"
+  },
+  {
+   "id": "split-light",
+   "name": "Dual-tone cinema split lighting",
+   "type": "css",
+   "exportSafe": true,
+   "usage": "Dual cool/warm cinema edge illumination.",
+   "code": ".fx-splitlight{position:absolute;inset:0;pointer-events:none;background:radial-gradient(55% 65% at 0% 35%,var(--primary) 0%,transparent 68%),radial-gradient(55% 65% at 100% 35%,var(--accent) 0%,transparent 68%);opacity:.34}"
+  },
+  {
+   "id": "frosted-plate",
+   "name": "High-contrast readability scrim plate",
+   "type": "css",
+   "exportSafe": true,
+   "usage": "Clean contrast guard plate for headlines over photography.",
+   "code": ".fx-scrim-plate{background:rgba(7,10,19,.82);border:1px solid rgba(255,255,255,.2);border-radius:calc(var(--u)*1.8);box-shadow:0 calc(var(--u)*1.4) calc(var(--u)*3.8) rgba(0,0,0,.46)}"
   }
  ]
 }

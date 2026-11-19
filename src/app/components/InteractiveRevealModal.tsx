@@ -26,13 +26,14 @@ import {
   AudioLines,
   Sparkles,
   KeyRound,
+  CalendarClock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HERO_AVATAR } from '../data/portfolioData';
 import defaultVisibleImg from '../assets/images/back_reveal.png';
 import revealedUnderneathImg from '../assets/images/front_overlay.jpg';
 import { FullScreenChatView, SttSoundBar } from './FullScreenChatView';
-import { AttachedFile } from '../types';
+import { AttachedFile, PromptChatMode } from '../types';
 import { AttachmentGrid } from './AttachmentGrid';
 import { LiveVoiceCallModal } from './LiveVoiceCallModal';
 import { ExploreGptsModal, AiSkillItem } from './ExploreGptsModal';
@@ -94,7 +95,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<'Build' | 'Design' | 'Code' | 'Brand'>('Build');
+  const [selectedMode, setSelectedMode] = useState<PromptChatMode>('Chat');
   const [isRecording, setIsRecording] = useState(false);
   const [activeRecentItem, setActiveRecentItem] = useState('Guest Session');
   const [showResponsePopup, setShowResponsePopup] = useState(false);
@@ -492,8 +493,10 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
 
     const promptText = text || (currentAtts[0] ? `Analyze ${currentAtts[0].name}` : 'Code analysis request');
 
-    if (!bypassBuildyCheck && isWebsiteOrAppUiBuildRequest(promptText, currentAtts)) {
-      setBuildyRedirectRequest(promptText);
+    if (selectedMode !== 'Plan' && !bypassBuildyCheck && isWebsiteOrAppUiBuildRequest(promptText, currentAtts)) {
+      setBuildyRedirectRequest(null);
+      setBuildyInitialPrompt(promptText);
+      setIsBuildyOpen(true);
       setInputValue('');
       setAttachments([]);
       setIsPlusMenuOpen(false);
@@ -1157,43 +1160,52 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Right side: Build ˅ dropdown AND Single Unified Arrow/Mic button */}
+                      {/* Right side: Plan / Chat / Max selector AND Single Unified Arrow/Mic button */}
                       <div className="flex items-center gap-3 sm:gap-4">
-                        {/* Build ˅ Dropdown */}
+                        {/* Mode Selector (Opens at Bottom of Prompt Box) */}
                         <div className="relative">
                           <button
                             type="button"
                             onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
-                            className="flex items-center gap-1.5 text-zinc-900 text-sm sm:text-base font-normal hover:opacity-75 transition-all cursor-pointer active:scale-95"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200/80 text-zinc-900 text-xs sm:text-sm font-semibold transition-all cursor-pointer active:scale-95"
                           >
                             <span>{selectedMode}</span>
-                            <ChevronDown size={17} strokeWidth={2.2} className="text-zinc-500 mt-0.5" />
+                            <ChevronDown size={15} strokeWidth={2.2} className={`text-zinc-600 transition-transform ${isModeMenuOpen ? 'rotate-180' : ''}`} />
                           </button>
 
-                          {/* Mode Popup */}
+                          {/* Mode Popup (Opens Downward at Bottom of Prompt Box) */}
                           <AnimatePresence>
                             {isModeMenuOpen && (
                               <motion.div
-                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                initial={{ opacity: 0, y: -8, scale: 0.96 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                className="absolute bottom-11 right-0 w-36 bg-white text-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 p-1.5 z-50 space-y-1"
+                                exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                                className="absolute top-full mt-2 right-0 w-44 bg-white text-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 p-1.5 z-50 space-y-1"
                               >
-                                {(['Build', 'Design', 'Code', 'Brand'] as const).map((m) => (
+                                {(
+                                  [
+                                    { id: 'Plan', hint: 'Clarify & blueprint' },
+                                    { id: 'Chat', hint: 'Fast conversation' },
+                                    { id: 'Max', hint: 'Full deep effort' },
+                                  ] as const
+                                ).map((m) => (
                                   <button
-                                    key={m}
+                                    key={m.id}
                                     type="button"
                                     onClick={() => {
-                                      setSelectedMode(m);
+                                      setSelectedMode(m.id);
                                       setIsModeMenuOpen(false);
                                     }}
-                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all ${
-                                      selectedMode === m
-                                        ? 'bg-[#00a6ff] text-white'
-                                        : 'text-zinc-700 hover:bg-zinc-100'
+                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                                      selectedMode === m.id
+                                        ? 'bg-zinc-900 text-white'
+                                        : 'text-zinc-800 hover:bg-zinc-100'
                                     }`}
                                   >
-                                    <span>{m}</span>
+                                    <span>{m.id}</span>
+                                    <span className={`text-[10px] font-normal ${selectedMode === m.id ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                                      {m.hint}
+                                    </span>
                                   </button>
                                 ))}
                               </motion.div>
@@ -1237,7 +1249,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                               onClick={() => setIsVoiceCallOpen(true)}
                               aria-label={`Open ${activePersona} Voice Assistant`}
                               title={`Open ${activePersona} Voice & Camera Assistant`}
-                              className="w-9 h-9 rounded-full theme-button-primary flex items-center justify-center active:scale-90 transition-all cursor-pointer"
+                              className="w-9 h-9 rounded-full bg-black hover:bg-zinc-900 text-white shadow-md flex items-center justify-center active:scale-90 transition-all cursor-pointer"
                             >
                               <AudioLines size={18} strokeWidth={2.4} />
                             </button>
@@ -1417,6 +1429,22 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
                             UI Studio
                           </span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            window.dispatchEvent(new CustomEvent('open-gmail-routine-modal', { detail: { tab: 'routine' } }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <CalendarClock size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
+                            <span className="tracking-wide font-semibold">Daily Routine Gmail</span>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                            Gmail
+                          </span>
+                        </button>
                       </div>
                     </div>
 
@@ -1582,6 +1610,7 @@ export const InteractiveRevealModal: React.FC<InteractiveRevealModalProps> = ({
           onOpenLogin={onOpenLogin}
           externalActiveSkill={activeSkill}
           onExternalActiveSkillChange={setActiveSkill}
+          initialMode={selectedMode}
         />
 
         {/* Daro & Zara Live Voice & Camera Vision Modal */}

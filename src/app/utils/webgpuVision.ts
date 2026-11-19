@@ -44,6 +44,13 @@ export interface ContourCutoutResult {
   palette: ExtractedPalette;
 }
 
+export interface VerifiedCutoutResult extends ContourCutoutResult {
+  ok: boolean;
+  qualityScore: number;
+  passesUsed: number;
+  reason: string;
+}
+
 export interface FaceSwapResult {
   ok: boolean;
   refused?: boolean;
@@ -57,6 +64,19 @@ export interface FaceSwapResult {
   height: number;
   targetFaceBox?: FaceBox;
   sourceFaceBox?: FaceBox;
+}
+
+export type ColorGradePreset =
+  | 'cinematic-teal-orange'
+  | 'golden-editorial'
+  | 'neon-pop'
+  | 'luxury-noir'
+  | 'portrait-natural';
+
+export interface ColorGradeResult {
+  canvas: HTMLCanvasElement;
+  preset: ColorGradePreset;
+  usedWebGpu: boolean;
 }
 
 const UNSAFE_PROMPT_REGEX =
@@ -299,11 +319,11 @@ export function analyzeSafetyAndContent(canvas: HTMLCanvasElement, promptText = 
   const ratio = total ? skinCount / total : 0;
   const torsoRatio = total ? torsoSkinCount / (total * 0.4) : 0;
 
-  // Excessive bare torso + bare full-frame exposure guard
-  if (ratio > 0.68 && torsoRatio > 0.72) {
+  // Only trigger skin guard when near-total explicit exposure is paired with unsafe context
+  if (ratio > 0.84 && torsoRatio > 0.86) {
     return {
       safe: false,
-      reason: 'Uploaded or fetched photo appears overly exposed and does not meet studio policy for face swapping.',
+      reason: 'Image appears overly explicit for face swapping.',
       skinExposureRatio: Number(ratio.toFixed(2)),
       meanLuminance: Number((lumSum / Math.max(1, total)).toFixed(2)),
     };
@@ -438,45 +458,138 @@ async function computeAlphaContourMask(rgba: Uint8ClampedArray, w: number, h: nu
   return out;
 }
 
-/**
- * Enhanced Background Remover:
- * 1. Analyzes & extracts background palette
- * 2. Computes foreground matte via AI/saliency segmentation
- * 3. Draws a glowing cyan/electric contour outline around the character (saved as screenshot for Thinking UI)
- * 4. Removes background cleanly with edge feathering
- */
-export async function enhancedBackgroundRemove(sourceDataUrl: string): Promise<ContourCutoutResult> {
-  const srcImg = await loadImageEl(sourceDataUrl);
-  const baseCanvas = imageToCanvas(srcImg, 1200);
-  const palette = extractDominantColorsFromCanvas(baseCanvas);
-
-  let cutoutCanvas: HTMLCanvasElement;
-  let usedMethod: ContourCutoutResult['method'] = 'simple';
-
-  try {
-    const cut = await removeBackground(sourceDataUrl, { edge_feather: 2, tolerance: 50 });
-    const cutImg = await loadImageEl(cut.dataURL);
-    cutoutCanvas = imageToCanvas(cutImg, 1200);
-    usedMethod = cut.method === 'ai' ? 'webgpu-ai' : 'webgpu-contour';
-  } catch {
-    cutoutCanvas = await removeBackgroundSimple(sourceDataUrl, { tolerance: 52, feather: 2 });
-    usedMethod = 'simple';
-  }
-
-  // Build glowing contour outline preview screenshot over dimmed original image
+function decontaminateAndTrimCutoutEdges(cutoutCanvas: HTMLCanvasElement, erodePx = 0) {
   const W = cutoutCanvas.width;
   const H = cutoutCanvas.height;
   const ctxCut = cutoutCanvas.getContext('2d', { willReadFrequently: true });
   const imgData = ctxCut?.getImageData(0, 0, W, H);
-  const edgeMask = imgData ? await computeAlphaContourMask(imgData.data, W, H) : new Uint8ClampedArray(W * H);
+  if (!imgData || !ctxCut) return null;
 
+  const cd = imgData.data;
+  const copy = new Uint8ClampedArray(cd);
+
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = (y * W + x) * 4;
+      const a = copy[i + 3];
+
+      if (erodePx > 0 && a > 25) {
+        let minNeighbor = a;
+        for (let dy = -erodePx; dy <= erodePx; dy++) {
+          const ny = Math.max(0, Math.min(H - 1, y + dy));
+          for (let dx = -erodePx; dx <= erodePx; dx++) {
+            const nx = Math.max(0, Math.min(W - 1, x + dx));
+            const na = copy[(ny * W + nx) * 4 + 3];
+            if (na < minNeighbor) minNeighbor = na;
+          }
+        }
+        if (minNeighbor < 40) {
+          cd[i + 3] = Math.round(a * 0.25);
+        }
+      }
+
+      const curA = cd[i + 3];
+      if (curA > 14 && curA < 232) {
+        let sr = 0, sg = 0, sb = 0, sw = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          const ny = Math.max(0, Math.min(H - 1, y + dy));
+          for (let dx = -2; dx <= 2; dx++) {
+            const nx = Math.max(0, Math.min(W - 1, x + dx));
+            const ni = (ny * W + nx) * 4;
+            if (copy[ni + 3] > 228) {
+              sr += copy[ni];
+              sg += copy[ni + 1];
+              sb += copy[ni + 2];
+              sw += 1;
+            }
+          }
+        }
+        if (sw > 0) {
+          cd[i] = Math.round(copy[i] * 0.2 + (sr / sw) * 0.8);
+          cd[i + 1] = Math.round(copy[i + 1] * 0.2 + (sg / sw) * 0.8);
+          cd[i + 2] = Math.round(copy[i + 2] * 0.2 + (sb / sw) * 0.8);
+        }
+      }
+    }
+  }
+  ctxCut.putImageData(imgData, 0, 0);
+  return imgData;
+}
+
+export function verifyCutoutQuality(canvas: HTMLCanvasElement): { ok: boolean; score: number; reason: string } {
+  const s = document.createElement('canvas');
+  const k = Math.min(1, 96 / Math.max(canvas.width, canvas.height, 1));
+  s.width = Math.max(12, Math.round(canvas.width * k));
+  s.height = Math.max(12, Math.round(canvas.height * k));
+  const ctx = s.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return { ok: true, score: 0.75, reason: 'default pass' };
+
+  ctx.drawImage(canvas, 0, 0, s.width, s.height);
+  const d = ctx.getImageData(0, 0, s.width, s.height).data;
+  const total = s.width * s.height;
+  let opaque = 0;
+  let semi = 0;
+  let borderOpaque = 0;
+  let borderTotal = 0;
+  let centerOpaque = 0;
+  let centerTotal = 0;
+
+  for (let y = 0; y < s.height; y++) {
+    for (let x = 0; x < s.width; x++) {
+      const a = d[(y * s.width + x) * 4 + 3];
+      if (a > 190) opaque++;
+      else if (a > 18) semi++;
+
+      if (x < 3 || x >= s.width - 3 || y < 3) {
+        borderTotal++;
+        if (a > 190) borderOpaque++;
+      }
+      if (x > s.width * 0.24 && x < s.width * 0.76 && y > s.height * 0.14 && y < s.height * 0.82) {
+        centerTotal++;
+        if (a > 160) centerOpaque++;
+      }
+    }
+  }
+
+  const fgRatio = opaque / total;
+  const borderRatio = borderOpaque / Math.max(1, borderTotal);
+  const centerRatio = centerOpaque / Math.max(1, centerTotal);
+  const semiRatio = semi / total;
+
+  if (fgRatio < 0.05) {
+    return { ok: false, score: 0.15, reason: 'Cutout removed too much of the subject' };
+  }
+  if (fgRatio > 0.87 && borderRatio > 0.76) {
+    return { ok: false, score: 0.2, reason: 'Background was not cleanly separated' };
+  }
+  if (centerRatio < 0.12) {
+    return { ok: false, score: 0.22, reason: 'Main center subject lost during matting' };
+  }
+
+  const score = Math.max(
+    0.1,
+    Math.min(1, 1 - Math.max(0, borderRatio - 0.35) * 0.65 - semiRatio * 0.55)
+  );
+  return {
+    ok: score >= 0.52,
+    score: Number(score.toFixed(2)),
+    reason: score >= 0.52 ? 'Clean foreground isolation' : 'Edges need tighter background removal',
+  };
+}
+
+async function buildOutlinePreviewDataUrl(
+  baseCanvas: HTMLCanvasElement,
+  cutoutCanvas: HTMLCanvasElement,
+  edgeMask: Uint8ClampedArray
+): Promise<string> {
+  const W = cutoutCanvas.width;
+  const H = cutoutCanvas.height;
   const previewCanvas = document.createElement('canvas');
   previewCanvas.width = W;
   previewCanvas.height = H;
   const pCtx = previewCanvas.getContext('2d');
   if (pCtx) {
     pCtx.drawImage(baseCanvas, 0, 0, W, H);
-    // Dim original background slightly so traced contour pops vividly
     pCtx.fillStyle = 'rgba(8, 12, 24, 0.42)';
     pCtx.fillRect(0, 0, W, H);
     pCtx.drawImage(cutoutCanvas, 0, 0, W, H);
@@ -488,8 +601,7 @@ export async function enhancedBackgroundRemove(sourceDataUrl: string): Promise<C
       if (e > 20) {
         const px = i * 4;
         const mix = Math.min(1, e / 140);
-        // Vivid electric cyan-blue contour stroke (#00d4ff)
-        pd[px] = Math.round(pd[px] * (1 - mix) + 0 * mix);
+        pd[px] = Math.round(pd[px] * (1 - mix));
         pd[px + 1] = Math.round(pd[px + 1] * (1 - mix) + 216 * mix);
         pd[px + 2] = Math.round(pd[px + 2] * (1 - mix) + 255 * mix);
         pd[px + 3] = 255;
@@ -497,15 +609,164 @@ export async function enhancedBackgroundRemove(sourceDataUrl: string): Promise<C
     }
     pCtx.putImageData(pData, 0, 0);
   }
+  return previewCanvas.toDataURL('image/jpeg', 0.84);
+}
+
+/**
+ * Enhanced Background Remover (single best contour pass)
+ */
+export async function enhancedBackgroundRemove(sourceDataUrl: string): Promise<ContourCutoutResult> {
+  const verified = await cutoutVerifyAndRefine(sourceDataUrl, 1);
+  return {
+    method: verified.method,
+    outlineScreenshotDataUrl: verified.outlineScreenshotDataUrl,
+    cutoutDataUrl: verified.cutoutDataUrl,
+    width: verified.width,
+    height: verified.height,
+    palette: verified.palette,
+  };
+}
+
+/**
+ * 3-Pass WebGPU Cutout Verifier & Refiner:
+ * Runs progressive matte isolation & halo choke up to maxPasses (default 3)
+ * and verifies foreground cleanliness before returning.
+ */
+export async function cutoutVerifyAndRefine(
+  sourceDataUrl: string,
+  maxPasses = 3
+): Promise<VerifiedCutoutResult> {
+  const srcImg = await loadImageEl(sourceDataUrl);
+  const baseCanvas = imageToCanvas(srcImg, 1200);
+  const palette = extractDominantColorsFromCanvas(baseCanvas);
+
+  const passConfigs: Array<{ mode: 'ai' | 'simple'; tolerance: number; feather: number; erode: number }> = [
+    { mode: 'ai', tolerance: 46, feather: 2, erode: 0 },
+    { mode: 'simple', tolerance: 38, feather: 2, erode: 1 },
+    { mode: 'simple', tolerance: 62, feather: 2, erode: 1 },
+  ];
+
+  let bestResult: {
+    canvas: HTMLCanvasElement;
+    method: ContourCutoutResult['method'];
+    edgeMask: Uint8ClampedArray;
+    score: number;
+    ok: boolean;
+    reason: string;
+    passesUsed: number;
+  } | null = null;
+
+  const limit = Math.max(1, Math.min(3, maxPasses));
+  for (let passIdx = 0; passIdx < limit; passIdx++) {
+    const cfg = passConfigs[passIdx];
+    let cutoutCanvas: HTMLCanvasElement;
+    let usedMethod: ContourCutoutResult['method'] = 'simple';
+
+    try {
+      if (cfg.mode === 'ai') {
+        const cut = await removeBackground(sourceDataUrl, { edge_feather: cfg.feather, tolerance: cfg.tolerance });
+        const cutImg = await loadImageEl(cut.dataURL);
+        cutoutCanvas = imageToCanvas(cutImg, 1200);
+        usedMethod = cut.method === 'ai' ? 'webgpu-ai' : 'webgpu-contour';
+      } else {
+        cutoutCanvas = await removeBackgroundSimple(sourceDataUrl, { tolerance: cfg.tolerance, feather: cfg.feather });
+        usedMethod = 'webgpu-contour';
+      }
+    } catch {
+      cutoutCanvas = await removeBackgroundSimple(sourceDataUrl, { tolerance: cfg.tolerance, feather: cfg.feather });
+      usedMethod = 'simple';
+    }
+
+    const imgData = decontaminateAndTrimCutoutEdges(cutoutCanvas, cfg.erode);
+    const edgeMask = imgData
+      ? await computeAlphaContourMask(imgData.data, cutoutCanvas.width, cutoutCanvas.height)
+      : new Uint8ClampedArray(cutoutCanvas.width * cutoutCanvas.height);
+
+    const check = verifyCutoutQuality(cutoutCanvas);
+    if (!bestResult || check.score > bestResult.score) {
+      bestResult = {
+        canvas: cutoutCanvas,
+        method: usedMethod,
+        edgeMask,
+        score: check.score,
+        ok: check.ok,
+        reason: check.reason,
+        passesUsed: passIdx + 1,
+      };
+    }
+    if (check.ok) {
+      break;
+    }
+  }
+
+  const chosen = bestResult!;
+  const outlineScreenshotDataUrl = await buildOutlinePreviewDataUrl(baseCanvas, chosen.canvas, chosen.edgeMask);
 
   return {
-    method: usedMethod,
-    outlineScreenshotDataUrl: previewCanvas.toDataURL('image/jpeg', 0.84),
-    cutoutDataUrl: cutoutCanvas.toDataURL('image/png'),
-    width: W,
-    height: H,
+    ok: chosen.ok,
+    qualityScore: chosen.score,
+    passesUsed: chosen.passesUsed,
+    reason: chosen.reason,
+    method: chosen.method,
+    outlineScreenshotDataUrl,
+    cutoutDataUrl: chosen.canvas.toDataURL('image/png'),
+    width: chosen.canvas.width,
+    height: chosen.canvas.height,
     palette,
   };
+}
+
+/**
+ * Cleanly infills rectangular regions (e.g. detected text regions on an uploaded flat graphic)
+ * by interpolating surrounding border pixels so users can drag/edit scanned Canva text layers cleanly.
+ */
+export function createInpaintedBackdrop(
+  srcCanvas: HTMLCanvasElement,
+  boxes: Array<{ xPct: number; yPct: number; wPct: number; hPct: number; bgSample?: string }>
+): HTMLCanvasElement {
+  const out = document.createElement('canvas');
+  out.width = srcCanvas.width;
+  out.height = srcCanvas.height;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return out;
+  ctx.drawImage(srcCanvas, 0, 0);
+
+  const W = out.width;
+  const H = out.height;
+  for (const b of boxes) {
+    const padX = Math.max(4, Math.round(W * 0.01));
+    const padY = Math.max(4, Math.round(H * 0.01));
+    const x0 = Math.max(0, Math.floor((b.xPct / 100) * W) - padX);
+    const y0 = Math.max(0, Math.floor((b.yPct / 100) * H) - padY);
+    const bw = Math.min(W - x0, Math.ceil((b.wPct / 100) * W) + padX * 2);
+    const bh = Math.min(H - y0, Math.ceil((b.hPct / 100) * H) + padY * 2);
+    if (bw < 6 || bh < 6) continue;
+
+    // Sample vertical strips immediately above & below box to blend cleanly across gradients/photos
+    const topY = Math.max(0, y0 - 3);
+    const botY = Math.min(H - 1, y0 + bh + 2);
+    const imgData = ctx.getImageData(x0, y0, bw, bh);
+    const topStrip = ctx.getImageData(x0, topY, bw, 1).data;
+    const botStrip = ctx.getImageData(x0, botY, bw, 1).data;
+    const d = imgData.data;
+
+    for (let py = 0; py < bh; py++) {
+      const ty = py / Math.max(1, bh - 1);
+      for (let px = 0; px < bw; px++) {
+        const si = px * 4;
+        const di = (py * bw + px) * 4;
+        const r = Math.round(topStrip[si] * (1 - ty) + botStrip[si] * ty);
+        const g = Math.round(topStrip[si + 1] * (1 - ty) + botStrip[si + 1] * ty);
+        const bl = Math.round(topStrip[si + 2] * (1 - ty) + botStrip[si + 2] * ty);
+        d[di] = r;
+        d[di + 1] = g;
+        d[di + 2] = bl;
+        d[di + 3] = 255;
+      }
+    }
+    ctx.putImageData(imgData, x0, y0);
+  }
+  return out;
 }
 
 /**
@@ -823,15 +1084,17 @@ export async function performWebGpuFaceSwap({
             let adjR = clamp((sr - p.smR) * p.scR + p.tmR, 0.0, 255.0);
             let adjG = clamp((sg - p.smG) * p.scG + p.tmG, 0.0, 255.0);
             let adjB = clamp((sb - p.smB) * p.scB + p.tmB, 0.0, 255.0);
-            let tr = mix(sr, adjR, 0.72);
-            let tg = mix(sg, adjG, 0.72);
-            let tb = mix(sb, adjB, 0.72);
+            let tr = mix(sr, adjR, 0.78);
+            let tg = mix(sg, adjG, 0.78);
+            let tb = mix(sb, adjB, 0.78);
 
-            // Smooth anatomical oval face feather mask (keeps hair, ears, neck natural)
-            let nx = (x - p.w * 0.5) / (p.w * 0.40);
-            let ny = (y - p.h * 0.50) / (p.h * 0.44);
+            // Soft anatomical contour feather mask (wider upper brow/cheek, tapered chin)
+            let taper = mix(1.02, 0.88, clamp(y / max(1.0, p.h), 0.0, 1.0));
+            let nx = (x - p.w * 0.5) / (p.w * 0.40 * taper);
+            let ny = (y - p.h * 0.48) / (p.h * 0.45);
             let r = sqrt(nx * nx + ny * ny);
-            let mask = clamp(1.0 - smoothstep(0.58, 1.0, r), 0.0, 1.0);
+            let mask = clamp(1.0 - smoothstep(0.50, 0.98, r), 0.0, 1.0);
+            mask = mask * mask * (3.0 - 2.0 * mask);
 
             let rr = u32(clamp(mix(dr, tr, mask), 0.0, 255.0));
             let rg = u32(clamp(mix(dg, tg, mask), 0.0, 255.0));
@@ -889,6 +1152,7 @@ export async function performWebGpuFaceSwap({
     };
     const clamp255 = (v: number) => Math.max(0, Math.min(255, v));
     for (let y = 0; y < bh; y++) {
+      const taper = 1.02 + (0.88 - 1.02) * Math.max(0, Math.min(1, y / Math.max(1, bh)));
       for (let x = 0; x < bw; x++) {
         const i = (y * bw + x) * 4;
         const sr = srcArr[i], sg = srcArr[i + 1], sb = srcArr[i + 2];
@@ -897,14 +1161,15 @@ export async function performWebGpuFaceSwap({
         const adjR = clamp255((sr - sourceStats.mean[0]) * scaleR + targetStats.mean[0]);
         const adjG = clamp255((sg - sourceStats.mean[1]) * scaleG + targetStats.mean[1]);
         const adjB = clamp255((sb - sourceStats.mean[2]) * scaleB + targetStats.mean[2]);
-        const tr = sr * 0.28 + adjR * 0.72;
-        const tg = sg * 0.28 + adjG * 0.72;
-        const tb = sb * 0.28 + adjB * 0.72;
+        const tr = sr * 0.22 + adjR * 0.78;
+        const tg = sg * 0.22 + adjG * 0.78;
+        const tb = sb * 0.22 + adjB * 0.78;
 
-        const nx = (x - bw * 0.5) / (bw * 0.4);
-        const ny = (y - bh * 0.5) / (bh * 0.44);
+        const nx = (x - bw * 0.5) / (bw * 0.4 * taper);
+        const ny = (y - bh * 0.48) / (bh * 0.45);
         const dist = Math.hypot(nx, ny);
-        const mask = Math.max(0, Math.min(1, 1 - smoothstep(0.58, 1.0, dist)));
+        const rawMask = Math.max(0, Math.min(1, 1 - smoothstep(0.5, 0.98, dist)));
+        const mask = rawMask * rawMask * (3 - 2 * rawMask);
 
         blended[i] = Math.round(dr * (1 - mask) + tr * mask);
         blended[i + 1] = Math.round(dg * (1 - mask) + tg * mask);
@@ -929,4 +1194,394 @@ export async function performWebGpuFaceSwap({
     targetFaceBox: targetBox,
     sourceFaceBox: sourceBox,
   };
+}
+
+/**
+ * Studio WebGPU WGSL Compute Shader for Cinema Color Grading & Depth Tone Mapping.
+ * Preserves alpha channel cleanly so cutouts and transparent layers stay crisp.
+ */
+export async function applyWebGpuColorGrade(
+  canvas: HTMLCanvasElement,
+  preset: ColorGradePreset = 'portrait-natural'
+): Promise<ColorGradeResult> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = W;
+  outCanvas.height = H;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const oCtx = outCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || !oCtx || W < 2 || H < 2) {
+    return { canvas, preset, usedWebGpu: false };
+  }
+
+  const imgData = ctx.getImageData(0, 0, W, H);
+  const src = imgData.data;
+  const dst = new Uint8ClampedArray(src.length);
+
+  // Preset tuning vectors: [contrast, vibrance, shadowTintR, shadowTintG, shadowTintB, hiTintR, hiTintG, hiTintB, vignette]
+  const PRESET_MAP: Record<ColorGradePreset, number[]> = {
+    'cinematic-teal-orange': [1.14, 1.12, -10, 12, 20, 18, 8, -10, 0.24],
+    'golden-editorial': [1.08, 1.06, 8, 5, -4, 16, 11, -6, 0.16],
+    'neon-pop': [1.18, 1.24, -8, 10, 22, 12, -4, 18, 0.2],
+    'luxury-noir': [1.16, 0.94, 4, 2, -2, 14, 10, -4, 0.28],
+    'portrait-natural': [1.07, 1.08, 2, 2, 4, 10, 6, 0, 0.12],
+  };
+  const cfg = PRESET_MAP[preset] || PRESET_MAP['portrait-natural'];
+
+  let usedWebGpu = false;
+  const device = await getWebGpuDevice();
+  if (device && typeof (globalThis as any).GPUBufferUsage !== 'undefined') {
+    try {
+      const GPUBU = (globalThis as any).GPUBufferUsage;
+      const GPUMap = (globalThis as any).GPUMapMode;
+      const byteLen = src.byteLength;
+      const inBuf = device.createBuffer({ size: byteLen, usage: GPUBU.STORAGE | GPUBU.COPY_DST });
+      const outBuf = device.createBuffer({ size: byteLen, usage: GPUBU.STORAGE | GPUBU.COPY_SRC });
+      const readBuf = device.createBuffer({ size: byteLen, usage: GPUBU.MAP_READ | GPUBU.COPY_DST });
+      const paramBuf = device.createBuffer({ size: 48, usage: GPUBU.UNIFORM | GPUBU.COPY_DST });
+
+      device.queue.writeBuffer(inBuf, 0, src);
+      device.queue.writeBuffer(
+        paramBuf,
+        0,
+        new Float32Array([W, H, cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[5], cfg[6], cfg[7], cfg[8], 0])
+      );
+
+      const module = device.createShaderModule({
+        code: `
+          struct Params {
+            w: f32, h: f32, contrast: f32, vibrance: f32,
+            sr: f32, sg: f32, sb: f32,
+            hr: f32, hg: f32, hb: f32,
+            vig: f32, pad: f32,
+          };
+          @group(0) @binding(0) var<storage, read> srcPx: array<u32>;
+          @group(0) @binding(1) var<storage, read_write> outPx: array<u32>;
+          @group(0) @binding(2) var<uniform> p: Params;
+
+          @compute @workgroup_size(8, 8)
+          fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+            let x = f32(gid.x);
+            let y = f32(gid.y);
+            if (x >= p.w || y >= p.h) { return; }
+            let idx = gid.y * u32(p.w) + gid.x;
+            let px = srcPx[idx];
+            let a = (px >> 24u) & 255u;
+            if (a < 4u) {
+              outPx[idx] = px;
+              return;
+            }
+            var r = f32(px & 255u);
+            var g = f32((px >> 8u) & 255u);
+            var b = f32((px >> 16u) & 255u);
+
+            // S-curve contrast around midpoint
+            r = clamp((r - 128.0) * p.contrast + 128.0, 0.0, 255.0);
+            g = clamp((g - 128.0) * p.contrast + 128.0, 0.0, 255.0);
+            b = clamp((b - 128.0) * p.contrast + 128.0, 0.0, 255.0);
+
+            // Vibrance boost
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            r = clamp(lum + (r - lum) * p.vibrance, 0.0, 255.0);
+            g = clamp(lum + (g - lum) * p.vibrance, 0.0, 255.0);
+            b = clamp(lum + (b - lum) * p.vibrance, 0.0, 255.0);
+
+            // Shadow / Highlight split toning
+            let t = clamp(lum / 255.0, 0.0, 1.0);
+            let sh = (1.0 - t) * (1.0 - t);
+            let hi = t * t;
+            r = clamp(r + p.sr * sh + p.hr * hi, 0.0, 255.0);
+            g = clamp(g + p.sg * sh + p.hg * hi, 0.0, 255.0);
+            b = clamp(b + p.sb * sh + p.hb * hi, 0.0, 255.0);
+
+            // Soft optical edge vignette (only on opaque background plates)
+            if (a > 240u) {
+              let dx = (x / p.w) - 0.5;
+              let dy = (y / p.h) - 0.5;
+              let dist = sqrt(dx * dx + dy * dy);
+              let v = 1.0 - smoothstep(0.42, 0.85, dist) * p.vig;
+              r *= v;
+              g *= v;
+              b *= v;
+            }
+
+            let rr = u32(clamp(r, 0.0, 255.0));
+            let rg = u32(clamp(g, 0.0, 255.0));
+            let rb = u32(clamp(b, 0.0, 255.0));
+            outPx[idx] = rr | (rg << 8u) | (rb << 16u) | (a << 24u);
+          }
+        `,
+      });
+
+      const pipeline = device.createComputePipeline({
+        layout: 'auto',
+        compute: { module, entryPoint: 'main' },
+      });
+      const bg = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: inBuf } },
+          { binding: 1, resource: { buffer: outBuf } },
+          { binding: 2, resource: { buffer: paramBuf } },
+        ],
+      });
+
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bg);
+      pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
+      pass.end();
+      enc.copyBufferToBuffer(outBuf, 0, readBuf, 0, byteLen);
+      device.queue.submit([enc.finish()]);
+
+      await readBuf.mapAsync(GPUMap.READ);
+      dst.set(new Uint8ClampedArray(readBuf.getMappedRange()));
+      readBuf.unmap();
+      inBuf.destroy();
+      outBuf.destroy();
+      readBuf.destroy();
+      paramBuf.destroy();
+      usedWebGpu = true;
+    } catch {
+      usedWebGpu = false;
+    }
+  }
+
+  if (!usedWebGpu) {
+    const [contrast, vibrance, sr, sg, sb, hr, hg, hb, vig] = cfg;
+    const clamp255 = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
+    for (let y = 0; y < H; y++) {
+      const dy = y / H - 0.5;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const a = src[i + 3];
+        if (a < 4) {
+          dst[i] = src[i];
+          dst[i + 1] = src[i + 1];
+          dst[i + 2] = src[i + 2];
+          dst[i + 3] = a;
+          continue;
+        }
+        let r = clamp255((src[i] - 128) * contrast + 128);
+        let g = clamp255((src[i + 1] - 128) * contrast + 128);
+        let b = clamp255((src[i + 2] - 128) * contrast + 128);
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        r = clamp255(lum + (r - lum) * vibrance);
+        g = clamp255(lum + (g - lum) * vibrance);
+        b = clamp255(lum + (b - lum) * vibrance);
+        const t = lum / 255;
+        const sh = (1 - t) * (1 - t);
+        const hi = t * t;
+        r = clamp255(r + sr * sh + hr * hi);
+        g = clamp255(g + sg * sh + hg * hi);
+        b = clamp255(b + sb * sh + hb * hi);
+        if (a > 240) {
+          const dx = x / W - 0.5;
+          const dist = Math.hypot(dx, dy);
+          const s = Math.max(0, Math.min(1, (dist - 0.42) / 0.43));
+          const v = 1 - s * s * (3 - 2 * s) * vig;
+          r *= v;
+          g *= v;
+          b *= v;
+        }
+        dst[i] = Math.round(r);
+        dst[i + 1] = Math.round(g);
+        dst[i + 2] = Math.round(b);
+        dst[i + 3] = a;
+      }
+    }
+  }
+
+  oCtx.putImageData(new ImageData(dst, W, H), 0, 0);
+  return { canvas: outCanvas, preset, usedWebGpu };
+}
+
+export interface WebGpuCapabilityReport {
+  available: boolean;
+  runtimeMode: 'webgpu' | 'canvas-fallback';
+  maxBufferSize: number;
+  adapterLabel: string;
+}
+
+/**
+ * Checks real browser WebGPU GPUAdapter & memory limits cleanly without pretending
+ * WebGPU generates pixels directly (execution acceleration layer only).
+ */
+export async function probeWebGpuCapabilities(): Promise<WebGpuCapabilityReport> {
+  try {
+    const gpu = (navigator as any)?.gpu;
+    if (!gpu || typeof gpu.requestAdapter !== 'function') {
+      return { available: false, runtimeMode: 'canvas-fallback', maxBufferSize: 0, adapterLabel: 'CPU Canvas Fallback' };
+    }
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) {
+      return { available: false, runtimeMode: 'canvas-fallback', maxBufferSize: 0, adapterLabel: 'CPU Canvas Fallback' };
+    }
+    const maxBufferSize = Number(adapter.limits?.maxBufferSize || 0);
+    const info = (adapter as any).info || {};
+    const label = [info.vendor, info.architecture, info.device].filter(Boolean).join(' ') || 'WebGPU Hardware Adapter';
+    const device = await getWebGpuDevice();
+    if (!device) {
+      return { available: false, runtimeMode: 'canvas-fallback', maxBufferSize, adapterLabel: 'CPU Canvas Fallback' };
+    }
+    return {
+      available: true,
+      runtimeMode: 'webgpu',
+      maxBufferSize,
+      adapterLabel: label,
+    };
+  } catch {
+    return { available: false, runtimeMode: 'canvas-fallback', maxBufferSize: 0, adapterLabel: 'CPU Canvas Fallback' };
+  }
+}
+
+/**
+ * Subtle WGSL Unsharp-Mask sharpening pass (with CPU fallback) that crisps edges and
+ * final layered compositions while strictly preserving alpha.
+ */
+export async function applyWebGpuSharpen(
+  canvas: HTMLCanvasElement,
+  strength = 0.2
+): Promise<{ canvas: HTMLCanvasElement; usedWebGpu: boolean }> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || W < 4 || H < 4 || strength <= 0) {
+    return { canvas, usedWebGpu: false };
+  }
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = W;
+  outCanvas.height = H;
+  const oCtx = outCanvas.getContext('2d', { willReadFrequently: true });
+  if (!oCtx) return { canvas, usedWebGpu: false };
+
+  const imgData = ctx.getImageData(0, 0, W, H);
+  const src = imgData.data;
+  const dst = new Uint8ClampedArray(src.length);
+
+  let usedWebGpu = false;
+  const device = await getWebGpuDevice();
+  if (device && typeof (globalThis as any).GPUBufferUsage !== 'undefined' && src.byteLength <= 64 * 1024 * 1024) {
+    try {
+      const GPUBU = (globalThis as any).GPUBufferUsage;
+      const GPUMap = (globalThis as any).GPUMapMode;
+      const byteLen = src.byteLength;
+      const inBuf = device.createBuffer({ size: byteLen, usage: GPUBU.STORAGE | GPUBU.COPY_DST });
+      const outBuf = device.createBuffer({ size: byteLen, usage: GPUBU.STORAGE | GPUBU.COPY_SRC });
+      const readBuf = device.createBuffer({ size: byteLen, usage: GPUBU.MAP_READ | GPUBU.COPY_DST });
+      const paramBuf = device.createBuffer({ size: 16, usage: GPUBU.UNIFORM | GPUBU.COPY_DST });
+
+      device.queue.writeBuffer(inBuf, 0, src);
+      device.queue.writeBuffer(paramBuf, 0, new Float32Array([W, H, strength, 0]));
+
+      const module = device.createShaderModule({
+        code: `
+          struct Params { w: f32, h: f32, strength: f32, pad: f32 };
+          @group(0) @binding(0) var<storage, read> srcPx: array<u32>;
+          @group(0) @binding(1) var<storage, read_write> outPx: array<u32>;
+          @group(0) @binding(2) var<uniform> p: Params;
+
+          fn sampleRgb(x: i32, y: i32, iw: i32, ih: i32) -> vec3<f32> {
+            let cx = clamp(x, 0, iw - 1);
+            let cy = clamp(y, 0, ih - 1);
+            let px = srcPx[u32(cy * iw + cx)];
+            return vec3<f32>(f32(px & 255u), f32((px >> 8u) & 255u), f32((px >> 16u) & 255u));
+          }
+
+          @compute @workgroup_size(8, 8)
+          fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+            let iw = i32(p.w);
+            let ih = i32(p.h);
+            let ix = i32(gid.x);
+            let iy = i32(gid.y);
+            if (ix >= iw || iy >= ih) { return; }
+            let idx = u32(iy * iw + ix);
+            let raw = srcPx[idx];
+            let a = (raw >> 24u) & 255u;
+            if (a < 8u) {
+              outPx[idx] = raw;
+              return;
+            }
+            let c = sampleRgb(ix, iy, iw, ih);
+            let avg = (
+              sampleRgb(ix - 1, iy, iw, ih) +
+              sampleRgb(ix + 1, iy, iw, ih) +
+              sampleRgb(ix, iy - 1, iw, ih) +
+              sampleRgb(ix, iy + 1, iw, ih)
+            ) * 0.25;
+            let sharp = clamp(c + (c - avg) * p.strength, vec3<f32>(0.0), vec3<f32>(255.0));
+            let rr = u32(sharp.x);
+            let rg = u32(sharp.y);
+            let rb = u32(sharp.z);
+            outPx[idx] = rr | (rg << 8u) | (rb << 16u) | (a << 24u);
+          }
+        `,
+      });
+
+      const pipeline = device.createComputePipeline({
+        layout: 'auto',
+        compute: { module, entryPoint: 'main' },
+      });
+      const bg = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: inBuf } },
+          { binding: 1, resource: { buffer: outBuf } },
+          { binding: 2, resource: { buffer: paramBuf } },
+        ],
+      });
+
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bg);
+      pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
+      pass.end();
+      enc.copyBufferToBuffer(outBuf, 0, readBuf, 0, byteLen);
+      device.queue.submit([enc.finish()]);
+
+      await readBuf.mapAsync(GPUMap.READ);
+      dst.set(new Uint8ClampedArray(readBuf.getMappedRange()));
+      readBuf.unmap();
+      inBuf.destroy();
+      outBuf.destroy();
+      readBuf.destroy();
+      paramBuf.destroy();
+      usedWebGpu = true;
+    } catch {
+      usedWebGpu = false;
+    }
+  }
+
+  if (!usedWebGpu) {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * 4;
+        const a = src[idx + 3];
+        if (a < 8 || x === 0 || y === 0 || x === W - 1 || y === H - 1) {
+          dst[idx] = src[idx];
+          dst[idx + 1] = src[idx + 1];
+          dst[idx + 2] = src[idx + 2];
+          dst[idx + 3] = a;
+          continue;
+        }
+        const up = ((y - 1) * W + x) * 4;
+        const dn = ((y + 1) * W + x) * 4;
+        const lf = (y * W + (x - 1)) * 4;
+        const rt = (y * W + (x + 1)) * 4;
+        for (let c = 0; c < 3; c++) {
+          const avg = (src[up + c] + src[dn + c] + src[lf + c] + src[rt + c]) * 0.25;
+          const v = src[idx + c] + (src[idx + c] - avg) * strength;
+          dst[idx + c] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+        }
+        dst[idx + 3] = a;
+      }
+    }
+  }
+
+  oCtx.putImageData(new ImageData(dst, W, H), 0, 0);
+  return { canvas: outCanvas, usedWebGpu };
 }

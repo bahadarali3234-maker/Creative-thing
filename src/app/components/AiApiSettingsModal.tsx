@@ -24,6 +24,7 @@ import {
   Copy,
   Check,
   Type,
+  Mail,
 } from 'lucide-react';
 import {
   GEMINI_TTS_VOICES,
@@ -474,6 +475,33 @@ export const AiApiSettingsModal: React.FC<AiApiSettingsModalProps> = ({
                   )}
                 </div>
               )}
+
+              {/* Welcome & Daily Routine Gmail Row */}
+              <div className={`border-t ${dividerClass}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(10);
+                    stopGeminiTts();
+                    onClose();
+                    window.dispatchEvent(new CustomEvent('open-gmail-routine-modal', { detail: { tab: 'routine' } }));
+                  }}
+                  className={`w-full min-h-[54px] px-4 py-3 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer ${rowHover}`}
+                >
+                  <div className="flex items-center gap-3.5">
+                    <Mail size={20} strokeWidth={1.75} className="shrink-0 opacity-85 text-[#0a7cf0]" />
+                    <div>
+                      <div className="text-[15px] font-semibold leading-tight">Welcome &amp; Daily Routine Gmail</div>
+                      <div className={`text-xs mt-0.5 ${mutedText}`}>
+                        Configure &amp; send your Think Creative inbox emails
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#0a7cf0]/12 text-[#0a7cf0] shrink-0">
+                    Open
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* GROUP 2: Color mode + Font style + Voice and dictation */}

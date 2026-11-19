@@ -66,7 +66,15 @@ export class ThinkingLog {
       extra
     );
   }
-  adjust(name, adj) { const parts = Object.entries(adj || {}).filter(([, v]) => v !== undefined && v !== 1 && v !== 0).map(([k, v]) => `${k} ${typeof v === 'number' && v > 0 && v < 3 ? (v > 1 ? '+' : '') + Math.round((v - 1) * 100) + '%' : v}`); if (!parts.length) return null; return this.push('edit', this.t.adjust(name, parts.join(', '))); }
+  colorGrade(name, preset, usedWebGpu) {
+    return this.push(
+      'edit',
+      this.lang === 'hi'
+        ? `${name} पर ${usedWebGpu ? 'WebGPU शेडर' : 'स्टूडियो'} कलर ग्रेडिंग (${preset}) लागू की।`
+        : `Applied ${usedWebGpu ? 'WebGPU WGSL shader' : 'studio'} ${preset} color grading & depth exposure balance to ${name}.`
+    );
+  }
+  adjust(name, adj) { const parts = Object.entries(adj || {}).filter(([k, v]) => k !== 'colorGrade' && v !== undefined && v !== 1 && v !== 0).map(([k, v]) => `${k} ${typeof v === 'number' && v > 0 && v < 3 ? (v > 1 ? '+' : '') + Math.round((v - 1) * 100) + '%' : v}`); if (!parts.length) return null; return this.push('edit', this.t.adjust(name, parts.join(', '))); }
   skipAsset(id, why) { return this.push('edit', this.t.skipAsset(id, why)); }
   decision(plan, names) { return this.push('decision', this.t.decision(plan, names)); }
   visualInspect({ pass = 1, audit, screenshotDataUrl, screenshotLabel } = {}) {

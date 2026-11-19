@@ -72,6 +72,8 @@ import {
   KeyRound,
   ThumbsUp,
   ThumbsDown,
+  CalendarClock,
+  Mail,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -92,8 +94,9 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTheme } from '../context/ThemeContext';
-import { AttachedFile, QuestionBlock, ProjectMemory } from '../types';
+import { AttachedFile, QuestionBlock, ProjectMemory, PlanProposal, PromptChatMode } from '../types';
 import { AttachmentGrid } from './AttachmentGrid';
+import { getUserDisplayName } from '../utils/gmailClient';
 import { detectAndExtractCode, sniffCodeLanguage } from '../utils/codeAttachment';
 import {
   mergeChatThreads,
@@ -129,11 +132,15 @@ import {
   StudioJobResult,
   StudioAttachmentMeta,
   studioApi,
-  watchStudioJob,
   createProgressDisplay,
   analyzeVideoSource,
-  analyzeImageDataUrl,
 } from '../utils/studioClient';
+import {
+  CanvasDesignSpec,
+  StudioSceneGraph,
+  runCanvasStudioPipeline,
+  scanUploadedImageToSceneGraph,
+} from '../utils/studioCanvasEngine';
 import {
   StudioConfirmDialog,
   StudioQuestionsDialog,
@@ -143,6 +150,7 @@ import {
   StudioFullscreenModal,
   StudioJobState,
 } from './StudioCompositionBox';
+import { CanvaLayerEditorModal } from './CanvaLayerEditorModal';
 import { isWebsiteOrAppUiBuildRequest } from '../utils/buildyIntent';
 import { StudentLiveQuizCard } from './StudentLiveQuizCard';
 import { parseStudentContent } from '../utils/studentQuizParser';
@@ -370,6 +378,7 @@ export interface ChatMessage {
   imageStatusText?: string;
   studioJob?: StudioJobState;
   tweakChips?: string[];
+  canOfferStudioCreate?: { promptText: string; recipe: string | null; lang?: string };
   feedback?: 'up' | 'down' | null;
   structuredContent?: {
     mainTitle?: string | { white: string; red: string };
@@ -378,6 +387,7 @@ export interface ChatMessage {
     question?: QuestionBlock;
   };
   activeQuestion?: QuestionBlock;
+  planProposal?: PlanProposal;
 }
 
 export interface ChatThread {
@@ -2506,6 +2516,7 @@ interface FullScreenChatViewProps {
   onOpenLogin?: () => void;
   externalActiveSkill?: AiSkillItem | null;
   onExternalActiveSkillChange?: (skill: AiSkillItem | null) => void;
+  initialMode?: PromptChatMode;
 }
 
 const GUEST_TOPIC = 'Guest Session';
@@ -2521,6 +2532,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   onOpenLogin,
   externalActiveSkill,
   onExternalActiveSkillChange,
+  initialMode,
 }) => {
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
@@ -2663,12 +2675,22 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
     if (onOpenLogin) onOpenLogin();
   };
 
-  // Proactive Question Queue in Prompt Box (Pure prompt box flow)
+  // Proactive Question Queue & Plan Mode States
+  const [selectedMode, setSelectedMode] = useState<PromptChatMode>(initialMode || 'Chat');
+  const [isComposerModeMenuOpen, setIsComposerModeMenuOpen] = useState<boolean>(false);
+  const [viewingPlanModal, setViewingPlanModal] = useState<PlanProposal | null>(null);
+  const pendingPlanModeRef = useRef<boolean>(false);
   const [promptQuestionQueue, setPromptQuestionQueue] = useState<QuestionBlock[]>([]);
   const [promptQuestionIdx, setPromptQuestionIdx] = useState<number>(0);
   const collectedAnswersRef = useRef<Record<string, string>>({});
   const pendingVaguePromptRef = useRef<string>('');
   const answeredQuestionsRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isOpen && initialMode) {
+      setSelectedMode(initialMode);
+    }
+  }, [isOpen, initialMode]);
 
   // Slide-out modal & persona states for Daro & Zara, Explore Creative Skills, Buildy, and API/Voice Settings
   const [isVoiceCallOpen, setIsVoiceCallOpen] = useState<boolean>(false);
@@ -2744,6 +2766,7 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
   } | null>(null);
 
   const [fullscreenStudioJob, setFullscreenStudioJob] = useState<StudioJobState | null>(null);
+  const [canvaEditorJob, setCanvaEditorJob] = useState<StudioJobState | null>(null);
 
   useEffect(() => {
     studioUploadsRef.current = studioUploads;
@@ -3517,12 +3540,52 @@ export const FullScreenChatView: React.FC<FullScreenChatViewProps> = ({
         } catch {}
       }
     } else {
-      // All questions have been answered: stop asking and immediately start thinking and complete code
+      // All questions have been answered
       setPromptQuestionQueue([]);
       setPromptQuestionIdx(0);
 
       const userPrompt = pendingVaguePromptRef.current || 'Create a complete high-performance solution';
       pendingVaguePromptRef.current = '';
+
+      if (pendingPlanModeRef.current) {
+        pendingPlanModeRef.current = false;
+        const answersCopy = { ...collectedAnswersRef.current };
+        const aiMsgId = `ai-plan-${Date.now()}`;
+        const aiPlaceholder: ChatMessage = {
+          id: aiMsgId,
+          sender: 'ai',
+          text: '',
+          isStreaming: true,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+
+        setChatThreads((prev) => {
+          const thread = prev[activeTopic];
+          if (!thread) return prev;
+          return {
+            ...prev,
+            [activeTopic]: {
+              ...thread,
+              messages: [
+                ...thread.messages.map((m) =>
+                  m.id === msgId ? { ...m, activeQuestion: undefined, text: `Selected: **${answer}**` } : m
+                ),
+                userAnsMsg,
+                aiPlaceholder,
+              ],
+            },
+          };
+        });
+
+        void synthesizePlanProposal(
+          activeTopic,
+          aiMsgId,
+          userPrompt,
+          answersCopy,
+          pendingAttachmentsRef.current || []
+        );
+        return;
+      }
 
       const isBuildyTask = isWebsiteOrAppUiBuildRequest(userPrompt);
       const isTimetable =
@@ -3884,7 +3947,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
     promptText: string,
     res: StudioJobResult
   ) => {
-    const defaultChips = ['Bigger headline', 'Darker version', 'Change style', 'Regenerate'];
+    const defaultChips: string[] = [];
     try {
       const token = await getFirebaseIdToken().catch(() => null);
       const r = await fetch('/api/chat', {
@@ -4008,8 +4071,9 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
     thinkingTimerRef.current = 0;
     setActiveThinkingMsgId(aiMsgId);
 
+    const jobId = `studio-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const initialJob: StudioJobState = {
-      jobId: '',
+      jobId,
       status: 'running',
       prompt: messageText,
       recipe: opts?.recipeOverride || opts?.previousPlan?.recipe || undefined,
@@ -4037,6 +4101,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                   imageError: undefined,
                   studioJob: initialJob,
                   tweakChips: undefined,
+                  canOfferStudioCreate: undefined,
                 }
               : m
           ),
@@ -4065,17 +4130,241 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
     try {
       const token = await getFirebaseIdToken().catch(() => null);
       const studioAtts = buildStudioAttachmentsMeta(attachments, facts);
-      const { jobId } = await studioApi.startJob(
-        {
-          message: messageText,
-          answers,
-          attachments: studioAtts,
-          previousPlan: opts?.previousPlan || null,
-          recipeOverride: opts?.recipeOverride || null,
-          intentOverride: opts?.intentOverride || null,
+
+      const collectedSteps: Array<{
+        title: string;
+        desc: string;
+        screenshotDataUrl?: string;
+        screenshotLabel?: string;
+      }> = [];
+
+      const onScanProgress = (percent: number, label: string) => {
+        progressDisp.set(percent);
+        setChatThreads((prev) => {
+          const t = prev[topicKey];
+          if (!t) return prev;
+          return {
+            ...prev,
+            [topicKey]: {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === aiMsgId && m.studioJob
+                  ? { ...m, studioJob: { ...m.studioJob, stageLabel: label } }
+                  : m
+              ),
+            },
+          };
+        });
+      };
+
+      const onScanStep = (step: StudioThinkingLogStep) => {
+        collectedSteps.push({
+          title: step.file ? `${step.kind} · ${step.file}` : step.kind,
+          desc: step.text,
+          ...(step.screenshotDataUrl ? { screenshotDataUrl: step.screenshotDataUrl } : {}),
+          ...(step.screenshotLabel ? { screenshotLabel: step.screenshotLabel } : {}),
+        });
+        setChatThreads((prev) => {
+          const t = prev[topicKey];
+          if (!t) return prev;
+          return {
+            ...prev,
+            [topicKey]: {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === aiMsgId
+                  ? {
+                      ...m,
+                      thoughtSummary: {
+                        detectedLanguage: 'auto',
+                        scriptMode: 'Creative Studio',
+                        groundedUsed: collectedSteps.some((s) => s.title.startsWith('search')),
+                        sourcesCount: m.studioJob?.sources?.length || 0,
+                        summary: 'Creative Studio pipeline steps',
+                        steps: [...collectedSteps],
+                      },
+                    }
+                  : m
+              ),
+            },
+          };
+        });
+      };
+
+      const isFaceSwapReq =
+        /\b(face\s*swap|swap\s*(the\s*)?face|put\s+my\s+face|my\s+face|replace\s+face|with\s+my\s+face|apna\s+face|chehra)\b/i.test(
+          messageText
+        );
+      const isBgReplaceReq =
+        /\b(background|bg|sky|backdrop)\b.{0,24}\b(change|replace|swap|remove|hata|badlo|new)\b|\b(change|replace|swap|remove|hata|badlo)\b.{0,24}\b(background|bg|sky|backdrop)\b/i.test(
+          messageText
+        );
+      const imageAtts = (attachments || []).filter((a) => a.isImage);
+      const firstImgAtt = imageAtts[0];
+      const shouldScanIntoCanva =
+        opts?.intentOverride === 'edit' &&
+        imageAtts.length === 1 &&
+        Boolean(firstImgAtt) &&
+        !opts?.previousPlan &&
+        !isFaceSwapReq &&
+        !isBgReplaceReq;
+
+      if (shouldScanIntoCanva && firstImgAtt) {
+        const up = resolveUploadDataUrl(firstImgAtt.id);
+        if (up?.dataUrl) {
+          const scanT0 = performance.now();
+          const scanRes = await scanUploadedImageToSceneGraph({
+            imageDataUrl: up.dataUrl,
+            instruction: messageText,
+            token,
+            onProgress: onScanProgress,
+            onStep: onScanStep,
+          });
+          progressDisp.finish();
+          const scanDurSec = Math.max(1, Math.round((performance.now() - scanT0) / 1000));
+          const finalScanSteps =
+            scanRes.steps.length > 0
+              ? scanRes.steps.map((s) => ({
+                  title: s.file ? `${s.kind} · ${s.file}` : s.kind,
+                  desc: s.text,
+                  ...(s.screenshotDataUrl ? { screenshotDataUrl: s.screenshotDataUrl } : {}),
+                  ...(s.screenshotLabel ? { screenshotLabel: s.screenshotLabel } : {}),
+                }))
+              : collectedSteps;
+
+          const scannedJob: StudioJobState = {
+            jobId,
+            status: 'done',
+            prompt: messageText,
+            recipe: opts?.recipeOverride || 'canva-edit',
+            percent: 100,
+            elapsedSec: scanDurSec,
+            width: scanRes.width,
+            height: scanRes.height,
+            imageDataUrl: scanRes.imageDataUrl,
+            sceneGraph: scanRes.graph,
+            summary: scanRes.steps,
+            sources: [],
+            styleName: 'Canva Editable Layers',
+          };
+
+          setChatThreads((prev) => {
+            const t = prev[topicKey];
+            if (!t) return prev;
+            return {
+              ...prev,
+              [topicKey]: {
+                ...t,
+                messages: t.messages.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        isStreaming: false,
+                        text: `Scanned your image into ${scanRes.graph.layers.length} editable Canva layers. Drag, resize, or edit text directly in the Canva workspace.`,
+                        tweakChips: [],
+                        thoughtDuration: scanDurSec,
+                        thoughtSummary: {
+                          detectedLanguage: 'auto',
+                          scriptMode: 'Creative Studio',
+                          groundedUsed: false,
+                          sourcesCount: 0,
+                          summary: `Canva Editable Layers · ${scanRes.width}×${scanRes.height}`,
+                          steps: finalScanSteps,
+                        },
+                        studioJob: scannedJob,
+                      }
+                    : m
+                ),
+              },
+            };
+          });
+
+          setIsAiTyping(false);
+          setActiveThinkingMsgId(null);
+          setIsSendLocked(false);
+          setCanvaEditorJob(scannedJob);
+          return;
+        }
+      }
+
+      const pipelineRes = await runCanvasStudioPipeline({
+        message: messageText,
+        intent: {
+          intent: opts?.intentOverride || (opts?.previousPlan ? 'edit' : 'generate'),
+          recipe: opts?.recipeOverride || opts?.previousPlan?.recipe || null,
+          lang: opts?.previousPlan?.language || 'en',
         },
-        token
-      );
+        answers,
+        attachments: studioAtts,
+        previousSpec: (opts?.previousPlan as CanvasDesignSpec) || null,
+        getUploadDataUrl: resolveUploadDataUrl,
+        token,
+        onProgress: onScanProgress,
+        onStep: onScanStep,
+      });
+
+      if (pipelineRes.refused) {
+        progressDisp.stop();
+        setChatThreads((prev) => {
+          const t = prev[topicKey];
+          if (!t) return prev;
+          return {
+            ...prev,
+            [topicKey]: {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === aiMsgId
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      text: pipelineRes.refused || 'Please adjust this prompt to a safe creative concept.',
+                      studioJob: {
+                        ...(m.studioJob || initialJob),
+                        status: 'refused',
+                        refusalReason: pipelineRes.refused,
+                      },
+                    }
+                  : m
+              ),
+            },
+          };
+        });
+        setIsAiTyping(false);
+        setActiveThinkingMsgId(null);
+        setIsSendLocked(false);
+        return;
+      }
+
+      progressDisp.finish();
+      const durSec = Math.max(1, Math.round((pipelineRes.elapsedMs || (thinkingTimerRef.current || 1) * 1000) / 1000));
+      const finalSteps =
+        pipelineRes.steps.length > 0
+          ? pipelineRes.steps.map((s) => ({
+              title: s.file ? `${s.kind} · ${s.file}` : s.kind,
+              desc: s.text,
+              ...(s.screenshotDataUrl ? { screenshotDataUrl: s.screenshotDataUrl } : {}),
+              ...(s.screenshotLabel ? { screenshotLabel: s.screenshotLabel } : {}),
+            }))
+          : collectedSteps;
+
+      const completedJob: StudioJobState = {
+        jobId,
+        status: 'done',
+        prompt: messageText,
+        recipe: pipelineRes.spec?.recipe || opts?.recipeOverride || undefined,
+        percent: 100,
+        elapsedSec: durSec,
+        width: pipelineRes.width,
+        height: pipelineRes.height,
+        imageDataUrl: pipelineRes.imageDataUrl,
+        canvasSpec: pipelineRes.spec,
+        serializedAssets: pipelineRes.serializedAssets,
+        sceneGraph: pipelineRes.sceneGraph,
+        summary: pipelineRes.steps,
+        sources: pipelineRes.sources,
+        styleName: pipelineRes.info?.styleName || pipelineRes.spec?.style,
+        plan: pipelineRes.spec,
+      };
 
       setChatThreads((prev) => {
         const t = prev[topicKey];
@@ -4085,202 +4374,41 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
           [topicKey]: {
             ...t,
             messages: t.messages.map((m) =>
-              m.id === aiMsgId && m.studioJob
-                ? { ...m, studioJob: { ...m.studioJob, jobId } }
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    thoughtDuration: durSec,
+                    thoughtSummary: {
+                      detectedLanguage: 'auto',
+                      scriptMode: 'Creative Studio',
+                      groundedUsed: (pipelineRes.sources || []).length > 0,
+                      sourcesCount: (pipelineRes.sources || []).length,
+                      summary: `${completedJob.styleName || completedJob.recipe || 'Design'} · ${pipelineRes.width}×${pipelineRes.height}`,
+                      steps: finalSteps,
+                    },
+                    studioJob: completedJob,
+                  }
                 : m
             ),
           },
         };
       });
 
-      const collectedSteps: Array<{
-        title: string;
-        desc: string;
-        screenshotDataUrl?: string;
-        screenshotLabel?: string;
-      }> = [];
-
-      watchStudioJob(
-        jobId,
-        {
-          onProgress(e) {
-            if (typeof e.percent === 'number') progressDisp.set(e.percent);
-            if (e.label) {
-              setChatThreads((prev) => {
-                const t = prev[topicKey];
-                if (!t) return prev;
-                return {
-                  ...prev,
-                  [topicKey]: {
-                    ...t,
-                    messages: t.messages.map((m) =>
-                      m.id === aiMsgId && m.studioJob
-                        ? { ...m, studioJob: { ...m.studioJob, stageLabel: e.label } }
-                        : m
-                    ),
-                  },
-                };
-              });
-            }
-          },
-          onStep(step: StudioThinkingLogStep) {
-            collectedSteps.push({
-              title: step.file ? `${step.kind} · ${step.file}` : step.kind,
-              desc: step.text,
-              ...(step.screenshotDataUrl ? { screenshotDataUrl: step.screenshotDataUrl } : {}),
-              ...(step.screenshotLabel ? { screenshotLabel: step.screenshotLabel } : {}),
-            });
-            setChatThreads((prev) => {
-              const t = prev[topicKey];
-              if (!t) return prev;
-              return {
-                ...prev,
-                [topicKey]: {
-                  ...t,
-                  messages: t.messages.map((m) =>
-                    m.id === aiMsgId
-                      ? {
-                          ...m,
-                          thoughtSummary: {
-                            detectedLanguage: 'auto',
-                            scriptMode: 'Creative Studio',
-                            groundedUsed: collectedSteps.some((s) => s.title.startsWith('search')),
-                            sourcesCount: m.studioJob?.sources?.length || 0,
-                            summary: 'Creative Studio pipeline steps',
-                            steps: [...collectedSteps],
-                          },
-                        }
-                      : m
-                  ),
-                },
-              };
-            });
-          },
-          onResult(res) {
-            progressDisp.finish();
-            const durSec = Math.max(1, Math.round((res.elapsedMs || (thinkingTimerRef.current || 1) * 1000) / 1000));
-            const finalSteps =
-              Array.isArray(res.summary) && res.summary.length > 0
-                ? res.summary.map((s) => ({
-                    title: s.file ? `${s.kind} · ${s.file}` : s.kind,
-                    desc: s.text,
-                    ...(s.screenshotDataUrl ? { screenshotDataUrl: s.screenshotDataUrl } : {}),
-                    ...(s.screenshotLabel ? { screenshotLabel: s.screenshotLabel } : {}),
-                  }))
-                : collectedSteps;
-
-            setChatThreads((prev) => {
-              const t = prev[topicKey];
-              if (!t) return prev;
-              return {
-                ...prev,
-                [topicKey]: {
-                  ...t,
-                  messages: t.messages.map((m) =>
-                    m.id === aiMsgId
-                      ? {
-                          ...m,
-                          isStreaming: false,
-                          thoughtDuration: durSec,
-                          thoughtSummary: {
-                            detectedLanguage: 'auto',
-                            scriptMode: 'Creative Studio',
-                            groundedUsed: (res.sources || []).length > 0,
-                            sourcesCount: (res.sources || []).length,
-                            summary: `${res.styleName || res.plan?.recipe || 'Design'} · ${res.width}×${res.height}`,
-                            steps: finalSteps,
-                          },
-                          studioJob: {
-                            jobId,
-                            status: 'done',
-                            prompt: messageText,
-                            recipe: res.plan?.recipe || opts?.recipeOverride || undefined,
-                            percent: 100,
-                            elapsedSec: durSec,
-                            width: res.width,
-                            height: res.height,
-                            html: res.html,
-                            summary: res.summary,
-                            sources: res.sources,
-                            warnings: res.warnings,
-                            styleName: res.styleName || res.plan?.styleName,
-                            plan: res.plan,
-                          },
-                        }
-                      : m
-                  ),
-                },
-              };
-            });
-
-            setIsAiTyping(false);
-            setActiveThinkingMsgId(null);
-            setIsSendLocked(false);
-            fetchStudioRecap(topicKey, aiMsgId, messageText, res);
-          },
-          onRefused(e) {
-            progressDisp.stop();
-            setChatThreads((prev) => {
-              const t = prev[topicKey];
-              if (!t) return prev;
-              return {
-                ...prev,
-                [topicKey]: {
-                  ...t,
-                  messages: t.messages.map((m) =>
-                    m.id === aiMsgId
-                      ? {
-                          ...m,
-                          isStreaming: false,
-                          text: e.reason,
-                          studioJob: {
-                            ...(m.studioJob || initialJob),
-                            status: 'refused',
-                            refusalReason: e.reason,
-                          },
-                        }
-                      : m
-                  ),
-                },
-              };
-            });
-            setIsAiTyping(false);
-            setActiveThinkingMsgId(null);
-            setIsSendLocked(false);
-          },
-          onError(e) {
-            progressDisp.stop();
-            setChatThreads((prev) => {
-              const t = prev[topicKey];
-              if (!t) return prev;
-              return {
-                ...prev,
-                [topicKey]: {
-                  ...t,
-                  messages: t.messages.map((m) =>
-                    m.id === aiMsgId
-                      ? {
-                          ...m,
-                          isStreaming: false,
-                          studioJob: {
-                            ...(m.studioJob || initialJob),
-                            status: 'error',
-                            errorMessage: e.message || 'Creative Studio encountered an error.',
-                          },
-                        }
-                      : m
-                  ),
-                },
-              };
-            });
-            setIsAiTyping(false);
-            setActiveThinkingMsgId(null);
-            setIsSendLocked(false);
-          },
-        },
-        resolveUploadDataUrl,
-        token
-      );
+      setIsAiTyping(false);
+      setActiveThinkingMsgId(null);
+      setIsSendLocked(false);
+      fetchStudioRecap(topicKey, aiMsgId, messageText, {
+        width: pipelineRes.width,
+        height: pipelineRes.height,
+        html: '',
+        elapsedMs: pipelineRes.elapsedMs,
+        styleName: completedJob.styleName,
+        plan: pipelineRes.spec,
+        summary: pipelineRes.steps,
+        sources: pipelineRes.sources,
+        warnings: [],
+      });
     } catch (err: any) {
       progressDisp.stop();
       setChatThreads((prev) => {
@@ -4298,7 +4426,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                     studioJob: {
                       ...initialJob,
                       status: 'error',
-                      errorMessage: err?.message || 'Unable to start Creative Studio.',
+                      errorMessage: err?.message || 'Unable to generate image in Creative Studio.',
                     },
                   }
                 : m
@@ -4310,6 +4438,99 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
       setActiveThinkingMsgId(null);
       setIsSendLocked(false);
     }
+  };
+
+  const buildFallbackSceneGraphForJob = (job: StudioJobState): StudioSceneGraph => ({
+    width: job.width || 1280,
+    height: job.height || 720,
+    style: job.canvasSpec?.style || 'bold',
+    palette: job.canvasSpec?.palette || 'neon-night',
+    background: {
+      bgHex: '#0b1020',
+      primaryHex: '#6a2cff',
+      accentHex: '#00e5ff',
+      photoDataUrl: job.imageDataUrl,
+      gradientMode: 'photo-dim',
+      overlayOpacity: 0,
+    },
+    layers: job.canvasSpec?.title
+      ? [
+          {
+            id: 'fallback_title',
+            kind: 'text',
+            name: 'Headline',
+            textRole: 'headline',
+            text: job.canvasSpec.title,
+            fontPairId: job.canvasSpec.fontPair || 'modern-grotesk',
+            fontFamily: 'Space Grotesk',
+            fontWeight: 800,
+            fontSize: Math.round((job.height || 720) * 0.08),
+            color: '#ffffff',
+            accentColor: '#00e5ff',
+            align: 'left',
+            x: Math.round((job.width || 1280) * 0.06),
+            y: Math.round((job.height || 720) * 0.35),
+            w: Math.round((job.width || 1280) * 0.56),
+            h: Math.round((job.height || 720) * 0.25),
+            opacity: 1,
+            visible: true,
+            locked: false,
+          },
+        ]
+      : [],
+  });
+
+  const handleOpenCanvaEditor = (job: StudioJobState) => {
+    const graph = job.sceneGraph || buildFallbackSceneGraphForJob(job);
+    setCanvaEditorJob({ ...job, sceneGraph: graph });
+  };
+
+  const handleSaveCanvaLayers = (
+    job: StudioJobState,
+    nextGraph: StudioSceneGraph,
+    renderedPngDataUrl: string
+  ) => {
+    if (!activeTopic) return;
+    const updatedJob: StudioJobState = {
+      ...job,
+      imageDataUrl: renderedPngDataUrl,
+      sceneGraph: nextGraph,
+      width: nextGraph.width,
+      height: nextGraph.height,
+    };
+    setChatThreads((prev) => {
+      const t = prev[activeTopic];
+      if (!t) return prev;
+      return {
+        ...prev,
+        [activeTopic]: {
+          ...t,
+          messages: t.messages.map((m) =>
+            m.studioJob?.jobId === job.jobId
+              ? {
+                  ...m,
+                  studioJob: updatedJob,
+                  thoughtSummary: m.thoughtSummary
+                    ? {
+                        ...m.thoughtSummary,
+                        steps: [
+                          ...m.thoughtSummary.steps,
+                          {
+                            title: 'edit',
+                            desc: `Updated ${nextGraph.layers.length} layers in Canva editor.`,
+                          },
+                        ],
+                      }
+                    : m.thoughtSummary,
+                }
+              : m
+          ),
+        },
+      };
+    });
+    setFullscreenStudioJob((curr) => (curr && curr.jobId === job.jobId ? updatedJob : curr));
+    setCanvaEditorJob(null);
+    showToast('Saved layer changes');
   };
 
   const requestStudioFlow = (
@@ -4389,21 +4610,335 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
       {
         recipeOverride: job.recipe || job.plan?.recipe || null,
         intentOverride: isRegen ? null : 'edit',
-        previousPlan: isRegen ? null : job.plan,
+        previousPlan: isRegen ? null : job.canvasSpec || job.plan,
       }
     );
+  };
+
+  const synthesizePlanProposal = async (
+    topicKey: string,
+    aiMsgId: string,
+    userPrompt: string,
+    answers: Record<string, string>,
+    atts: AttachedFile[] = []
+  ) => {
+    setIsAiTyping(true);
+    setIsSendLocked(true);
+    setThinkingTimer(0);
+    thinkingTimerRef.current = 0;
+    setActiveThinkingMsgId(aiMsgId);
+
+    try {
+      const token = await getFirebaseIdToken().catch(() => null);
+      const activeUser = currentUser || getCurrentUser();
+      const userProfilePayload =
+        activeUser && !activeUser.isAnonymous
+          ? { name: getUserDisplayName(activeUser), email: activeUser.email || undefined }
+          : undefined;
+      const currentThread = chatThreads[topicKey];
+      const historyPayload = (currentThread?.messages || [])
+        .filter((m) => m.id !== aiMsgId)
+        .slice(-6)
+        .map((m) => ({ sender: m.sender, text: m.text }));
+
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildWorkspaceAuthHeaders(token),
+        },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          answers,
+          history: historyPayload,
+          attachments: atts.map((a) => ({ name: a.name, type: a.type })),
+          userProfile: userProfilePayload,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const proposal: PlanProposal = {
+        id: `plan-${Date.now()}`,
+        title: String(data?.title || `Plan: ${userPrompt.slice(0, 48)}`),
+        summary: String(data?.summary || 'Complete structured implementation plan ready for your review.'),
+        fullText: String(
+          data?.fullText ||
+            `THINK CREATIVE — EXECUTION PLAN\n\nGoal: ${userPrompt}\n\nTap Approve to begin execution.`
+        ),
+        originalPrompt: userPrompt,
+        answers,
+        status: 'pending',
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      const finalDuration = Math.max(1, thinkingTimerRef.current || 1);
+      setChatThreads((prev) => {
+        const thread = prev[topicKey];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...thread,
+            messages: thread.messages.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    thoughtDuration: finalDuration,
+                    text: '',
+                    planProposal: proposal,
+                  }
+                : m
+            ),
+          },
+        };
+      });
+    } catch {
+      const fallbackProposal: PlanProposal = {
+        id: `plan-${Date.now()}`,
+        title: `Plan: ${userPrompt.slice(0, 48)}`,
+        summary: 'Execution blueprint prepared. Open to view the full plan, then Approve or Reject.',
+        fullText: `THINK CREATIVE — EXECUTION PLAN\n\nGoal: ${userPrompt}\n\nClarifications:\n${
+          Object.entries(answers)
+            .map(([k, v]) => `- ${k}: ${v}`)
+            .join('\n') || '- Standard best practices'
+        }\n\nPhases:\n1. Architecture & Requirements\n2. Implementation & Integration\n3. Testing & Polish`,
+        originalPrompt: userPrompt,
+        answers,
+        status: 'pending',
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setChatThreads((prev) => {
+        const thread = prev[topicKey];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [topicKey]: {
+            ...thread,
+            messages: thread.messages.map((m) =>
+              m.id === aiMsgId
+                ? { ...m, isStreaming: false, text: '', planProposal: fallbackProposal }
+                : m
+            ),
+          },
+        };
+      });
+    } finally {
+      setIsAiTyping(false);
+      setActiveThinkingMsgId(null);
+      setIsSendLocked(false);
+    }
+  };
+
+  const handleApprovePlan = (msgId: string, plan: PlanProposal) => {
+    if (plan.status !== 'pending' || isAiTyping || isSendLocked) return;
+    setViewingPlanModal((curr) => (curr?.id === plan.id ? { ...plan, status: 'approved' } : curr));
+
+    const isBuildyTask = isWebsiteOrAppUiBuildRequest(
+      plan.originalPrompt,
+      pendingAttachmentsRef.current || []
+    );
+
+    if (isBuildyTask) {
+      const confirmMsg: ChatMessage = {
+        id: `ai-plan-approved-${Date.now()}`,
+        sender: 'ai',
+        text: `Plan **${plan.title}** approved. Opened **Buildy Studio** with your finalized architecture blueprint.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setChatThreads((prev) => {
+        const thread = prev[activeTopic];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [activeTopic]: {
+            ...thread,
+            messages: [
+              ...thread.messages.map((m) =>
+                m.id === msgId && m.planProposal
+                  ? { ...m, planProposal: { ...m.planProposal, status: 'approved' as const } }
+                  : m
+              ),
+              confirmMsg,
+            ],
+          },
+        };
+      });
+      setBuildyInitialPrompt(`${plan.originalPrompt}\n\nApproved Plan:\n${plan.fullText}`);
+      setIsBuildyOpen(true);
+      return;
+    }
+
+    const execAiId = `ai-exec-${Date.now()}`;
+    const execPlaceholder: ChatMessage = {
+      id: execAiId,
+      sender: 'ai',
+      text: '',
+      isStreaming: true,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setIsSendLocked(true);
+    setChatThreads((prev) => {
+      const thread = prev[activeTopic];
+      if (!thread) return prev;
+      return {
+        ...prev,
+        [activeTopic]: {
+          ...thread,
+          messages: [
+            ...thread.messages.map((m) =>
+              m.id === msgId && m.planProposal
+                ? { ...m, planProposal: { ...m.planProposal, status: 'approved' as const } }
+                : m
+            ),
+            execPlaceholder,
+          ],
+        },
+      };
+    });
+
+    const executionPrompt = `Execute the following user-approved plan thoroughly at maximum quality:
+
+ORIGINAL REQUEST:
+${plan.originalPrompt}
+
+APPROVED PLAN:
+${plan.fullText}`;
+
+    startGeminiStream(
+      activeTopic,
+      execAiId,
+      executionPrompt,
+      pendingAttachmentsRef.current || [],
+      undefined,
+      'max'
+    );
+  };
+
+  const handleRejectPlan = (msgId: string, plan: PlanProposal) => {
+    if (plan.status !== 'pending') return;
+    setViewingPlanModal((curr) => (curr?.id === plan.id ? { ...plan, status: 'rejected' } : curr));
+    const stopNotice: ChatMessage = {
+      id: `ai-plan-rejected-${Date.now()}`,
+      sender: 'ai',
+      text: `Plan **${plan.title}** was rejected and execution stopped. Update your requirements whenever you're ready to plan again.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatThreads((prev) => {
+      const thread = prev[activeTopic];
+      if (!thread) return prev;
+      return {
+        ...prev,
+        [activeTopic]: {
+          ...thread,
+          messages: [
+            ...thread.messages.map((m) =>
+              m.id === msgId && m.planProposal
+                ? { ...m, planProposal: { ...m.planProposal, status: 'rejected' as const } }
+                : m
+            ),
+            stopNotice,
+          ],
+        },
+      };
+    });
+    setIsSendLocked(false);
+    setIsAiTyping(false);
+    showToast('Plan rejected — stopped');
   };
 
   const dispatchChatOrStudioTurn = async (
     topicKey: string,
     aiMsgId: string,
     messageText: string,
-    atts: AttachedFile[] = []
+    atts: AttachedFile[] = [],
+    modeOverride?: PromptChatMode
   ) => {
+    const activeMode = modeOverride || selectedMode;
     const isSimple = isSimpleMessage(messageText);
     const { facts, chatAttachmentsPayload } = isSimple
       ? { facts: [], chatAttachmentsPayload: [] }
       : await computeAttachmentFacts(atts);
+
+    if (activeMode === 'Plan' && !isSimple) {
+      try {
+        setIsAiTyping(true);
+        setIsSendLocked(true);
+        const token = await getFirebaseIdToken().catch(() => null);
+        const currentThread = chatThreads[topicKey];
+        const historyPayload = (currentThread?.messages || [])
+          .filter((m) => m.id !== aiMsgId)
+          .slice(-6)
+          .map((m) => ({ sender: m.sender, text: m.text }));
+
+        const clarifyRes = await fetch('/api/clarify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildWorkspaceAuthHeaders(token),
+          },
+          body: JSON.stringify({
+            prompt: messageText,
+            history: historyPayload,
+            attachments: chatAttachmentsPayload,
+            strictness: 'thorough',
+            planMode: true,
+          }),
+        });
+        const clarifyData = await clarifyRes.json().catch(() => ({}));
+        const rawQuestions = Array.isArray(clarifyData?.questions) ? clarifyData.questions : [];
+        const mappedQuestions: QuestionBlock[] = rawQuestions
+          .filter((q: any) => q && q.question)
+          .map((q: any, idx: number) => ({
+            id: String(q.id || `plan-q-${idx + 1}`),
+            title: String(q.question),
+            description: q.why_it_matters ? String(q.why_it_matters) : undefined,
+            options: Array.isArray(q.options) && q.options.length > 0
+              ? q.options.map((o: any) => String(o))
+              : ['Standard / Balanced', 'Complete Deep Build', 'Fast MVP'],
+          }));
+
+        if (mappedQuestions.length > 0) {
+          pendingPlanModeRef.current = true;
+          pendingVaguePromptRef.current = messageText;
+          pendingAttachmentsRef.current = atts;
+          collectedAnswersRef.current = {};
+          setPromptQuestionQueue(mappedQuestions);
+          setPromptQuestionIdx(0);
+
+          setChatThreads((prev) => {
+            const thread = prev[topicKey];
+            if (!thread) return prev;
+            return {
+              ...prev,
+              [topicKey]: {
+                ...thread,
+                messages: thread.messages.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        isStreaming: false,
+                        text: '',
+                        activeQuestion: mappedQuestions[0],
+                      }
+                    : m
+                ),
+              },
+            };
+          });
+          setIsAiTyping(false);
+          setIsSendLocked(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Plan clarify failed, synthesizing plan directly:', err);
+      }
+
+      setIsAiTyping(false);
+      await synthesizePlanProposal(topicKey, aiMsgId, messageText, {}, atts);
+      return;
+    }
 
     const isVideoRequest = /\b(video|videos|reel|reels|short\s*film|animation\s*video|explainer\s*video|documentary\s*video|movie|trailer|mp4|webm|clip|montage)\b/i.test(
       messageText
@@ -4419,6 +4954,13 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
           },
           token
         );
+        if (intentRes.intent === 'edit' && atts.some((a) => a.isImage)) {
+          launchStudioJob(topicKey, aiMsgId, messageText, atts, facts, {}, {
+            recipeOverride: intentRes.recipe,
+            intentOverride: 'edit',
+          });
+          return;
+        }
         if (
           (intentRes.intent === 'generate' || intentRes.intent === 'edit') &&
           intentRes.confidence >= 0.6
@@ -4426,13 +4968,44 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
           requestStudioFlow(topicKey, aiMsgId, messageText, atts, facts, intentRes);
           return;
         }
+        if (intentRes.intent === 'maybe_generate') {
+          setChatThreads((prev) => {
+            const t = prev[topicKey];
+            if (!t) return prev;
+            return {
+              ...prev,
+              [topicKey]: {
+                ...t,
+                messages: t.messages.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        canOfferStudioCreate: {
+                          promptText: messageText,
+                          recipe: intentRes.recipe || null,
+                          lang: intentRes.lang || 'en',
+                        },
+                      }
+                    : m
+                ),
+              },
+            };
+          });
+        }
       } catch {}
     }
 
-    startGeminiStream(topicKey, aiMsgId, messageText, atts, {
-      facts,
-      chatAttachmentsPayload,
-    });
+    startGeminiStream(
+      topicKey,
+      aiMsgId,
+      messageText,
+      atts,
+      {
+        facts,
+        chatAttachmentsPayload,
+      },
+      activeMode.toLowerCase() as 'chat' | 'max' | 'plan'
+    );
   };
 
   /**
@@ -4667,7 +5240,8 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
     precomputed?: {
       facts?: any[];
       chatAttachmentsPayload?: Array<{ name: string; type: string; preview?: string; codeContent?: string }>;
-    }
+    },
+    effortModeOverride?: 'chat' | 'max' | 'plan'
   ) => {
     const isSimple = isSimpleMessage(promptText);
 
@@ -4768,6 +5342,13 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
             })),
             attachment_facts: attachmentFacts,
             attachments: isSimple ? [] : chatAttachmentsPayload,
+            effortMode: effortModeOverride || (selectedMode.toLowerCase() as 'chat' | 'max' | 'plan'),
+            userProfile: (() => {
+              const activeUser = currentUser || getCurrentUser();
+              if (!activeUser || activeUser.isAnonymous) return undefined;
+              const name = getUserDisplayName(activeUser);
+              return name ? { name, email: activeUser.email || undefined } : undefined;
+            })(),
           }),
         });
 
@@ -5386,7 +5967,13 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
             }
           }
         }
-        await dispatchChatOrStudioTurn(targetTopic, aiMsgId, trimmed, initialAttachments || []);
+        await dispatchChatOrStudioTurn(
+          targetTopic,
+          aiMsgId,
+          trimmed,
+          initialAttachments || [],
+          initialMode || selectedMode
+        );
       })();
     }
   }, [initialPrompt]);
@@ -5542,19 +6129,22 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
       if (onSelectRecentTopic) onSelectRecentTopic(targetTopic);
     }
 
-    // Check if user is asking to create/build a Website or App UI (handled exclusively by Buildy)
-    const isBuildyUiRequest = isWebsiteOrAppUiBuildRequest(messageText, currentAtts);
+    // Check if user is asking to create/build a Website or App UI (handled exclusively by Buildy unless in Plan mode)
+    const isBuildyUiRequest =
+      selectedMode !== 'Plan' && isWebsiteOrAppUiBuildRequest(messageText, currentAtts);
 
-    // Website / App UI creation request -> Expand Prompt Box Upward with in-app Buildy Studio Card
+    // Website / App UI creation request -> Immediately open the embedded Buildy tab inside the app
     if (isBuildyUiRequest) {
       setIsSendLocked(false);
       setIsThinkingPanelOpen(false);
-      setBuildyRedirectRequest(messageText);
+      setBuildyRedirectRequest(null);
+      setBuildyInitialPrompt(messageText);
+      setIsBuildyOpen(true);
 
       const aiBuildyMsg: ChatMessage = {
         id: `ai-buildy-${Date.now()}`,
         sender: 'ai',
-        text: `### Open Buildy Studio inside the app\n\nThis chat tab handles conversations, coding logic, and AI image generation. Use the integrated **Buildy** button below (or from the left menu) to design interactive Websites and App UIs directly inside the app.\n\nIf you want a detailed **Buildy UI prompt** or backend architecture first, click **Write Detailed Prompt** below.`,
+        text: `Opened **Buildy** with your app request. You can return to chat anytime using the back button.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -6089,6 +6679,23 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                         UI Studio
                       </span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileSidebarOpen(false);
+                        window.dispatchEvent(new CustomEvent('open-gmail-routine-modal', { detail: { tab: 'routine' } }));
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-white/10 text-left flex items-center justify-between text-white transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <CalendarClock size={19} strokeWidth={1.8} className="text-[#38bdf8]" />
+                        <span className="tracking-wide font-semibold">Daily Routine Gmail</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                        Gmail
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -6533,6 +7140,82 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                     </div>
                   )}
 
+                  {/* Plan Mode Proposal Card (Open .txt / Approve / Reject) */}
+                  {message.planProposal && (
+                    <div className="my-2 max-w-2xl w-full rounded-2xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-[#141720] shadow-sm overflow-hidden">
+                      <div className="px-4 py-3 border-b border-zinc-100 dark:border-white/10 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-bold text-zinc-900 dark:text-white truncate">
+                              {message.planProposal.title}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                              Think Creative Plan Document · {message.planProposal.createdAt}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 ${
+                            message.planProposal.status === 'approved'
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                              : message.planProposal.status === 'rejected'
+                              ? 'bg-red-500/15 text-red-700 dark:text-red-300'
+                              : 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                          }`}
+                        >
+                          {message.planProposal.status === 'approved'
+                            ? 'Approved'
+                            : message.planProposal.status === 'rejected'
+                            ? 'Rejected'
+                            : 'Ready for Review'}
+                        </span>
+                      </div>
+
+                      <div className="px-4 py-3 text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                        {message.planProposal.summary}
+                      </div>
+
+                      <div className="px-4 py-3 bg-zinc-50 dark:bg-white/[0.03] border-t border-zinc-100 dark:border-white/10 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setViewingPlanModal(message.planProposal!)}
+                          className="px-3.5 py-2 rounded-xl bg-white dark:bg-white/10 hover:bg-zinc-100 dark:hover:bg-white/15 border border-zinc-200 dark:border-white/15 text-zinc-900 dark:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <FileText size={14} />
+                          <span>Open</span>
+                        </button>
+
+                        {message.planProposal.status === 'pending' && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isAiTyping || isSendLocked}
+                              onClick={() => handleApprovePlan(message.id, message.planProposal!)}
+                              className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-black dark:bg-[#00a6ff] dark:hover:bg-[#0090e0] text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Check size={14} />
+                              <span>Approve</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isAiTyping}
+                              onClick={() => handleRejectPlan(message.id, message.planProposal!)}
+                              className="px-3.5 py-2 rounded-xl bg-red-500/12 hover:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/25 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              <X size={14} />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
 
 
                   {/* Buildy Redirect Card (For any legacy thread entries) */}
@@ -6558,11 +7241,13 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                     </div>
                   )}
 
-                  {/* Creative Studio HTML/Canvas Composition Box */}
+                  {/* Creative Studio HTML5 Canvas Design Box */}
                   {message.studioJob && (
                     <StudioCompositionBox
                       studioJob={message.studioJob}
                       onOpenFullscreen={(job) => setFullscreenStudioJob(job)}
+                      onEditLayers={handleOpenCanvaEditor}
+                      onRegenerate={(job) => handleStudioTweakOrRegen(job, job.prompt, true)}
                     />
                   )}
 
@@ -6902,6 +7587,43 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                     }
                     return null;
                   })()}
+
+                  {/* Optional "Make this an image" button when prompt mentions design nouns lightly */}
+                  {!message.isStreaming &&
+                    !message.studioJob &&
+                    message.canOfferStudioCreate && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const offer = message.canOfferStudioCreate!;
+                            requestStudioFlow(
+                              activeTopic,
+                              message.id,
+                              offer.promptText,
+                              [],
+                              [],
+                              {
+                                intent: 'generate',
+                                confidence: 0.75,
+                                recipe: offer.recipe,
+                                lang: offer.lang || 'en',
+                                popup: {
+                                  title: 'Generate an image?',
+                                  body: 'Do you agree to generate this image?',
+                                  yes: 'Generate',
+                                  no: 'Cancel',
+                                },
+                              }
+                            );
+                          }}
+                          className="h-8 px-3 rounded-xl neu-raise border border-border/20 text-xs font-semibold text-foreground/85 hover:text-foreground inline-flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                        >
+                          <Wand2 size={13} />
+                          <span>Make this an image</span>
+                        </button>
+                      </div>
+                    )}
 
                   {/* Post-Generation Studio Tweak Chips */}
                   {!message.isStreaming &&
@@ -7388,14 +8110,35 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                                 </button>
                               </div>
 
-                              {/* Right: Model Selector + Send Button */}
+                              {/* Right: Mode Selector (Plan/Chat/Max) + Model Selector + Send/Assistant Button */}
                               <div className="flex items-center gap-2">
+                                {/* Mode Selector Trigger */}
+                                <button
+                                  type="button"
+                                  disabled={isSendLocked || isAiTyping}
+                                  onClick={() => {
+                                    setIsComposerModeMenuOpen((prev) => !prev);
+                                    setIsModelDropdownOpen(false);
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200/80 text-zinc-900 border border-zinc-200 text-xs sm:text-sm font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title="Select prompt mode: Plan, Chat, or Max"
+                                >
+                                  <span>{selectedMode}</span>
+                                  <ChevronDown
+                                    size={14}
+                                    className={`text-zinc-600 transition-transform ${isComposerModeMenuOpen ? 'rotate-180' : ''}`}
+                                  />
+                                </button>
+
                                 {/* Model Dropdown - Pure White Style */}
                                 <div className="relative">
                                   <button
                                     type="button"
                                     disabled={isSendLocked || isAiTyping}
-                                    onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                                    onClick={() => {
+                                      setIsModelDropdownOpen(!isModelDropdownOpen);
+                                      setIsComposerModeMenuOpen(false);
+                                    }}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-zinc-50 text-zinc-900 border border-zinc-200 text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                                   >
                                     <span>{selectedModel === 'Gemini 2.5' ? 'AI Studio 2.5' : selectedModel}</span>
@@ -7430,7 +8173,7 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                                   <button
                                     type="button"
                                     onClick={() => setIsVoiceCallOpen(true)}
-                                    className="w-9 h-9 rounded-full bg-zinc-950 hover:bg-black text-white flex items-center justify-center shadow-md hover:scale-105 cursor-pointer active:scale-95 transition-all"
+                                    className="w-9 h-9 rounded-full bg-black hover:bg-zinc-900 text-white flex items-center justify-center shadow-md hover:scale-105 cursor-pointer active:scale-95 transition-all"
                                     title={`Open ${activePersona} Voice & Camera Assistant`}
                                     aria-label="Open Voice Assistant"
                                   >
@@ -7463,6 +8206,51 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
                               <span className="text-zinc-600">Select an option to proceed</span>
                             </div>
                           )}
+
+                          {/* Bottom Prompt Mode Selector Bar (Expands at bottom of prompt box, never over input) */}
+                          <AnimatePresence>
+                            {isComposerModeMenuOpen && !hideInputControls && !isSendLocked && !isAiTyping && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-2.5 pt-2.5 border-t border-zinc-200/80 grid grid-cols-3 gap-1.5">
+                                  {(
+                                    [
+                                      { id: 'Plan', desc: 'Clarify & blueprint' },
+                                      { id: 'Chat', desc: 'Fast assistant' },
+                                      { id: 'Max', desc: 'Full deep effort' },
+                                    ] as const
+                                  ).map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedMode(m.id);
+                                        setIsComposerModeMenuOpen(false);
+                                      }}
+                                      className={`px-3 py-2 rounded-2xl text-left transition-all cursor-pointer border ${
+                                        selectedMode === m.id
+                                          ? 'bg-zinc-900 border-zinc-900 text-white'
+                                          : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200 text-zinc-800'
+                                      }`}
+                                    >
+                                      <div className="text-xs font-bold">{m.id}</div>
+                                      <div
+                                        className={`text-[10px] truncate ${
+                                          selectedMode === m.id ? 'text-zinc-300' : 'text-zinc-500'
+                                        }`}
+                                      >
+                                        {m.desc}
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       </form>
                     )}
@@ -7772,13 +8560,116 @@ This workspace does NOT build HTML/CSS/JS websites or App UIs directly.
           }}
         />
 
-        {/* Creative Studio Fullscreen Viewer (Cut, Download PNG, Cross, Tweak) */}
+        {/* Creative Studio Fullscreen Viewer (Cut, Download PNG, Cross, Tweak, Edit Layers) */}
         <StudioFullscreenModal
           studioJob={fullscreenStudioJob}
           onClose={() => setFullscreenStudioJob(null)}
           onRegenerate={(job) => handleStudioTweakOrRegen(job, job.prompt, true)}
           onEditInstruction={(job, instruction) => handleStudioTweakOrRegen(job, instruction, false)}
+          onEditLayers={handleOpenCanvaEditor}
         />
+
+        {/* Canva-Style Interactive Layer Editor Modal */}
+        <CanvaLayerEditorModal
+          isOpen={Boolean(canvaEditorJob)}
+          sceneGraph={canvaEditorJob?.sceneGraph || null}
+          title={canvaEditorJob?.styleName || canvaEditorJob?.recipe || 'Canva Layer Editor'}
+          onClose={() => setCanvaEditorJob(null)}
+          onSave={(nextGraph, renderedPngDataUrl) => {
+            if (!canvaEditorJob) return;
+            handleSaveCanvaLayers(canvaEditorJob, nextGraph, renderedPngDataUrl);
+          }}
+        />
+
+        {/* Plan .txt Document Viewer Modal */}
+        <AnimatePresence>
+          {viewingPlanModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setViewingPlanModal(null)}
+              className="fixed inset-0 z-[10005] bg-black/70 flex items-center justify-center p-3 sm:p-6"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-3xl max-h-[88vh] rounded-3xl bg-white dark:bg-[#141720] border border-zinc-200 dark:border-white/15 shadow-2xl flex flex-col overflow-hidden"
+              >
+                <div className="px-5 py-4 border-b border-zinc-200 dark:border-white/10 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center shrink-0">
+                      <FileText size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-white truncate">
+                        {viewingPlanModal.title}.txt
+                      </h3>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Complete Think Creative Execution Plan
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(viewingPlanModal.fullText).catch(() => {});
+                        showToast('Plan copied to clipboard');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-white/10 hover:bg-zinc-200 dark:hover:bg-white/20 text-zinc-800 dark:text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Copy size={13} />
+                      <span>Copy</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const slug =
+                          viewingPlanModal.title
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]+/g, '_')
+                            .replace(/^_|_$/g, '') || 'think_creative_plan';
+                        const blob = new Blob([viewingPlanModal.fullText], {
+                          type: 'text/plain;charset=utf-8',
+                        });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${slug}.txt`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-[#00a6ff] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download size={13} />
+                      <span>Download .txt</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewingPlanModal(null)}
+                      className="w-8 h-8 rounded-full hover:bg-zinc-100 dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-300 flex items-center justify-center cursor-pointer"
+                      aria-label="Close plan document"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5 bg-zinc-50 dark:bg-[#0d0f15]">
+                  <pre className="whitespace-pre-wrap font-mono text-xs sm:text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+                    {viewingPlanModal.fullText}
+                  </pre>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
   );
 };

@@ -454,5 +454,81 @@
    "#06b6d4",
    "#0f172a"
   ]
+ },
+ {
+  "id": "obsidian-amber",
+  "name": "Obsidian & Amber",
+  "mood": "cinematic, studio keylight, warm metallic",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#07090e",
+   "#141824",
+   "#f59e0b",
+   "#ffd166",
+   "#f8fafc"
+  ]
+ },
+ {
+  "id": "emerald-editorial",
+  "name": "Emerald Editorial",
+  "mood": "refined magazine, botanical luxury",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#0a1915",
+   "#122922",
+   "#34d399",
+   "#e9c46a",
+   "#f6f7f2"
+  ]
+ },
+ {
+  "id": "crimson-cinema",
+  "name": "Crimson Cinema",
+  "mood": "theatrical trailer, bold sports hype",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#090406",
+   "#1b0910",
+   "#e63946",
+   "#ffb703",
+   "#fff8f6"
+  ]
+ },
+ {
+  "id": "studio-porcelain",
+  "name": "Studio Porcelain",
+  "mood": "gallery editorial, crisp architectural",
+  "roles": [
+   "bg",
+   "surface",
+   "primary",
+   "accent",
+   "text"
+  ],
+  "colors": [
+   "#f7f5f0",
+   "#ebe6dc",
+   "#1e3a8a",
+   "#d97706",
+   "#111827"
+  ]
  }
 ]

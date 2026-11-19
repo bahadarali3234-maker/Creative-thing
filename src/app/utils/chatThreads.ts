@@ -58,10 +58,13 @@ function sanitizeThreadsForStorage(threads: Record<string, any>, stripHeavyBlobs
               : att.preview,
         }));
       }
-      if (stripHeavyBlobs && nextMsg.studioJob?.resultDataUrl?.length > 120000) {
+      if (stripHeavyBlobs && nextMsg.studioJob) {
         nextMsg.studioJob = {
           ...nextMsg.studioJob,
-          resultDataUrl: '',
+          serializedAssets: undefined,
+          sceneGraph: undefined,
+          ...(nextMsg.studioJob.resultDataUrl?.length > 120000 ? { resultDataUrl: '' } : {}),
+          ...(nextMsg.studioJob.imageDataUrl?.length > 480000 ? { imageDataUrl: '' } : {}),
         };
       }
       if (stripHeavyBlobs && nextMsg.thoughtSummary?.verificationScreenshotUrl?.length > 60000) {

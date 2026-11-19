@@ -292,7 +292,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSucce
             {/* Subtle security indicator */}
             <div className="mt-4 pt-3 border-t border-white/10 w-full flex items-center justify-center gap-1.5 text-[10px] text-zinc-500">
               <ShieldCheck size={12} className="text-[#00a6ff]" />
-              <span>Firebase Cloud Authentication • Free & Optional</span>
+              <span>Think Creative • Firebase Cloud Authentication</span>
             </div>
           </div>
         </motion.div>

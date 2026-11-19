@@ -44,8 +44,9 @@
  {
   "id": "poster",
   "name": "Poster",
-  "defaultSize": "a4-portrait",
+  "defaultSize": "poster-2-3",
   "altSizes": [
+   "a4-portrait",
    "ig-portrait",
    "pinterest-pin"
   ],
@@ -654,5 +655,45 @@
   ],
   "needsText": false,
   "usesPhotos": false
+ },
+ {
+  "id": "portrait",
+  "name": "Studio Portrait / Headshot",
+  "defaultSize": "ig-portrait",
+  "altSizes": [
+   "ig-square",
+   "profile-dp",
+   "a4-portrait"
+  ],
+  "stylePrefs": [
+   "cinematic-poster",
+   "dark-luxury",
+   "magazine-editorial",
+   "neon-cyberpunk",
+   "gradient-mesh-modern"
+  ],
+  "layoutPrefs": [
+   "portrait-studio",
+   "editorial-split",
+   "photo-bottom-plate"
+  ],
+  "textRules": "Optional clean nameplate (1-4 words) + subtitle role/edition; never cover the face.",
+  "mustHave": [
+   "upper face headroom preserved",
+   "soft key light & ambient rim illumination",
+   "clean lower-third contrast scrim when titled"
+  ],
+  "avoid": [
+   "chopping forehead",
+   "harsh cutout fringes",
+   "text covering eyes or face"
+  ],
+  "checklist": [
+   "Face in upper-center safe frame",
+   "Clean rim light & shadow falloff",
+   "Readable contrast on nameplate"
+  ],
+  "needsText": false,
+  "usesPhotos": true
  }
 ]

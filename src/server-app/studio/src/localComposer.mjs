@@ -33,29 +33,29 @@ function pickBestStyle({ msg, recipe, resolved, previousPlan, library }) {
   if (resolved.style && library.idx.styles[resolved.style]) return resolved.style;
 
   const styleRules = [
-    [/neon|cyberpunk|gaming|esports|futuristic|sci-fi|hacker|ai|robot|tech/i, 'neon-cyberpunk'],
-    [/synthwave|80s|vaporwave|retrowave|outrun/i, 'synthwave-retro'],
-    [/luxury|gold|royal|jewel|perfume|watch|premium|vip|elegance/i, 'dark-luxury'],
-    [/minimal|swiss|clean|corporate|modern\s*simple|white/i, 'minimal-swiss'],
-    [/glass|frosted|ui|saas|app/i, 'glassmorphism'],
-    [/neumorph|soft\s*ui/i, 'neumorphism'],
-    [/brutal|bold\s*sale|street|anti/i, 'brutalist'],
-    [/cinematic|movie|film|thriller|drama|dark\s*moody/i, 'cinematic-poster'],
-    [/editorial|magazine|fashion|vogue|article/i, 'magazine-editorial'],
-    [/pastel|cute|soft|wedding|baby|flower|floral/i, 'pastel-soft'],
-    [/comic|pop\s*art|cartoon|funny|wow/i, 'pop-art-comic'],
-    [/grunge|rock|hip\s*hop|rap|metal|urban/i, 'grunge-street'],
-    [/sticker|bubbly|playful/i, 'sticker-pop'],
-    [/mesh|gradient|startup|trendy/i, 'gradient-mesh-modern'],
-    [/flat|vector|explainer|illustration|diagram/i, 'flat-vector'],
-    [/paper\s*cut|diwali|holi|eid|festival|navratri|craft/i, 'paper-cut-layers'],
-    [/isometric|3d\s*card/i, 'isometric-3d-css'],
-    [/holo|iridescent|chrome|y2k/i, 'holographic'],
-    [/blueprint|engineering|architect|diagram/i, 'blueprint-tech'],
-    [/watercolor|paint|wellness|yoga|calm|poem/i, 'watercolor-wash'],
-    [/anime|manga|chibi|otaku/i, 'anime-glow'],
-    [/doodle|sketch|hand\s*drawn|kids|school/i, 'doodle-hand-drawn'],
-    [/riso|vintage\s*print|indie/i, 'riso-retro-print'],
+    [/\b(neon|cyberpunk|gaming|esports|futuristic|sci-fi|hacker|ai|robot|tech)\b/i, 'neon-cyberpunk'],
+    [/\b(synthwave|80s|vaporwave|retrowave|outrun)\b/i, 'synthwave-retro'],
+    [/\b(luxury|gold|royal|jewel|perfume|watch|premium|vip|elegance)\b/i, 'dark-luxury'],
+    [/\b(minimal|swiss|clean|corporate|modern\s*simple|white)\b/i, 'minimal-swiss'],
+    [/\b(glass|frosted|ui|saas|app)\b/i, 'glassmorphism'],
+    [/\b(neumorph|soft\s*ui)\b/i, 'neumorphism'],
+    [/\b(brutal|bold\s*sale|street|anti)\b/i, 'brutalist'],
+    [/\b(cinematic|movie|film|thriller|drama|dark\s*moody)\b/i, 'cinematic-poster'],
+    [/\b(editorial|magazine|fashion|vogue|article)\b/i, 'magazine-editorial'],
+    [/\b(pastel|cute|soft|wedding|baby|flower|floral)\b/i, 'pastel-soft'],
+    [/\b(comic|pop\s*art|cartoon|funny|wow)\b/i, 'pop-art-comic'],
+    [/\b(grunge|rock|hip\s*hop|rap|metal|urban)\b/i, 'grunge-street'],
+    [/\b(sticker|bubbly|playful)\b/i, 'sticker-pop'],
+    [/\b(mesh|gradient|startup|trendy)\b/i, 'gradient-mesh-modern'],
+    [/\b(flat|vector|explainer|illustration|diagram)\b/i, 'flat-vector'],
+    [/\b(paper\s*cut|diwali|holi|eid|festival|navratri|craft)\b/i, 'paper-cut-layers'],
+    [/\b(isometric|3d\s*card)\b/i, 'isometric-3d-css'],
+    [/\b(holo|iridescent|chrome|y2k)\b/i, 'holographic'],
+    [/\b(blueprint|engineering|architect|diagram)\b/i, 'blueprint-tech'],
+    [/\b(watercolor|paint|wellness|yoga|calm|poem)\b/i, 'watercolor-wash'],
+    [/\b(anime|manga|chibi|otaku)\b/i, 'anime-glow'],
+    [/\b(doodle|sketch|hand\s*drawn|kids|school)\b/i, 'doodle-hand-drawn'],
+    [/\b(riso|vintage\s*print|indie)\b/i, 'riso-retro-print'],
   ];
   for (const [re, id] of styleRules) {
     if (re.test(lower) && library.idx.styles[id]) return id;
@@ -115,10 +115,37 @@ function pickBestPalette({ msg, styleObj, previousPlan, library }) {
   return candIds[0] || 'neon-night';
 }
 
-function pickBestLayout({ recipe, size, hasPhoto, isFullBleedPhoto, library }) {
+function pickColorGradePreset({ styleId, recipeId, msg }) {
+  const lower = String(msg || '').toLowerCase();
+  if (/teal|orange|cinematic|movie|film|thriller|dramatic/i.test(lower) || styleId === 'cinematic-poster') {
+    return 'cinematic-teal-orange';
+  }
+  if (styleId === 'dark-luxury' || /luxury|gold|noir|watch|perfume|black/i.test(lower)) {
+    return 'luxury-noir';
+  }
+  if (
+    styleId === 'neon-cyberpunk' ||
+    styleId === 'synthwave-retro' ||
+    styleId === 'bold-yt-thumbnail' ||
+    recipeId === 'thumbnail'
+  ) {
+    return 'neon-pop';
+  }
+  if (styleId === 'magazine-editorial' || recipeId === 'quote-card' || /editorial|magazine|vintage|warm/i.test(lower)) {
+    return 'golden-editorial';
+  }
+  return 'portrait-natural';
+}
+
+function pickBestLayout({ recipe, size, hasPhoto, isFullBleedPhoto, msg, library }) {
   const ratio = size.w / Math.max(1, size.h);
   const aspect = ratio >= 2.2 ? 'wide' : ratio >= 1.2 ? 'landscape' : ratio <= 0.65 ? 'tall' : ratio < 0.9 ? 'portrait' : 'square';
+  const lower = String(msg || '').toLowerCase();
 
+  if (recipe.id === 'portrait') {
+    if (/editorial|magazine|vogue|fashion/i.test(lower)) return 'editorial-split';
+    return 'portrait-studio';
+  }
   if (recipe.id === 'thumbnail') {
     if (/vs\b|versus/i.test(recipe.hint || '')) return 'versus-split';
     return hasPhoto ? 'text-left-subject-right' : 'split-diagonal';
@@ -135,6 +162,7 @@ function pickBestLayout({ recipe, size, hasPhoto, isFullBleedPhoto, library }) {
   }
   if (recipe.id === 'infographic') return 'poster-stack';
   if (recipe.id === 'poster' || recipe.id === 'flyer' || recipe.id === 'book-cover') {
+    if (/editorial|magazine/i.test(lower) && hasPhoto) return 'editorial-split';
     if (hasPhoto && isFullBleedPhoto && aspect !== 'wide') return 'photo-bottom-plate';
     return aspect === 'landscape' || aspect === 'wide' ? 'text-left-subject-right' : 'poster-stack';
   }
@@ -341,7 +369,8 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
   const wantsSearch = shouldSearchWebPhoto({ recipe, resolved, topic, hasUpload });
   const splitPair = resolved.web !== 'no' ? splitSubjectAndBackground(topic, msg) : null;
   const willHavePhoto = hasUpload || wantsSearch || (faceSwapIntent && resolved.web !== 'no');
-  const isCutoutRecipe = recipe.id === 'thumbnail' || recipe.id === 'product-ad';
+  const isCutoutRecipe = recipe.id === 'thumbnail' || recipe.id === 'product-ad' || recipe.id === 'portrait';
+  const colorGrade = pickColorGradePreset({ styleId, recipeId: recipe.id, msg });
   const layoutId = faceSwapIntent
     ? (resolved.text ? 'photo-bottom-plate' : 'centered-hero')
     : pickBestLayout({
@@ -349,6 +378,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         size,
         hasPhoto: willHavePhoto,
         isFullBleedPhoto: !isCutoutRecipe && !hasUpload && !splitPair,
+        msg,
         library,
       });
 
@@ -386,7 +416,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         faceUploadId: uploads[1].id,
         role: 'face_swap_target',
         removeBackground: false,
-        adjust: { contrast: 1.04, saturate: 1.05 },
+        adjust: { contrast: 1.04, saturate: 1.05, colorGrade },
         why: 'WebGPU policy-safe face swap placing second face image onto first scene.',
       });
     } else {
@@ -399,7 +429,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         faceUploadId: uploads[0].id,
         role: 'face_swap_target',
         removeBackground: false,
-        adjust: { contrast: 1.04, saturate: 1.05 },
+        adjust: { contrast: 1.04, saturate: 1.05, colorGrade },
         why: `Web search target "${targetQ}" with WebGPU face swap using uploaded face.`,
       });
     }
@@ -416,7 +446,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
             : resolved.photo === 'yes-asis'
             ? false
             : isCutoutRecipe || Boolean(splitPair?.bgQuery),
-        adjust: { contrast: 1.06, saturate: 1.08 },
+        adjust: { contrast: 1.06, saturate: 1.08, colorGrade },
         why: 'User-provided subject photo integrated cleanly into composition.',
       });
     });
@@ -427,7 +457,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         query: splitPair.bgQuery,
         role: 'background',
         removeBackground: false,
-        adjust: { contrast: 1.05, saturate: 1.12 },
+        adjust: { contrast: 1.05, saturate: 1.12, colorGrade },
         why: `Web-searched background scene for "${splitPair.bgQuery}".`,
       });
     }
@@ -439,7 +469,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         query: splitPair.subjectQuery,
         role: 'subject',
         removeBackground: true,
-        adjust: { contrast: 1.08, saturate: 1.1 },
+        adjust: { contrast: 1.08, saturate: 1.1, colorGrade },
         why: `Web-searched character/subject photo with contour cutout for "${splitPair.subjectQuery}".`,
       });
       assets.push({
@@ -448,7 +478,7 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
         query: splitPair.bgQuery,
         role: 'background',
         removeBackground: false,
-        adjust: { contrast: 1.05, saturate: 1.12 },
+        adjust: { contrast: 1.05, saturate: 1.12, colorGrade },
         why: `Web-searched matching background scene for "${splitPair.bgQuery}".`,
       });
     } else {
@@ -459,15 +489,17 @@ export function createLocalPlan({ message, resolved, intent, uploads = [], libra
           source: 'search',
           query: q,
           role: isCutoutRecipe ? 'subject' : 'background',
-          removeBackground: isCutoutRecipe && /\b(person|car|phone|shoes|watch|bottle|laptop|product|player|cat|dog|ronaldo|messi|kohli|hero|singer|actor|star|man|woman)\b/i.test(q),
-          adjust: { contrast: 1.08, saturate: 1.1 },
+          removeBackground:
+            recipe.id === 'portrait' ||
+            (isCutoutRecipe && /\b(person|car|phone|shoes|watch|bottle|laptop|product|player|cat|dog|ronaldo|messi|kohli|hero|singer|actor|star|man|woman)\b/i.test(q)),
+          adjust: { contrast: 1.08, saturate: 1.1, colorGrade },
           why: `Real photographic visual reference for "${q}".`,
         });
       }
     }
   }
 
-  const effects = [...(styleObj.effects || ['vignette', 'grain'])];
+  const effects = [...new Set([...(styleObj.effects || ['vignette', 'grain']), ...(recipe.id === 'portrait' || styleId === 'cinematic-poster' ? ['studio-stage', 'key-light', 'rim-bloom'] : [])])];
   const motifs = [];
   if (styleId === 'quote-card' || recipe.id === 'quote-card') motifs.push('quote-mark');
   if (styleId === 'pop-art-comic' || styleId === 'sticker-pop') motifs.push('starburst', 'sparkle');
@@ -626,7 +658,13 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
     hasDualLayers ||
     isFaceSwap ||
     layout.id === 'photo-bottom-plate' ||
-    (hasPhoto && !isCutout && (plan.recipe === 'wallpaper' || plan.recipe === 'poster' || plan.recipe === 'news-card' || plan.recipe === 'generic'));
+    (hasPhoto &&
+      !isCutout &&
+      (layout.id === 'portrait-studio' ||
+        plan.recipe === 'wallpaper' ||
+        plan.recipe === 'poster' ||
+        plan.recipe === 'news-card' ||
+        plan.recipe === 'generic'));
 
   const titleStr = String(plan.text?.title || '').trim();
   const subStr = String(plan.text?.subtitle || '').trim();
@@ -647,12 +685,20 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
   const bodyFont = `'${fonts.body}', ${isHindi ? "'Noto Sans Devanagari', " : ''}sans-serif`;
   const headlineParts = splitHighlightWord(titleStr);
 
-  // Choose background treatment matching chosen style
+  // Choose atmospheric lighting & background treatment matching chosen style
   let backgroundLayers = '';
   if (styleId === 'bold-yt-thumbnail') {
     backgroundLayers = `
       <div style="position:absolute;inset:0;background:radial-gradient(circle at 72% 48%, ${primaryColor} 0%, ${bgColor} 78%);"></div>
       <div class="fx-sun" style="opacity:.22"></div>
+      <div class="fx-rimbloom" style="opacity:.38"></div>
+    `;
+  } else if (styleId === 'cinematic-poster') {
+    backgroundLayers = `
+      <div style="position:absolute;inset:0;background:radial-gradient(circle at 52% 34%, ${surfaceColor} 0%, ${bgColor} 82%);"></div>
+      <div class="fx-splitlight" style="opacity:.42"></div>
+      <div class="fx-keylight" style="opacity:.38"></div>
+      <div class="fx-stage"></div>
     `;
   } else if (styleId === 'synthwave-retro') {
     backgroundLayers = `
@@ -663,8 +709,9 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
     `;
   } else if (styleId === 'neon-cyberpunk') {
     backgroundLayers = `
-      <div class="fx-mesh" style="position:absolute;inset:0;opacity:.7"></div>
+      <div class="fx-mesh" style="position:absolute;inset:0;opacity:.75"></div>
       <div class="fx-grid" style="opacity:.22"></div>
+      <div class="fx-splitlight" style="opacity:.34"></div>
       <div class="fx-scan" style="opacity:.18"></div>
     `;
   } else if (styleId === 'blueprint-tech') {
@@ -680,7 +727,9 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
     `;
   } else if (styleId === 'dark-luxury') {
     backgroundLayers = `
-      <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 38%, ${surfaceColor} 0%, ${bgColor} 76%);"></div>
+      <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 34%, ${surfaceColor} 0%, ${bgColor} 78%);"></div>
+      <div class="fx-keylight" style="opacity:.34"></div>
+      <div class="fx-stage" style="opacity:.85"></div>
       <div class="fx-spot"></div>
       <div class="fx-corners" style="opacity:.65"></div>
     `;
@@ -692,8 +741,10 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
   } else {
     backgroundLayers = `
       <div class="fx-mesh" style="position:absolute;inset:0;opacity:.88"></div>
+      <div class="fx-keylight" style="opacity:${darkBg ? '.26' : '.12'}"></div>
       <div style="position:absolute;width:calc(var(--u)*52);height:calc(var(--u)*52);right:-10%;top:-12%;border-radius:50%;background:radial-gradient(circle, ${accentColor}44, transparent 70%);"></div>
       <div style="position:absolute;width:calc(var(--u)*48);height:calc(var(--u)*48);left:-10%;bottom:-14%;border-radius:50%;background:radial-gradient(circle, ${primaryColor}48, transparent 70%);"></div>
+      ${darkBg ? '<div class="fx-stage" style="opacity:.65"></div>' : ''}
     `;
   }
 
@@ -709,7 +760,7 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
   const subZone = zones.subtitle || zones.author || zones.caption || zones.body || { x: titleZone.x, y: Math.min(0.82, titleZone.y + titleZone.h + 0.03), w: titleZone.w, h: 0.12, align: titleZone.align || 'left' };
 
   // Asset / Subject layer (supports Dual Background + Cutout Subject + Face Swap scenes)
-  const objPos = rf.faceTopAnchor ? 'object-position:center 18%;' : '';
+  const objPos = rf.faceTopAnchor || plan.recipe === 'portrait' || isFaceSwap ? 'object-position:center 16%;' : '';
   const bgScrimAlpha = rf.scrimBoost ? '0.88' : '0.82';
   let subjectHtml = '';
   if (hasDualLayers && bgAsset && subjAsset) {
@@ -816,9 +867,9 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
       ? `<div style="position:absolute;inset:calc(var(--u)*3.5);border:3px solid var(--accent);border-radius:calc(var(--u)*1.2);pointer-events:none;"><div style="position:absolute;inset:calc(var(--u)*1);border:1px solid var(--text);opacity:.32;"></div></div>`
       : '';
 
-  // Typography styling per style
-  const effectiveTextColor = isFullPhotoLayout ? '#ffffff' : textColor;
-  const effectiveAccentColor = isFullPhotoLayout ? '#ffd166' : accentColor;
+  // Typography styling per style & editorial contrast
+  const effectiveTextColor = isFullPhotoLayout || layout.id === 'portrait-studio' ? '#ffffff' : textColor;
+  const effectiveAccentColor = isFullPhotoLayout || layout.id === 'portrait-studio' ? '#ffd166' : accentColor;
   const titleTreatClass =
     styleId === 'bold-yt-thumbnail' || styleId === 'pop-art-comic'
       ? 'fx-stroke'
@@ -828,7 +879,11 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
   const textTransformRule = isHindi ? 'none' : styleId === 'bold-yt-thumbnail' || styleId === 'brutalist' || styleId === 'neon-cyberpunk' ? 'uppercase' : 'none';
 
   // Readability glass/solid plate if text sits over non-solid photo or busy mesh
-  const needsBackingPlate = (Boolean(rf.forceBackingPlate) || styleId === 'glassmorphism' || (hasPhoto && isFullPhotoLayout && layout.id !== 'photo-bottom-plate')) && titleStr;
+  const needsBackingPlate =
+    (Boolean(rf.forceBackingPlate) ||
+      styleId === 'glassmorphism' ||
+      (hasPhoto && (isFullPhotoLayout || layout.id === 'portrait-studio') && layout.id !== 'photo-bottom-plate')) &&
+    titleStr;
   const alignVal = titleZone.align || (plan.recipe === 'logo' || plan.recipe === 'quote-card' || plan.recipe === 'certificate' ? 'center' : 'left');
   const titleTopOverride = plan.recipe === 'logo' ? 0.54 : titleZone.y;
   const subTopOverride = plan.recipe === 'logo' ? 0.72 : subZone.y;
@@ -836,27 +891,32 @@ export function composeLocalHtml({ plan, library, assetManifest = [] }) {
   const separateLowerFooter = (layout.id === 'poster-stack' || layout.id === 'product-spotlight' || layout.id === 'story-vertical') && hasPhoto && !isFullPhotoLayout;
   const titleSafeLeftPct = rf.safeMarginBoost ? Math.max(7.5, titleZone.x * 100) : titleZone.x * 100;
   const titleSafeWidthPct = rf.safeMarginBoost ? Math.min(85, titleZone.w * 100) : titleZone.w * 100;
+  const editorialDivider =
+    layout.id === 'editorial-split'
+      ? `<div style="height:2px;width:calc(var(--u)*10);background:${effectiveAccentColor};margin:calc(var(--u)*1.2) 0;"></div>`
+      : '';
 
   const headlineHtml = titleStr
     ? `
     <div style="position:absolute;left:${titleSafeLeftPct.toFixed(1)}%;top:${(titleTopOverride * 100).toFixed(1)}%;width:${titleSafeWidthPct.toFixed(1)}%;z-index:20;text-align:${alignVal};${
       needsBackingPlate
-        ? `background:${darkBg || isFullPhotoLayout ? 'rgba(10,14,26,0.78)' : 'rgba(255,255,255,0.9)'};padding:calc(var(--u)*2.2) calc(var(--u)*2.8);border-radius:calc(var(--u)*2);border:1px solid ${darkBg || isFullPhotoLayout ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.14)'};box-sizing:border-box;`
+        ? `background:${darkBg || isFullPhotoLayout || layout.id === 'portrait-studio' ? 'rgba(8,12,22,0.8)' : 'rgba(255,255,255,0.92)'};padding:calc(var(--u)*2.2) calc(var(--u)*2.8);border-radius:calc(var(--u)*2);border:1px solid ${darkBg || isFullPhotoLayout || layout.id === 'portrait-studio' ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.14)'};box-shadow:0 calc(var(--u)*1.2) calc(var(--u)*3.4) rgba(0,0,0,0.34);box-sizing:border-box;`
         : ''
     }">
       ${
         badgeStr && plan.recipe !== 'logo'
-          ? `<div style="display:inline-block;margin-bottom:calc(var(--u)*1.4);padding:calc(var(--u)*0.55) calc(var(--u)*1.5);border-radius:calc(var(--u)*0.8);background:${effectiveAccentColor};color:${readableOn(effectiveAccentColor)};font-family:${bodyFont};font-size:${badgePx}px;font-weight:800;letter-spacing:${isHindi ? '0' : '0.08em'};text-transform:${isHindi ? 'none' : 'uppercase'};">${esc(badgeStr)}</div>`
+          ? `<div style="display:inline-block;margin-bottom:calc(var(--u)*1.3);padding:calc(var(--u)*0.55) calc(var(--u)*1.5);border-radius:calc(var(--u)*0.8);background:${effectiveAccentColor};color:${readableOn(effectiveAccentColor)};font-family:${bodyFont};font-size:${badgePx}px;font-weight:800;letter-spacing:${isHindi ? '0' : '0.08em'};text-transform:${isHindi ? 'none' : 'uppercase'};">${esc(badgeStr)}</div>`
           : ''
       }
-      <h1 class="${titleTreatClass}" style="margin:0;font-family:${titleFont};font-size:${titlePx}px;font-weight:${fonts.displayWeight || 800};line-height:${isHindi ? 1.2 : 1.06};color:${effectiveTextColor};text-transform:${textTransformRule};word-wrap:break-word;${
-        titleTreatClass ? '' : `text-shadow:0 calc(var(--u)*0.4) calc(var(--u)*1.8) rgba(0,0,0,${darkBg || isFullPhotoLayout ? '0.45' : '0.08'});`
+      <h1 class="${titleTreatClass}" style="margin:0;font-family:${titleFont};font-size:${titlePx}px;font-weight:${fonts.displayWeight || 800};line-height:${isHindi ? 1.2 : 1.05};letter-spacing:${isHindi ? '0' : '-0.02em'};text-wrap:balance;color:${effectiveTextColor};text-transform:${textTransformRule};word-wrap:break-word;${
+        titleTreatClass ? '' : `text-shadow:0 calc(var(--u)*0.45) calc(var(--u)*2) rgba(0,0,0,${darkBg || isFullPhotoLayout || layout.id === 'portrait-studio' ? '0.52' : '0.08'});`
       }">
         ${headlineParts.before ? `<span>${esc(headlineParts.before)} </span>` : ''}<span style="color:${effectiveAccentColor}">${esc(headlineParts.accent)}</span>${headlineParts.after ? `<span> ${esc(headlineParts.after)}</span>` : ''}
       </h1>
+      ${editorialDivider}
       ${
         !separateLowerFooter && subStr
-          ? `<p style="margin:calc(var(--u)*1.6) 0 0 0;font-family:${bodyFont};font-size:${subPx}px;font-weight:${fonts.bodyWeight || 500};line-height:1.38;color:${effectiveTextColor};opacity:0.9;">${esc(subStr)}</p>`
+          ? `<p style="margin:calc(var(--u)*1.5) 0 0 0;font-family:${bodyFont};font-size:${subPx}px;font-weight:${fonts.bodyWeight || 500};line-height:1.38;color:${effectiveTextColor};opacity:0.92;">${esc(subStr)}</p>`
           : ''
       }
       ${

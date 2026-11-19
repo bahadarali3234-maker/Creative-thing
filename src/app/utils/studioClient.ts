@@ -1,6 +1,8 @@
 import html2canvas from 'html2canvas';
 import { buildWorkspaceAuthHeaders } from './workspaceSession';
 import {
+  applyWebGpuColorGrade,
+  ColorGradePreset,
   enhancedBackgroundRemove,
   extractDominantColorsFromDataUrl,
   performWebGpuFaceSwap,
@@ -584,7 +586,18 @@ export async function runStudioClientTask(
     }
   }
 
-  if (p.adjust && Object.keys(p.adjust).length > 0) {
+  let colorGradePreset: string | undefined;
+  let usedWebGpuColorGrade = false;
+  if (p.adjust?.colorGrade) {
+    try {
+      const graded = await applyWebGpuColorGrade(canvas, p.adjust.colorGrade as ColorGradePreset);
+      canvas = graded.canvas;
+      colorGradePreset = graded.preset;
+      usedWebGpuColorGrade = graded.usedWebGpu;
+    } catch {}
+  }
+
+  if (p.adjust && Object.keys(p.adjust).some((k) => k !== 'colorGrade')) {
     canvas = adjustCanvas(canvas, p.adjust);
   }
 
@@ -592,6 +605,8 @@ export async function runStudioClientTask(
     dataUrl: canvas.toDataURL('image/png'),
     outlineScreenshotDataUrl,
     palette,
+    colorGradePreset,
+    usedWebGpuColorGrade,
     width: canvas.width,
     height: canvas.height,
     facts: { ...facts, hasAlpha: facts.hasAlpha || method !== 'none' },

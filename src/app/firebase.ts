@@ -5,6 +5,7 @@ import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  updateProfile,
   signOut as fbSignOut,
   onAuthStateChanged,
   type User as FbUser,
@@ -26,8 +27,9 @@ import { threadsFromRows } from './utils/chatThreads';
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// CRITICAL: Bind to configured firestoreDatabaseId
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// CRITICAL: Bind to configured firestoreDatabaseId if present
+const configuredDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
+export const db = configuredDatabaseId ? getFirestore(app, configuredDatabaseId) : getFirestore(app);
 export const auth = getAuth(app);
 
 // ============================================================================
@@ -123,16 +125,60 @@ export interface User {
   uid: string;
   email: string | null;
   displayName: string | null;
+  givenName?: string | null;
   photoURL: string | null;
   isAnonymous: boolean;
 }
 
-function toUser(u: FbUser | null | undefined): User | null {
+// Strict in-memory Google Workspace OAuth access token (NEVER persisted to localStorage/sessionStorage)
+let inMemoryGoogleAccessToken: string | null = null;
+
+export function getGoogleAccessToken(): string | null {
+  return inMemoryGoogleAccessToken;
+}
+
+export function clearGoogleAccessToken(): void {
+  inMemoryGoogleAccessToken = null;
+}
+
+async function fetchGooglePeopleMe(accessToken: string): Promise<{ displayName?: string; givenName?: string; email?: string }> {
+  try {
+    const res = await fetch(
+      'https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses',
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!res.ok) return {};
+    const data: any = await res.json();
+    const primaryName = Array.isArray(data?.names)
+      ? data.names.find((n: any) => n?.metadata?.primary) || data.names[0]
+      : null;
+    const primaryEmail = Array.isArray(data?.emailAddresses)
+      ? data.emailAddresses.find((e: any) => e?.metadata?.primary) || data.emailAddresses[0]
+      : null;
+    return {
+      displayName: primaryName?.displayName || undefined,
+      givenName: primaryName?.givenName || undefined,
+      email: primaryEmail?.value || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function toUser(u: FbUser | null | undefined, overrides?: { displayName?: string; givenName?: string; email?: string }): User | null {
   if (!u) return null;
+  const resolvedEmail = overrides?.email || u.email || null;
+  const resolvedDisplayName = overrides?.displayName || u.displayName || resolvedEmail?.split('@')[0] || null;
+  const resolvedGiven =
+    overrides?.givenName ||
+    (resolvedDisplayName ? resolvedDisplayName.trim().split(/\s+/)[0] : null);
   return {
     uid: u.uid,
-    email: u.email ?? null,
-    displayName: u.displayName || u.email?.split('@')[0] || null,
+    email: resolvedEmail,
+    displayName: resolvedDisplayName,
+    givenName: resolvedGiven,
     photoURL: u.photoURL ?? null,
     isAnonymous: Boolean(u.isAnonymous),
   };
@@ -148,6 +194,7 @@ async function recordUserProfile(user: User, force = false) {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName,
+        givenName: user.givenName || null,
         photoURL: user.photoURL,
       })
     );
@@ -171,6 +218,7 @@ async function recordUserProfile(user: User, force = false) {
         uid: user.uid,
         email: user.email || '',
         displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        givenName: user.givenName || '',
         photoURL: user.photoURL || '',
         lastLoginAt: new Date().toISOString(),
       },
@@ -210,6 +258,7 @@ export function subscribeToAuth(callback: (user: User | null) => void): () => vo
     if (u && !u.isAnonymous) {
       recordUserProfile(u, false);
     } else if (!u) {
+      inMemoryGoogleAccessToken = null;
       localStorage.removeItem('think_creative_user');
     }
     callback(u);
@@ -217,15 +266,54 @@ export function subscribeToAuth(callback: (user: User | null) => void): () => vo
   return unsubscribe;
 }
 
-export async function signInWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
+function buildGoogleWorkspaceProvider(): GoogleAuthProvider {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/gmail.send');
+  provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+  provider.addScope('https://www.googleapis.com/auth/userinfo.email');
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
+}
+
+function dispatchAuthLoginEvent(user: User, method: 'google' | 'email' | 'gmail-connect') {
+  if (typeof window === 'undefined') return;
   try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
+    window.dispatchEvent(
+      new CustomEvent('think-creative-auth-login', {
+        detail: {
+          user,
+          method,
+          hasGoogleToken: Boolean(inMemoryGoogleAccessToken),
+        },
+      })
+    );
+  } catch {}
+}
+
+export async function signInWithGoogle(): Promise<{ success: boolean; user?: User; hasGoogleToken?: boolean; error?: string }> {
+  try {
+    const provider = buildGoogleWorkspaceProvider();
     const cred = await signInWithPopup(auth, provider);
-    const u = toUser(cred.user);
+    const credential = GoogleAuthProvider.credentialFromResult(cred);
+    if (credential?.accessToken) {
+      inMemoryGoogleAccessToken = credential.accessToken;
+    }
+
+    let peopleProfile: { displayName?: string; givenName?: string; email?: string } = {};
+    if (inMemoryGoogleAccessToken) {
+      peopleProfile = await fetchGooglePeopleMe(inMemoryGoogleAccessToken);
+      if (peopleProfile.displayName && cred.user && cred.user.displayName !== peopleProfile.displayName) {
+        await updateProfile(cred.user, { displayName: peopleProfile.displayName }).catch(() => {});
+      }
+    }
+
+    const u = toUser(cred.user, peopleProfile);
     currentUser = u;
-    if (u) await recordUserProfile(u, true);
-    return { success: true, user: u || undefined };
+    if (u) {
+      await recordUserProfile(u, true);
+      dispatchAuthLoginEvent(u, 'google');
+    }
+    return { success: true, user: u || undefined, hasGoogleToken: Boolean(inMemoryGoogleAccessToken) };
   } catch (err: any) {
     console.error('Google Sign-In Error:', err);
     if (err?.code === 'auth/popup-closed-by-user') {
@@ -238,12 +326,33 @@ export async function signInWithGoogle(): Promise<{ success: boolean; user?: Use
   }
 }
 
+export async function connectGoogleGmailPermissions(): Promise<{ success: boolean; accessToken?: string; user?: User; error?: string }> {
+  const res = await signInWithGoogle();
+  if (!res.success || !inMemoryGoogleAccessToken) {
+    return {
+      success: false,
+      error: res.error || 'Could not obtain Gmail send permissions from Google sign-in.',
+    };
+  }
+  if (res.user) {
+    dispatchAuthLoginEvent(res.user, 'gmail-connect');
+  }
+  return {
+    success: true,
+    accessToken: inMemoryGoogleAccessToken,
+    user: res.user,
+  };
+}
+
 export async function signInWithEmail(email: string, pass: string): Promise<{ success: boolean; user?: User; error?: string }> {
   try {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     const u = toUser(cred.user);
     currentUser = u;
-    if (u) await recordUserProfile(u, true);
+    if (u) {
+      await recordUserProfile(u, true);
+      dispatchAuthLoginEvent(u, 'email');
+    }
     return { success: true, user: u || undefined };
   } catch (err: any) {
     console.error('Email sign in error:', err);
@@ -256,7 +365,10 @@ export async function signUpWithEmail(email: string, pass: string): Promise<{ su
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     const u = toUser(cred.user);
     currentUser = u;
-    if (u) await recordUserProfile(u, true);
+    if (u) {
+      await recordUserProfile(u, true);
+      dispatchAuthLoginEvent(u, 'email');
+    }
     return { success: true, user: u || undefined };
   } catch (err: any) {
     console.error('Email sign up error:', err);
@@ -266,6 +378,7 @@ export async function signUpWithEmail(email: string, pass: string): Promise<{ su
 
 export async function logOut(): Promise<void> {
   try {
+    inMemoryGoogleAccessToken = null;
     await fbSignOut(auth);
     currentUser = null;
     localStorage.removeItem('think_creative_user');

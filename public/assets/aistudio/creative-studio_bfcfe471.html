@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Creative Studio — AI image designer</title>
+<style>
+:root{--bg:#f2f4f9;--panel:#ffffff;--ink:#141a2e;--muted:#667089;--line:#dde2ee;--accent:#4f46e5;--accent-ink:#fff;--ok:#0f9d6b;--warn:#c2410c;--bubble:#ffffff;--user:#4f46e5;--shadow:0 6px 24px rgba(20,26,46,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1020;--panel:#151a30;--ink:#eaeefc;--muted:#97a1c4;--line:#262d4d;--accent:#7c83ff;--accent-ink:#0d1020;--ok:#3ddc9c;--warn:#ffa36b;--bubble:#171d36;--user:#5b5bf0;--shadow:0 6px 24px rgba(0,0,0,.35)}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Devanagari","Hind",sans-serif;display:flex;flex-direction:column;font-size:15px;line-height:1.45}
+header{display:flex;align-items:center;gap:10px;padding:max(10px,env(safe-area-inset-top)) 14px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:17px;margin:0;flex:1;letter-spacing:.2px}
+.chip{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted);max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:var(--ok)}.chip.warn{color:var(--warn);border-color:var(--warn)}
+button{font:inherit;color:inherit}
+.iconbtn{background:none;border:1px solid var(--line);border-radius:10px;width:38px;height:38px;cursor:pointer;font-size:18px}
+#chat{flex:1;overflow-y:auto;padding:14px 12px 8px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.msg{display:flex}.msg.user{justify-content:flex-end}
+.bubble{max-width:min(92%,640px);padding:10px 13px;border-radius:16px;background:var(--bubble);border:1px solid var(--line);box-shadow:var(--shadow);word-wrap:break-word;overflow-wrap:anywhere}
+.msg.user .bubble{background:var(--user);color:#fff;border-color:transparent}
+.msg.card.wide .bubble{max-width:min(96%,660px);width:auto}
+.uthumbs{margin-top:6px;font-size:12px;opacity:.9}
+.ctitle{font-weight:700;margin-bottom:4px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn:disabled{opacity:.5}
+.opt{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:7px 12px;cursor:pointer;font-size:13.5px}
+.opt.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.opts{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+.q{margin-top:10px}.qt{font-weight:600;font-size:14px}
+.qin{width:100%;margin-top:6px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.examples{display:flex;flex-wrap:wrap;gap:8px;padding:0 2px}
+.note{margin-top:8px;font-size:12.5px;color:var(--muted)}
+.dots i{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:var(--muted);animation:b 1s infinite}.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+/* generation card */
+.gen{display:flex;flex-direction:column;gap:10px}
+.think{font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg)}
+.think summary{cursor:pointer;font-weight:600;color:var(--ink)}
+.steps{margin:6px 0 2px;padding-left:18px}.steps li{margin:4px 0}
+.stage{position:relative;border-radius:12px;overflow:hidden;background:#000;box-shadow:var(--shadow);align-self:flex-start;max-width:100%}
+.stage canvas.result{display:block;cursor:zoom-in}
+.shimmer{position:absolute;inset:0;background:linear-gradient(110deg,#1b2140 30%,#2c3566 45%,#1b2140 60%);background-size:200% 100%;animation:sh 1.3s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.pbadge{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.62);color:#fff;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;backdrop-filter:blur(4px);font-variant-numeric:tabular-nums}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.actions .btn{font-size:13px;padding:7px 10px}
+.edit .qin{margin-bottom:6px}
+.srcs,.gnote{font-size:12.5px;color:var(--muted)}.srcs a{color:var(--accent)}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.sgrid a{display:block;position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--bg)}.sgrid img{width:100%;height:100%;object-fit:cover}.sgrid span{position:absolute;left:0;right:0;bottom:0;font-size:10px;color:#fff;background:rgba(0,0,0,.55);padding:2px 5px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+/* composer */
+#pending{display:flex;gap:8px;padding:6px 12px 0}
+.pchip{position:relative;width:56px;height:56px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}.pchip canvas{width:100%;height:100%}.pchip button{position:absolute;top:0;right:0;border:none;background:rgba(0,0,0,.6);color:#fff;width:20px;height:20px;border-radius:0 0 0 8px;cursor:pointer;line-height:1}
+#composer{display:flex;gap:8px;align-items:flex-end;padding:8px 12px max(10px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--panel)}
+#input{flex:1;resize:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:14px;padding:10px 12px;font:inherit;max-height:140px;min-height:42px}
+#send{background:var(--accent);color:var(--accent-ink);border:none;width:42px;height:42px;border-radius:50%;font-size:18px;cursor:pointer}
+/* settings */
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--ink);width:min(94vw,520px);padding:16px;max-height:92vh}
+dialog::backdrop{background:rgba(5,8,20,.55)}
+dialog h2{margin:0 0 4px;font-size:18px}
+dialog label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 4px}
+dialog input,dialog select{width:100%;padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.keyrow{display:flex;gap:6px}.keyrow button{white-space:nowrap}
+#steps{list-style:none;padding:0;margin:12px 0 0;display:flex;flex-direction:column;gap:6px}
+#steps li{display:flex;flex-direction:column;border-radius:10px;padding:8px 10px;font-size:13px;border:1px solid var(--line)}
+#steps li.pass{border-color:var(--ok)}#steps li.fail{border-color:var(--warn)}#steps span{color:var(--muted);word-break:break-word}
+details.adv{margin-top:12px}details.adv summary{cursor:pointer;color:var(--muted);font-size:13px}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.vimg{max-width:100%;max-height:100%;width:auto;height:auto;border-radius:6px}
+.vx{position:absolute;top:max(12px,env(safe-area-inset-top));right:14px;background:rgba(255,255,255,.15);color:#fff;border:none;font-size:26px;width:40px;height:40px;border-radius:50%}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎨 Creative Studio</h1>
+  <span class="chip warn" id="status">Not set up</span>
+  <button class="iconbtn" id="openSettings" aria-label="Settings">⚙️</button>
+</header>
+<div id="chat" aria-live="polite"></div>
+<div id="pending" hidden></div>
+<div id="composer">
+  <button class="iconbtn" id="attach" aria-label="Attach image">📎</button>
+  <input type="file" id="file" accept="image/*" multiple hidden>
+  <textarea id="input" rows="1" placeholder="Describe the image you want…  (e.g. YouTube thumbnail banao: AI से कमाई)"></textarea>
+  <button id="send" aria-label="Send">➤</button>
+</div>
+
+<dialog id="settings">
+  <h2>Settings</h2>
+  <div class="hint">Your key is stored only in this browser (this file's storage) and is sent only to the API address below.</div>
+  <label>Provider</label>
+  <select id="prov"><option value="xai">xAI — Grok (api.x.ai)</option><option value="groq">Groq (api.groq.com)</option><option value="custom">Custom / my own proxy</option></select>
+  <label>API key</label>
+  <div class="keyrow"><input id="key" type="password" placeholder="paste your key" autocomplete="off" spellcheck="false"><button class="btn" id="toggleKey" type="button">Show</button></div>
+  <label>Model <span style="opacity:.7">(press “Load models”, then tap the box and pick one)</span></label>
+  <input id="model" list="modelList" placeholder="model name" autocomplete="off" spellcheck="false"><datalist id="modelList"></datalist>
+  <div class="row"><button class="btn" id="loadModels" type="button">Load models</button><button class="btn primary" id="testSave" type="button">Test &amp; Save</button></div>
+  <ol id="steps"></ol>
+  <div class="row"><button class="btn" id="saveAnyway" type="button" hidden>Save anyway</button></div>
+  <details class="adv"><summary>Advanced (optional)</summary>
+    <label>Base URL (leave empty for the provider default; use your own proxy if the browser blocks the API)</label>
+    <input id="base" placeholder="https://api.x.ai/v1">
+    <label>Image search URL (your Visual A-Z endpoint, e.g. https://yourserver/api/google-scrape-images)</label>
+    <input id="searchUrl" placeholder="optional — enables real web photos">
+    <label>Image proxy prefix (so web photos can be edited; e.g. https://yourserver/api/studio/img-proxy?url=)</label>
+    <input id="proxyUrl" placeholder="optional">
+  </details>
+  <div class="hint" id="savedNote"></div>
+  <div class="row"><button class="btn" id="clearKey" type="button">Remove saved key</button><button class="btn primary" id="closeSettings" type="button">Close</button></div>
+</dialog>
+<script>
+/* generated from library */
+const DATA = {"PALETTES": {"neon-night": {"name": "Neon Night", "mood": "techy, energetic", "bg": "#0b1020", "surface": "#151c36", "primary": "#6a2cff", "accent": "#00e5ff", "text": "#ffffff"}, "money-red": {"name": "Money Red", "mood": "urgent, bold", "bg": "#0a0a0a", "surface": "#1a1a1a", "primary": "#e10600", "accent": "#ffcc00", "text": "#ffffff"}, "ink-gold": {"name": "Ink & Gold", "mood": "luxury, serious", "bg": "#0b0d12", "surface": "#161a22", "primary": "#e8b04b", "accent": "#7a5b1e", "text": "#f4f1ea"}, "fresh-mint": {"name": "Fresh Mint", "mood": "fresh, healthy", "bg": "#0d3b36", "surface": "#14524a", "primary": "#2ec4b6", "accent": "#ff9f1c", "text": "#f7fff7"}, "sunset-pop": {"name": "Sunset Pop", "mood": "warm, playful", "bg": "#2b1055", "surface": "#3d1a73", "primary": "#ff4d6d", "accent": "#ffb703", "text": "#fff3e0"}, "teal-orange": {"name": "Cinematic Teal/Orange", "mood": "film, drama", "bg": "#081c24", "surface": "#0f2f3a", "primary": "#1b6f7a", "accent": "#ff8a3d", "text": "#f5e9da"}, "mono-clean": {"name": "Mono Clean", "mood": "clean, corporate", "bg": "#ffffff", "surface": "#f3f4f6", "primary": "#111827", "accent": "#2f5bea", "text": "#111827"}, "pastel-dream": {"name": "Pastel Dream", "mood": "soft, friendly", "bg": "#fdf2f8", "surface": "#ffffff", "primary": "#f9a8d4", "accent": "#a5b4fc", "text": "#3b2a4a"}, "forest-calm": {"name": "Forest Calm", "mood": "nature, calm", "bg": "#10231a", "surface": "#17382a", "primary": "#3fa66b", "accent": "#d9c27a", "text": "#eef5ea"}, "ocean-deep": {"name": "Ocean Deep", "mood": "trust, depth", "bg": "#04162b", "surface": "#0a2a4d", "primary": "#1fa2ff", "accent": "#7ee8fa", "text": "#eaf6ff"}, "royal-gold": {"name": "Royal Purple Gold", "mood": "royal, premium", "bg": "#1a0b2e", "surface": "#2a1450", "primary": "#7b2cbf", "accent": "#ffd166", "text": "#fdf6ff"}, "coral-cream": {"name": "Coral Cream", "mood": "friendly, light", "bg": "#fff4ea", "surface": "#ffffff", "primary": "#ff6b57", "accent": "#2b2d42", "text": "#2b2d42"}, "cyber-lime": {"name": "Cyber Lime", "mood": "hacker, gaming", "bg": "#0a0f0a", "surface": "#121a12", "primary": "#b6ff00", "accent": "#00f0ff", "text": "#f2fff2"}, "desert-sand": {"name": "Desert Sand", "mood": "earthy, editorial", "bg": "#f3e5c8", "surface": "#fff7e6", "primary": "#c8553d", "accent": "#2f4858", "text": "#2f4858"}, "candy": {"name": "Candy", "mood": "fun, youthful", "bg": "#fff0f6", "surface": "#ffffff", "primary": "#ff3d9a", "accent": "#3dd6ff", "text": "#2b1b3d"}, "steel-blue": {"name": "Steel Blue", "mood": "tech, product", "bg": "#0f172a", "surface": "#1e293b", "primary": "#38bdf8", "accent": "#f97316", "text": "#f1f5f9"}, "sakura": {"name": "Sakura", "mood": "anime, gentle", "bg": "#fff1f2", "surface": "#ffe4e6", "primary": "#fb7185", "accent": "#7c3aed", "text": "#4c1d3d"}, "blood-moon": {"name": "Blood Moon", "mood": "horror, thriller", "bg": "#0d0203", "surface": "#1f0608", "primary": "#c1121f", "accent": "#fdf0d5", "text": "#fdf0d5"}, "holo": {"name": "Holo", "mood": "futuristic, dreamy", "bg": "#0e0b1f", "surface": "#1b1535", "primary": "#a78bfa", "accent": "#34d399", "text": "#f5f3ff"}, "saffron-india": {"name": "Saffron India", "mood": "festive, Indian", "bg": "#fff7ec", "surface": "#ffffff", "primary": "#ff9933", "accent": "#138808", "text": "#1f2a44"}, "midnight-emerald": {"name": "Midnight Emerald", "mood": "finance, premium", "bg": "#02100c", "surface": "#062a20", "primary": "#10b981", "accent": "#fbbf24", "text": "#ecfdf5"}, "retro-wave": {"name": "Retro Wave", "mood": "80s, synthwave", "bg": "#1a0033", "surface": "#2d0057", "primary": "#ff2bd6", "accent": "#00f0ff", "text": "#ffe600"}, "diwali-glow": {"name": "Diwali Glow", "mood": "festival, warm", "bg": "#1b0a00", "surface": "#3a1600", "primary": "#ff9f1c", "accent": "#ffd166", "text": "#fff4d6"}, "ice-white": {"name": "Ice White", "mood": "minimal, cold", "bg": "#f4f9ff", "surface": "#ffffff", "primary": "#3b82f6", "accent": "#06b6d4", "text": "#0f172a"}}, "FONTS": {"hi-bold-poppins": {"display": "Poppins", "dw": "800", "body": "Poppins", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Poppins:wght@500;800;900&display=swap", "bestFor": "Headlines in Hindi+English, thumbnails, general"}, "hi-news-khand": {"display": "Khand", "dw": "700", "body": "Hind", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Khand:wght@600;700&family=Hind:wght@500&display=swap", "bestFor": "News, sports, urgent Hindi headlines"}, "hi-rozha": {"display": "Rozha One", "dw": "400", "body": "Hind", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Rozha+One&family=Hind:wght@500&display=swap", "bestFor": "Festival, cultural, invitations in Hindi"}, "hi-yatra": {"display": "Yatra One", "dw": "400", "body": "Hind", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Yatra+One&family=Hind:wght@500&display=swap", "bestFor": "Rustic, vintage, brush-like Hindi titles"}, "hi-kalam": {"display": "Kalam", "dw": "700", "body": "Kalam", "bw": "400", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap", "bestFor": "Handwritten Hindi, doodle, casual"}, "hi-baloo": {"display": "Baloo 2", "dw": "800", "body": "Baloo 2", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;800&display=swap", "bestFor": "Friendly rounded Hindi, kids, food"}, "hi-rajdhani": {"display": "Rajdhani", "dw": "700", "body": "Rajdhani", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap", "bestFor": "Tech / gaming Hindi"}, "hi-serif": {"display": "Noto Serif Devanagari", "dw": "800", "body": "Noto Sans Devanagari", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@800&family=Noto+Sans+Devanagari:wght@500&display=swap", "bestFor": "Editorial Hindi, quotes"}, "hi-anek": {"display": "Anek Devanagari", "dw": "800", "body": "Anek Devanagari", "bw": "400", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Anek+Devanagari:wght@400;800&display=swap", "bestFor": "Modern Hindi UI-style posters"}, "hi-tiro": {"display": "Tiro Devanagari Hindi", "dw": "400", "body": "Hind", "bw": "500", "scripts": ["latin", "devanagari"], "url": "https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Hind:wght@500&display=swap", "bestFor": "Classic literary Hindi"}, "condensed-bebas": {"display": "Bebas Neue", "dw": "400", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@500;700&display=swap", "bestFor": "Tall condensed titles: news, gaming, sports"}, "anton-oswald": {"display": "Anton", "dw": "400", "body": "Oswald", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500&display=swap", "bestFor": "Heavy impact thumbnails"}, "editorial-playfair": {"display": "Playfair Display", "dw": "900", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@500&display=swap", "bestFor": "Editorial, documentary, quotes"}, "modern-grotesk": {"display": "Space Grotesk", "dw": "700", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@500&display=swap", "bestFor": "Tech, SaaS, clean modern"}, "luxe-dm-serif": {"display": "DM Serif Display", "dw": "400", "body": "Montserrat", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Montserrat:wght@500&display=swap", "bestFor": "Luxury, fashion, wedding"}, "comic-bangers": {"display": "Bangers", "dw": "400", "body": "Poppins", "bw": "600", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Bangers&family=Poppins:wght@600&display=swap", "bestFor": "Comic / pop-art / fun"}, "street-marker": {"display": "Permanent Marker", "dw": "400", "body": "Inter", "bw": "600", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Inter:wght@600&display=swap", "bestFor": "Street, grunge, handwritten emphasis"}, "arcade-pixel": {"display": "Press Start 2P", "dw": "400", "body": "Space Grotesk", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@500&display=swap", "bestFor": "Retro games (keep titles very short)"}, "techno-orbitron": {"display": "Orbitron", "dw": "800", "body": "Rajdhani", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&family=Rajdhani:wght@500&display=swap", "bestFor": "Sci-fi, cyberpunk"}, "royal-cinzel": {"display": "Cinzel", "dw": "700", "body": "Montserrat", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Montserrat:wght@500&display=swap", "bestFor": "Royal, historical, awards"}, "wide-unbounded": {"display": "Unbounded", "dw": "800", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Unbounded:wght@800&family=Inter:wght@500&display=swap", "bestFor": "Wide, trendy, music, startup"}, "art-syne": {"display": "Syne", "dw": "800", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@500&display=swap", "bestFor": "Art, design studios"}, "heavy-archivo": {"display": "Archivo Black", "dw": "400", "body": "Inter", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@500&display=swap", "bestFor": "Brutalist, sale, bold statement"}, "script-pacifico": {"display": "Pacifico", "dw": "400", "body": "Poppins", "bw": "500", "scripts": ["latin"], "url": "https://fonts.googleapis.com/css2?family=Pacifico&family=Poppins:wght@500&display=swap", "bestFor": "Friendly script accents (not for Hindi)"}}, "SIZES": {"yt-thumbnail": {"name": "YouTube thumbnail", "w": 1280, "h": 720}, "yt-banner": {"name": "YouTube channel banner", "w": 2560, "h": 1440}, "ig-square": {"name": "Instagram post (square)", "w": 1080, "h": 1080}, "ig-portrait": {"name": "Instagram post (4:5)", "w": 1080, "h": 1350}, "story-reel": {"name": "Story / Reel / Shorts cover", "w": 1080, "h": 1920}, "fb-post": {"name": "Facebook / link share", "w": 1200, "h": 630}, "fb-cover": {"name": "Facebook cover", "w": 1640, "h": 624}, "x-post": {"name": "X (Twitter) post image", "w": 1600, "h": 900}, "x-header": {"name": "X (Twitter) header", "w": 1500, "h": 500}, "linkedin-banner": {"name": "LinkedIn banner", "w": 1584, "h": 396}, "pinterest-pin": {"name": "Pinterest pin", "w": 1000, "h": 1500}, "profile-dp": {"name": "Profile picture / DP", "w": 1000, "h": 1000}, "a4-portrait": {"name": "A4 poster / flyer (portrait)", "w": 2480, "h": 3508}, "a4-landscape": {"name": "A4 landscape", "w": 3508, "h": 2480}, "phone-wallpaper": {"name": "Phone wallpaper", "w": 1080, "h": 2340}, "desktop-wallpaper": {"name": "Desktop wallpaper", "w": 1920, "h": 1080}, "logo-square": {"name": "Logo / wordmark", "w": 1000, "h": 1000}, "business-card": {"name": "Business card", "w": 1050, "h": 600}, "album-cover": {"name": "Album / podcast cover", "w": 1400, "h": 1400}, "book-cover": {"name": "Book cover", "w": 1600, "h": 2560}}};
+
+/* ===================== CANVAS DESIGN ENGINE (deterministic) ===================== */
+const E = (() => {
+const cv = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+const rngFrom = (seed) => { let a = 0; for (const ch of String(seed)) a = (a * 31 + ch.charCodeAt(0)) >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+const h2r = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const rgba = (h, a) => { const [r, g, b] = h2r(h); return `rgba(${r},${g},${b},${a})`; };
+const mix = (a, b, t) => { const A = h2r(a), B = h2r(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+const relLum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+const lum = (h) => relLum(h2r(h));
+const ratio = (l1, l2) => (Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05);
+
+/* ---------- drawing helpers ---------- */
+const angleGrad = (ctx, W, H, deg, stops) => { const a = (deg - 90) * Math.PI / 180, cx = W / 2, cy = H / 2, r = Math.hypot(W, H) / 2; const g = ctx.createLinearGradient(cx - Math.cos(a) * r, cy - Math.sin(a) * r, cx + Math.cos(a) * r, cy + Math.sin(a) * r); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; };
+const glow = (ctx, x, y, r, color, a = .5) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, rgba(color, a)); g.addColorStop(1, rgba(color, 0)); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
+const rr = (ctx, x, y, w, h, r) => { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+function blob(ctx, x, y, r, color, a, rng) { const n = 7, pts = []; for (let i = 0; i < n; i++) { const ang = i / n * Math.PI * 2, rad = r * (.78 + rng() * .4); pts.push([x + Math.cos(ang) * rad, y + Math.sin(ang) * rad]); } ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = color; ctx.beginPath(); for (let i = 0; i < n; i++) { const p0 = pts[i], p1 = pts[(i + 1) % n], mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2; if (i === 0) ctx.moveTo(mx, my); const p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n]; ctx.quadraticCurveTo(p2[0], p2[1], (p2[0] + p3[0]) / 2, (p2[1] + p3[1]) / 2); } ctx.closePath(); ctx.fill(); ctx.restore(); }
+let noiseTile; function grain(ctx, W, H, amt = .12) { if (!noiseTile) { noiseTile = cv(256, 256); const g = noiseTile.getContext('2d'), d = g.createImageData(256, 256); for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0); } ctx.save(); ctx.globalAlpha = amt; ctx.globalCompositeOperation = 'overlay'; ctx.fillStyle = ctx.createPattern(noiseTile, 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore(); }
+const vignette = (ctx, W, H, s = .6) => { const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.hypot(W, H) * .6); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${s})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); };
+function rays(ctx, cx, cy, R, n, c1, c2, a, rot = 0) { ctx.save(); ctx.globalAlpha = a; for (let i = 0; i < n; i++) { const a0 = rot + i / n * Math.PI * 2, a1 = rot + (i + 1) / n * Math.PI * 2; ctx.fillStyle = i % 2 ? c1 : c2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R); ctx.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R); ctx.closePath(); ctx.fill(); } ctx.restore(); }
+function halftone(ctx, W, H, step, color, a, fromX, fromY) { ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = color; const maxD = Math.hypot(W, H); for (let y = 0; y < H + step; y += step) for (let x = ((y / step) % 2) * step / 2; x < W + step; x += step) { const d = Math.hypot(x - fromX, y - fromY) / maxD; const r = step * .5 * Math.max(0, 1 - d * 1.35); if (r > .6) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); } } ctx.restore(); }
+function gridFloor(ctx, W, H, hy, color, a, u) { ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, u * .18); ctx.globalAlpha = a; const cx = W / 2; for (let i = -18; i <= 18; i++) { ctx.beginPath(); ctx.moveTo(cx + i * u * 1.2, hy); ctx.lineTo(cx + i * u * 9, H); ctx.stroke(); } let y = hy, step = u * .6; while (y < H) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); y += step; step *= 1.32; } ctx.restore(); }
+function retroSun(ctx, cx, cy, r, c1, c2) { const t = cv(r * 2, r * 2), g = t.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, r * 2); gr.addColorStop(0, c1); gr.addColorStop(1, c2); g.fillStyle = gr; g.beginPath(); g.arc(r, r, r, 0, 7); g.fill(); g.globalCompositeOperation = 'destination-out'; for (let i = 0; i < 9; i++) { const y = r * 1.05 + i * r * .105, h = r * .018 + i * r * .012; g.fillRect(0, y, r * 2, h); } ctx.drawImage(t, cx - r, cy - r); }
+function starburstPath(ctx, cx, cy, r1, r2, n) { ctx.beginPath(); for (let i = 0; i < n * 2; i++) { const a = i / (n * 2) * Math.PI * 2 - Math.PI / 2, r = i % 2 ? r1 : r2; ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r); } ctx.closePath(); }
+const sparkle = (ctx, x, y, s, color, a = 1) => { ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = color; ctx.translate(x, y); ctx.scale(s / 100, s / 100); ctx.fill(new Path2D('M0 -50 C4 -20 20 -4 50 0 C20 4 4 20 0 50 C-4 20 -20 4 -50 0 C-20 -4 -4 -20 0 -50Z')); ctx.restore(); };
+
+/* motifs as Path2D (viewBox → drawn centered) */
+const MOTIFS = {
+  lightning: { vb: [100, 140], d: 'M58 2 L8 78 L44 78 L34 138 L92 56 L56 56Z' },
+  heart: { vb: [100, 90], d: 'M50 88 C10 56 0 34 0 22 C0 8 12 0 26 0 C38 0 46 8 50 16 C54 8 62 0 74 0 C88 0 100 8 100 22 C100 34 90 56 50 88Z' },
+  starburst: { vb: [200, 200], d: 'M100 6 L120 52 L168 30 L154 80 L196 100 L154 120 L168 170 L120 148 L100 194 L80 148 L32 170 L46 120 L4 100 L46 80 L32 30 L80 52Z' },
+  sparkle: { vb: [100, 100], d: 'M50 0 C54 30 70 46 100 50 C70 54 54 70 50 100 C46 70 30 54 0 50 C30 46 46 30 50 0Z' },
+  check: { vb: [100, 100], d: 'M50 4 A46 46 0 1 1 49.9 4Z M28 52 L44 68 L74 34 L66 27 L44 54 L35 45Z' },
+  blob: { vb: [160, 160], d: 'M44.7 -58.9C58.1 -49.7 69.2 -36.2 73.9 -20.6C78.6 -5 76.9 12.6 69.6 27.1C62.2 41.5 49.2 52.7 34.5 61.1C19.9 69.5 3.6 75.1 -13.4 74.3C-30.4 73.5 -48.1 66.3 -58.9 53.3C-69.7 40.4 -73.6 21.7 -73.5 3.5C-73.4 -14.7 -69.3 -32.4 -59 -42.1C-48.7 -51.8 -32.2 -53.5 -17.2 -60.6C-2.2 -67.7 11.4 -80.2 25.4 -77.6C39.4 -75 31.2 -68.1 44.7 -58.9Z', center: true },
+  quote: { vb: [100, 80], d: 'M0 80V45C0 18 14 4 40 0l4 10C28 14 22 24 22 36h22v44zM56 80V45c0-27 14-41 40-45l4 10C84 14 78 24 78 36h22v44z' },
+  arrow: { vb: [200, 120], d: 'M10 100 C60 10 120 10 180 60 M150 28 L184 62 L140 74', stroke: true },
+};
+function drawMotif(ctx, id, cx, cy, size, fill, stroke, strokeW = 0) { const m = MOTIFS[id]; if (!m) return; const k = size / Math.max(m.vb[0], m.vb[1]); ctx.save(); ctx.translate(cx, cy); ctx.scale(k, k); if (!m.center) ctx.translate(-m.vb[0] / 2, -m.vb[1] / 2); const p = new Path2D(m.d); if (m.stroke) { ctx.strokeStyle = fill; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(p); } else { if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = strokeW / k; ctx.strokeStyle = stroke; ctx.stroke(p); } ctx.fillStyle = fill; ctx.fill(p, 'evenodd'); } ctx.restore(); }
+
+/* ---------- text engine ---------- */
+const isDeva = (s) => /[\u0900-\u097F]/.test(s);
+function fontStr(fam, weight, size, fallback) { return `${weight} ${Math.round(size)}px "${fam}", ${fallback || 'sans-serif'}`; }
+function wrapWords(ctx, tokens, maxW) { const lines = []; let cur = [], w = 0; const sp = ctx.measureText(' ').width; for (const t of tokens) { const tw = ctx.measureText(t.text).width; if (cur.length && w + sp + tw > maxW) { lines.push({ words: cur, width: w }); cur = []; w = 0; } w += (cur.length ? sp : 0) + tw; cur.push({ ...t, width: tw }); } if (cur.length) lines.push({ words: cur, width: w }); return lines; }
+function fitText(ctx, text, box, o) {
+  const tokens = String(text).split(/\s+/).filter(Boolean).map((t) => ({ text: o.upper ? t.toUpperCase() : t, accent: !!(o.accent && o.accent.some((a) => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === a)) }));
+  const lhK = o.lh || (isDeva(text) ? 1.28 : 1.1); let size = o.max;
+  for (; size >= o.min; size *= .94) { ctx.font = fontStr(o.fam, o.weight, size, o.fallback); if (o.ls) ctx.letterSpacing = (o.ls * size) + 'px'; const lines = wrapWords(ctx, tokens, box.w); const widest = Math.max(...tokens.map((t) => ctx.measureText(t.text).width)); if (lines.length <= o.maxLines && lines.length * size * lhK <= box.h && widest <= box.w) return { size, lines, lh: size * lhK, fits: true }; }
+  size = o.min; ctx.font = fontStr(o.fam, o.weight, size, o.fallback); const lines = wrapWords(ctx, tokens, box.w); return { size, lines, lh: size * lhK, fits: false };
+}
+function drawText(c, text, box, o) {
+  const { ctx } = c; if (!text) return null; ctx.save(); ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+  const f = fitText(ctx, text, box, o); ctx.font = fontStr(o.fam, o.weight, f.size, o.fallback); if (o.ls) ctx.letterSpacing = (o.ls * f.size) + 'px';
+  const total = f.lines.length * f.lh; let y0 = box.y + (o.valign === 'middle' ? (box.h - total) / 2 : o.valign === 'bottom' ? box.h - total : 0); const sp = ctx.measureText(' ').width;
+  const rect = { x: box.x + box.w, y: y0, w: 0, h: total, x2: box.x };
+  f.lines.forEach((ln, i) => {
+    const base = y0 + i * f.lh + f.size * (isDeva(text) ? .98 : .86); let x = o.align === 'center' ? box.x + (box.w - ln.width) / 2 : o.align === 'right' ? box.x + box.w - ln.width : box.x;
+    rect.x = Math.min(rect.x, x); rect.x2 = Math.max(rect.x2, x + ln.width);
+    ln.words.forEach((wd) => {
+      const col = wd.accent ? (o.accentFill || o.fill) : o.fill;
+      ctx.save();
+      if (o.shadow) { ctx.shadowColor = o.shadow.color; ctx.shadowBlur = o.shadow.blur || 0; ctx.shadowOffsetX = o.shadow.x || 0; ctx.shadowOffsetY = o.shadow.y || 0; }
+      if (o.hard) { ctx.fillStyle = o.hard.color; ctx.fillText(wd.text, x + o.hard.x, base + o.hard.y); }
+      if (o.stroke) { ctx.strokeStyle = o.stroke.color; ctx.lineWidth = o.stroke.w * 2; ctx.strokeText(wd.text, x, base); ctx.shadowColor = 'transparent'; }
+      if (o.glow) { ctx.shadowColor = wd.accent ? (o.accentFill || o.glow) : o.glow; ctx.shadowBlur = f.size * .35; ctx.fillStyle = col; ctx.fillText(wd.text, x, base); ctx.shadowBlur = f.size * .12; }
+      if (typeof col === 'function') ctx.fillStyle = col(ctx, x, base - f.size, wd.width, f.size); else ctx.fillStyle = col;
+      ctx.fillText(wd.text, x, base); ctx.restore(); x += wd.width + sp;
+    });
+  });
+  ctx.restore(); rect.w = rect.x2 - rect.x; return { ...f, rect };
+}
+
+/* ---------- fonts ---------- */
+const loaded = new Set();
+async function loadFonts(pairId) { const f = DATA.FONTS[pairId]; if (!f || loaded.has(pairId)) return; loaded.add(pairId); try { if (!document.querySelector(`link[data-font="${pairId}"]`)) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = f.url; l.dataset.font = pairId; document.head.appendChild(l); await new Promise((r) => { l.onload = r; l.onerror = r; setTimeout(r, 5000); }); } await Promise.race([Promise.all([document.fonts.load(`${f.dw} 40px "${f.display}"`, 'Aa अआ'), document.fonts.load(`${f.bw} 20px "${f.body}"`, 'Aa अआ')]), new Promise((r) => setTimeout(r, 4000))]); } catch (e) { /* fallback fonts */ } }
+
+/* ---------- layouts (zones in fractions) ---------- */
+const LAYOUTS = {
+  'text-left-subject-right': { align: 'left', badge: [.05, .07], title: [.05, .2, .54, .46], sub: [.05, .69, .54, .12], cta: [.05, .84, .4, .09], subject: [.56, .04, .42, .94] },
+  'subject-left-text-right': { align: 'left', badge: [.46, .07], title: [.46, .2, .5, .46], sub: [.46, .69, .5, .12], cta: [.46, .84, .4, .09], subject: [.02, .04, .42, .94] },
+  'centered-hero': { align: 'center', badge: [.5, .07], title: [.08, .32, .84, .3], sub: [.12, .66, .76, .1], cta: [.3, .82, .4, .09], subject: [.28, .06, .44, .5] },
+  'centered-text': { align: 'center', badge: [.5, .12], title: [.08, .26, .84, .36], sub: [.12, .66, .76, .1], cta: [.3, .82, .4, .09], subject: null },
+  'poster-stack': { align: 'left', badge: [.08, .05], title: [.08, .08, .84, .2], sub: [.08, .8, .84, .07], cta: [.08, .89, .84, .06], subject: [.1, .3, .8, .47] },
+  'story-vertical': { align: 'center', badge: [.5, .14], title: [.08, .21, .84, .2], sub: [.1, .75, .8, .06], cta: [.15, .83, .7, .06], subject: [.06, .42, .88, .32] },
+  'quote-center': { align: 'center', badge: [.5, .08], title: [.1, .26, .8, .46], sub: [.1, .78, .8, .07], cta: [.25, .88, .5, .06], subject: null },
+  'banner-wide': { align: 'left', badge: [.22, .3], title: [.22, .34, .42, .28], sub: [.22, .64, .42, .1], cta: [.22, .76, .3, .1], subject: [.66, .1, .16, .8] },
+  'product-spotlight': { align: 'center', badge: [.5, .05], title: [.08, .05, .84, .16], sub: [.12, .8, .76, .07], cta: [.25, .88, .5, .07], subject: [.18, .23, .64, .55] },
+};
+function adaptLayout(id, W, H, hasSubject) {
+  const r = W / H; let L = LAYOUTS[id] ? id : 'centered-hero';
+  const fam = r > 2.2 ? 'wide' : r > 1.25 ? 'land' : r > .85 ? 'sq' : r > .6 ? 'port' : 'tall';
+  const ok = { wide: ['banner-wide', 'centered-text'], land: ['text-left-subject-right', 'subject-left-text-right', 'centered-hero', 'centered-text', 'quote-center'], sq: ['centered-hero', 'centered-text', 'quote-center', 'product-spotlight', 'poster-stack'], port: ['poster-stack', 'centered-hero', 'centered-text', 'quote-center', 'product-spotlight'], tall: ['story-vertical', 'poster-stack', 'centered-text', 'quote-center'] }[fam];
+  if (!ok.includes(L)) L = ({ wide: 'banner-wide', land: 'text-left-subject-right', sq: 'centered-hero', port: 'poster-stack', tall: 'story-vertical' })[fam];
+  if (!hasSubject && LAYOUTS[L].subject) L = fam === 'wide' ? 'centered-text' : (fam === 'port' || fam === 'tall') && L !== 'poster-stack' ? 'centered-text' : 'centered-text';
+  return L;
+}
+const px = (a, W, H) => a && ({ x: a[0] * W, y: a[1] * H, w: a[2] * W, h: a[3] * H });
+
+/* ---------- palette normalisation ---------- */
+function normPalette(P, needs) {
+  const dark = lum(P.bg) < .22;
+  if (needs === 'dark' && !dark) return { ...P, bg: mix(P.primary, '#000', .86), surface: mix(P.primary, '#000', .72), text: '#ffffff' };
+  if (needs === 'light' && dark) return { ...P, bg: mix(P.accent, '#ffffff', .9), surface: '#ffffff', text: mix(P.bg, '#000', .25) };
+  return P;
+}
+const inkOn = (bgHex) => lum(bgHex) > .4 ? '#0b0d12' : '#ffffff';
+
+/* ---------- STYLES ---------- */
+const STYLES = {
+  bold: { name: 'Bold Thumbnail', needs: 'any', upper: true, fx: 'sticker', weight: 900,
+    bg(c) { const { ctx, W, H, u, P, Z } = c; const dk = lum(P.bg) < .35; ctx.fillStyle = angleGrad(ctx, W, H, 125, [[0, dk ? mix(P.bg, P.primary, .25) : P.primary], [1, dk ? P.primary : mix(P.primary, '#000', .45)]]); ctx.fillRect(0, 0, W, H); const s = Z.subject, cx = s ? s.x + s.w / 2 : W * .5, cy = s ? s.y + s.h * .55 : H * .5; rays(ctx, cx, cy, Math.hypot(W, H), 22, rgba('#ffffff', .0), rgba('#ffffff', 1), .09, .2); glow(ctx, cx, cy, Math.min(W, H) * .62, P.accent, .55); ctx.save(); ctx.globalAlpha = .9; ctx.fillStyle = P.accent; ctx.beginPath(); ctx.arc(cx, cy, Math.min(W, H) * .27, 0, 7); ctx.fill(); ctx.restore(); ctx.fillStyle = P.accent; ctx.fillRect(0, H - u * 1.6, W, u * 1.6); ctx.fillStyle = '#000'; ctx.fillRect(0, H - u * 2.1, W, u * .5); },
+    front(c) { vignette(c.ctx, c.W, c.H, .5); }, text(c) { const ink = '#ffffff'; return { fill: ink, accentFill: c.P.accent === c.P.primary ? '#ffe600' : c.P.accent, stroke: { color: '#000', w: c.u * .9 }, shadow: { color: 'rgba(0,0,0,.55)', blur: c.u * 1.2, y: c.u * .6 } }; } },
+  neon: { name: 'Neon Cyberpunk', needs: 'dark', upper: true, fx: 'rim', weight: 800,
+    bg(c) { const { ctx, W, H, u, P } = c; ctx.fillStyle = angleGrad(ctx, W, H, 160, [[0, mix(P.bg, '#000', .35)], [.6, P.bg], [1, mix(P.primary, '#000', .55)]]); ctx.fillRect(0, 0, W, H); glow(ctx, W * .75, H * .35, Math.min(W, H) * .6, P.primary, .55); glow(ctx, W * .2, H * .8, Math.min(W, H) * .5, P.accent, .3); gridFloor(ctx, W, H, H * .68, P.accent, .5, u); ctx.save(); ctx.strokeStyle = P.accent; ctx.globalAlpha = .8; ctx.lineWidth = u * .3; ctx.shadowColor = P.accent; ctx.shadowBlur = u * 2; ctx.beginPath(); ctx.moveTo(0, H * .68); ctx.lineTo(W, H * .68); ctx.stroke(); ctx.restore(); },
+    mid(c) { grain(c.ctx, c.W, c.H, .08); }, front(c) { const { ctx, W, H } = c; ctx.save(); ctx.globalAlpha = .1; ctx.fillStyle = '#000'; for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1.5); ctx.restore(); }, text(c) { return { fill: '#ffffff', accentFill: c.P.accent, glow: c.P.primary, ls: .02 }; } },
+  glass: { name: 'Glassmorphism', needs: 'any', fx: 'shadow', weight: 800,
+    bg(c) { const { ctx, W, H, u, P, rng, Z, spec } = c; ctx.fillStyle = mix(P.bg, P.primary, .15); ctx.fillRect(0, 0, W, H); const m = Math.min(W, H); blob(ctx, W * .15, H * .2, m * .45, P.primary, .95, rng); blob(ctx, W * .85, H * .25, m * .38, P.accent, .9, rng); blob(ctx, W * .7, H * .9, m * .5, P.primary, .8, rng); blob(ctx, W * .1, H * .9, m * .35, P.accent, .8, rng); const t = cv(W, H), g = t.getContext('2d'); g.drawImage(ctx.canvas, 0, 0); ctx.save(); ctx.filter = `blur(${u * 4}px)`; ctx.drawImage(t, -u * 5, -u * 5, W + u * 10, H + u * 10); ctx.restore(); const zt = Z.title; const pad = u * 3; const bx = zt.x - pad, by = Z.badgeY ? Z.badgeY - pad : zt.y - pad, bw = zt.w + pad * 2, bh = (Z.cta ? Z.cta.y + Z.cta.h : zt.y + zt.h) - by + pad; ctx.save(); rr(ctx, bx, by, bw, bh, u * 3); ctx.clip(); ctx.filter = `blur(${u * 2.5}px)`; ctx.drawImage(t, 0, 0); ctx.filter = 'none'; ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(bx, by, bw, bh); ctx.restore(); ctx.save(); rr(ctx, bx, by, bw, bh, u * 3); ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = u * .22; ctx.stroke(); ctx.restore(); c.plateLum = lum(mix(mix(P.bg, P.primary, .15), '#ffffff', .1)); },
+    mid(c) { grain(c.ctx, c.W, c.H, .06); }, front() {}, text(c) { return { fill: '#ffffff', accentFill: '#ffffff', shadow: { color: 'rgba(0,0,0,.35)', blur: c.u * 1.4, y: c.u * .4 } }; } },
+  luxury: { name: 'Dark Luxury', needs: 'dark', fx: 'shadow', weight: 700, gold: true,
+    bg(c) { const { ctx, W, H, u, P } = c; ctx.fillStyle = mix(P.bg, '#000', .55); ctx.fillRect(0, 0, W, H); glow(ctx, W / 2, H * .45, Math.max(W, H) * .6, mix(P.accent, '#000', .55), .55); const gold = lum(P.primary) > lum(P.accent) ? P.primary : P.accent; ctx.strokeStyle = gold; ctx.lineWidth = Math.max(1.5, u * .22); ctx.globalAlpha = .85; ctx.strokeRect(u * 3, u * 3, W - u * 6, H - u * 6); ctx.globalAlpha = .45; ctx.strokeRect(u * 4.2, u * 4.2, W - u * 8.4, H - u * 8.4); ctx.globalAlpha = 1; [[u * 3, u * 3], [W - u * 3, u * 3], [u * 3, H - u * 3], [W - u * 3, H - u * 3]].forEach(([x, y]) => { ctx.fillStyle = gold; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillRect(-u * .7, -u * .7, u * 1.4, u * 1.4); ctx.restore(); }); },
+    mid(c) { grain(c.ctx, c.W, c.H, .07); }, front(c) { vignette(c.ctx, c.W, c.H, .5); }, text(c) { const gold = lum(c.P.primary) > lum(c.P.accent) ? c.P.primary : c.P.accent; return { fill: (ctx, x, y, w, h) => { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, mix(gold, '#ffffff', .78)); g.addColorStop(.5, mix(gold, '#ffffff', .2)); g.addColorStop(1, mix(gold, '#000', .08)); return g; }, accentFill: '#ffffff', ls: .03 }; } },
+  swiss: { name: 'Minimal Swiss', needs: 'light', fx: 'shadow', weight: 800,
+    bg(c) { const { ctx, W, H, u, P } = c; ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H); ctx.fillStyle = P.primary; const r = W / H; if (r > 1.25) ctx.fillRect(W * .66, 0, W * .34, H); else ctx.fillRect(0, H * .86, W, H * .14); ctx.fillStyle = P.accent; ctx.beginPath(); ctx.arc(r > 1.25 ? W * .66 : W * .85, r > 1.25 ? H * .5 : H * .86, Math.min(W, H) * .09, 0, 7); ctx.fill(); ctx.fillStyle = P.text; ctx.fillRect(c.Z.title.x, c.Z.title.y - u * 1.6, u * 8, u * .5); },
+    front() {}, text(c) { return { fill: '#0b0d12', accentFill: c.P.primary }; } },
+  comic: { name: 'Pop Art Comic', needs: 'any', upper: true, fx: 'sticker', weight: 900,
+    bg(c) { const { ctx, W, H, u, P, Z } = c; ctx.fillStyle = P.accent; ctx.fillRect(0, 0, W, H); const s = Z.subject, cx = s ? s.x + s.w / 2 : W * .5, cy = s ? s.y + s.h / 2 : H * .5; halftone(ctx, W, H, u * 1.6, mix(P.accent, '#000', .35), .55, cx, cy); ctx.save(); starburstPath(ctx, cx, cy, Math.min(W, H) * .3, Math.min(W, H) * .5, 14); ctx.fillStyle = P.primary; ctx.fill(); ctx.lineWidth = u * .7; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore(); },
+    front() {}, text(c) { return { fill: '#ffffff', accentFill: '#ffe600', stroke: { color: '#000', w: c.u * 1.05 }, hard: { color: '#000', x: c.u * .9, y: c.u * .9 } }; } },
+  mesh: { name: 'Gradient Mesh', needs: 'any', fx: 'shadow', weight: 800,
+    bg(c) { const { ctx, W, H, P } = c; ctx.fillStyle = mix(P.bg, '#000', .15); ctx.fillRect(0, 0, W, H); const m = Math.max(W, H); glow(ctx, W * .1, H * .15, m * .7, P.primary, .95); glow(ctx, W * .9, H * .2, m * .6, P.accent, .85); glow(ctx, W * .8, H * .95, m * .7, P.primary, .8); glow(ctx, W * .05, H * .9, m * .55, P.accent, .7); },
+    mid(c) { grain(c.ctx, c.W, c.H, .1); }, front() {}, text(c) { return { fill: '#ffffff', accentFill: (ctx, x, y, w, h) => { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, mix(c.P.accent, '#ffffff', .5)); g.addColorStop(1, mix(c.P.primary, '#ffffff', .6)); return g; }, shadow: { color: 'rgba(0,0,0,.28)', blur: c.u * 1.5, y: c.u * .5 } }; } },
+  pastel: { name: 'Pastel Soft', needs: 'light', fx: 'shadow', weight: 800,
+    bg(c) { const { ctx, W, H, u, P, rng } = c; ctx.fillStyle = angleGrad(ctx, W, H, 150, [[0, P.bg], [1, mix(P.primary, '#ffffff', .6)]]); ctx.fillRect(0, 0, W, H); const m = Math.min(W, H); blob(ctx, W * .12, H * .15, m * .35, P.primary, .45, rng); blob(ctx, W * .9, H * .85, m * .42, P.accent, .4, rng); blob(ctx, W * .88, H * .12, m * .2, P.accent, .5, rng); ctx.save(); ctx.fillStyle = rgba('#ffffff', .6); for (let i = 0; i < 26; i++) { ctx.beginPath(); ctx.arc(rng() * W, rng() * H, u * (.25 + rng() * .5), 0, 7); ctx.fill(); } ctx.restore(); for (let i = 0; i < 5; i++) sparkle(ctx, rng() * W, rng() * H, u * (2 + rng() * 3), P.accent, .8); },
+    front() {}, text(c) { return { fill: mix(c.P.text, '#000', .15), accentFill: mix(c.P.primary, '#000', .5) }; } },
+  cinema: { name: 'Cinematic', needs: 'dark', fx: 'shadow', weight: 800, ls: .04,
+    bg(c) { const { ctx, W, H, P } = c; ctx.fillStyle = angleGrad(ctx, W, H, 200, [[0, mix(P.bg, '#000', .2)], [.55, P.primary], [1, P.accent]]); ctx.fillRect(0, 0, W, H); glow(ctx, W * .85, H * .15, Math.max(W, H) * .6, P.accent, .5); const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(.5, 'rgba(0,0,0,.1)'); g.addColorStop(1, 'rgba(0,0,0,.75)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); if (W / H > 1.2) { ctx.fillStyle = '#000'; const bar = H * .07; ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar); } },
+    mid(c) { grain(c.ctx, c.W, c.H, .07); }, front(c) { vignette(c.ctx, c.W, c.H, .5); }, text(c) { return { fill: '#f6efe6', accentFill: mix(c.P.accent, '#ffffff', .25), shadow: { color: 'rgba(0,0,0,.6)', blur: c.u * 1.6, y: c.u * .5 }, ls: .03 }; } },
+  synth: { name: 'Synthwave', needs: 'dark', upper: true, fx: 'rim', weight: 800,
+    bg(c) { const { ctx, W, H, u, P, rng } = c; const hy = H * .62; ctx.fillStyle = ctx.createLinearGradient(0, 0, 0, hy); ctx.fillStyle.addColorStop(0, mix(P.bg, '#000', .3)); ctx.fillStyle.addColorStop(1, mix(P.primary, '#000', .35)); ctx.fillRect(0, 0, W, hy); const gg = ctx.createLinearGradient(0, hy, 0, H); gg.addColorStop(0, mix(P.bg, '#000', .2)); gg.addColorStop(1, '#000'); ctx.fillStyle = gg; ctx.fillRect(0, hy, W, H - hy); ctx.fillStyle = '#fff'; for (let i = 0; i < 60; i++) { ctx.globalAlpha = .3 + rng() * .6; ctx.fillRect(rng() * W, rng() * hy * .8, u * .18, u * .18); } ctx.globalAlpha = 1; glow(ctx, W / 2, hy, Math.min(W, H) * .6, P.primary, .6); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, hy); ctx.clip(); retroSun(ctx, W / 2, hy - Math.min(W, H) * .02, Math.min(W, H) * .3, '#ffe600', P.primary); ctx.restore(); gridFloor(ctx, W, H, hy, P.accent, .75, u); },
+    mid(c) { grain(c.ctx, c.W, c.H, .06); }, front() {}, text(c) { return { fill: (ctx, x, y, w, h) => { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#ffffff'); g.addColorStop(.5, mix(c.P.accent, '#ffffff', .5)); g.addColorStop(1, c.P.primary); return g; }, accentFill: '#ffe600', stroke: { color: c.P.primary, w: c.u * .5 }, glow: c.P.primary }; } },
+  brutal: { name: 'Brutalist', needs: 'light', upper: true, fx: 'sticker', weight: 900,
+    bg(c) { const { ctx, W, H, u, P, Z } = c; ctx.fillStyle = '#f4f1ea'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = P.accent; ctx.fillRect(0, 0, W * .5, H * .5); ctx.fillStyle = P.primary; ctx.fillRect(W * .5, H * .5, W * .5, H * .5); ctx.lineWidth = u * .7; ctx.strokeStyle = '#000'; ctx.strokeRect(u, u, W - u * 2, H - u * 2); const t = Z.title; ctx.fillStyle = '#000'; ctx.fillRect(t.x - u * 1.5 + u * 1.2, t.y - u * 1.5 + u * 1.2, t.w + u * 3, t.h + u * 3); ctx.fillStyle = '#ffe600'; ctx.fillRect(t.x - u * 1.5, t.y - u * 1.5, t.w + u * 3, t.h + u * 3); ctx.strokeRect(t.x - u * 1.5, t.y - u * 1.5, t.w + u * 3, t.h + u * 3); c.plateLum = lum('#ffe600'); },
+    front() {}, text() { return { fill: '#000000', accentFill: '#d00000' }; } },
+  sticker: { name: 'Sticker Pop', needs: 'any', fx: 'sticker', weight: 900,
+    bg(c) { const { ctx, W, H, u, P, rng } = c; ctx.fillStyle = P.primary; ctx.fillRect(0, 0, W, H); for (let i = 0; i < 70; i++) { ctx.fillStyle = [P.accent, '#ffffff', mix(P.primary, '#000', .2)][i % 3]; ctx.globalAlpha = .55; ctx.beginPath(); ctx.arc(rng() * W, rng() * H, u * (.4 + rng() * 1.1), 0, 7); ctx.fill(); } ctx.globalAlpha = 1; const t = c.Z.title, pad = u * 2; ctx.save(); ctx.translate(t.x + t.w / 2, t.y + t.h / 2); ctx.rotate(-.025); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = u * 2; ctx.shadowOffsetY = u * .8; ctx.fillStyle = '#ffffff'; rr(ctx, -t.w / 2 - pad, -t.h / 2 - pad, t.w + pad * 2, t.h + pad * 2, u * 3); ctx.fill(); ctx.restore(); c.plateLum = 1; },
+    front() {}, text(c) { return { fill: '#1b1030', accentFill: c.P.primary, hard: null }; } },
+};
+
+/* ---------- subject / hero ---------- */
+function silhouette(img, w, h, color) { const t = cv(w, h), g = t.getContext('2d'); g.drawImage(img, 0, 0, w, h); g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, w, h); return t; }
+function drawAsset(c, a, z, fx) {
+  const { ctx, u, P } = c; const img = a.img; const iw = img.width, ih = img.height;
+  if (a.role === 'background') { const k = Math.max(c.W / iw, c.H / ih); ctx.drawImage(img, (c.W - iw * k) / 2, (c.H - ih * k) / 2, iw * k, ih * k); const g = ctx.createLinearGradient(0, 0, 0, c.H); g.addColorStop(0, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,.75)'); ctx.fillStyle = g; ctx.fillRect(0, 0, c.W, c.H); return null; }
+  if (!z) return null; const k = Math.min(z.w / iw, z.h / ih); const w = iw * k, h = ih * k, x = z.x + (z.w - w) / 2, y = a.cutout ? z.y + z.h - h : z.y + (z.h - h) / 2;
+  if (a.cutout) {
+    ctx.save(); if (fx === 'sticker') { const s = silhouette(img, w, h, '#ffffff'); const r = u * .9; for (let i = 0; i < 28; i++) { const ang = i / 28 * Math.PI * 2; ctx.drawImage(s, x + Math.cos(ang) * r, y + Math.sin(ang) * r, w, h); } ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = u * 2.2; ctx.shadowOffsetY = u * 1.1; ctx.drawImage(s, x, y, w, h); ctx.shadowColor = 'transparent'; } else if (fx === 'rim') { ctx.shadowColor = P.accent; ctx.shadowBlur = u * 2.6; ctx.drawImage(img, x, y, w, h); ctx.shadowBlur = u * 1.2; ctx.drawImage(img, x, y, w, h); ctx.shadowColor = 'transparent'; } else { ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = u * 2.4; ctx.shadowOffsetY = u * 1.2; }
+    ctx.drawImage(img, x, y, w, h); ctx.restore(); return { x, y, w, h };
+  }
+  ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-.035); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = u * 2.5; ctx.shadowOffsetY = u * 1.2; ctx.fillStyle = '#fff'; rr(ctx, -w / 2 - u * .8, -h / 2 - u * .8, w + u * 1.6, h + u * 1.6, u * 1.4); ctx.fill(); ctx.shadowColor = 'transparent'; rr(ctx, -w / 2, -h / 2, w, h, u); ctx.clip(); ctx.drawImage(img, -w / 2, -h / 2, w, h); ctx.restore(); return { x, y, w, h };
+}
+function drawEmoji(c, ch, z, fx) { const { ctx, u, P } = c; const size = Math.min(z.w, z.h) * .78, cx = z.x + z.w / 2, cy = z.y + z.h / 2; ctx.save(); glow(ctx, cx, cy, size * .95, P.accent, .45); ctx.fillStyle = rgba('#ffffff', .12); ctx.beginPath(); ctx.arc(cx, cy, size * .6, 0, 7); ctx.fill(); ctx.strokeStyle = rgba('#ffffff', .35); ctx.lineWidth = u * .35; ctx.stroke(); ctx.font = `${Math.round(size)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.globalAlpha = 1; ctx.fillStyle = '#000'; ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = u * 2; ctx.shadowOffsetY = u * 1; ctx.fillText(ch, cx, cy + size * .04); ctx.restore(); return { x: cx - size / 2, y: cy - size / 2, w: size, h: size }; }
+function drawMotifHero(c, id, z) { const { ctx, u, P } = c; const size = Math.min(z.w, z.h) * .8, cx = z.x + z.w / 2, cy = z.y + z.h / 2; glow(ctx, cx, cy, size, P.accent, .4); drawMotif(ctx, id, cx, cy, size, P.accent, '#000', u * .7); return { x: cx - size / 2, y: cy - size / 2, w: size, h: size }; }
+
+/* ---------- main render ---------- */
+async function render(spec, assets = {}, size) {
+  const W = size.w, H = size.h, u = W / 100; const pairId = DATA.FONTS[spec.fonts] ? spec.fonts : 'hi-bold-poppins'; const font = DATA.FONTS[pairId];
+  await loadFonts(pairId);
+  const style = STYLES[spec.style] || STYLES.bold; const rng = rngFrom((spec.title || '') + spec.style + spec.palette);
+  const Praw = DATA.PALETTES[spec.palette] || DATA.PALETTES['neon-night']; const P = normPalette(Praw, style.needs);
+  const hero = spec.hero || { type: 'none' }; const assetObj = hero.type === 'asset' ? assets[hero.id] : null;
+  const effHero = hero.type === 'asset' && !assetObj ? { type: 'none' } : hero; const bgAsset = Object.values(assets).find((a) => a.role === 'background');
+  const hasSubject = effHero.type !== 'none' && !(assetObj && assetObj.role === 'background');
+  const layoutId = adaptLayout(spec.layout, W, H, hasSubject); const LY = LAYOUTS[layoutId];
+  const canvas = cv(W, H), ctx = canvas.getContext('2d'); ctx.textBaseline = 'alphabetic';
+  const Z = { title: px(LY.title, W, H), sub: px(LY.sub, W, H), cta: px(LY.cta, W, H), subject: hasSubject ? px(LY.subject, W, H) : null, badgeY: LY.badge[1] * H };
+  const fb = isDeva(JSON.stringify(spec)) ? '"Noto Sans Devanagari","Hind",sans-serif' : 'sans-serif';
+  const c = { ctx, W, H, u, P, rng, Z, spec, hasSubject, plateLum: null };
+  style.bg(c);
+  if (bgAsset) drawAsset(c, bgAsset, null, null);
+  let subj = null; if (hasSubject) { if (effHero.type === 'asset') subj = drawAsset(c, assetObj, Z.subject, style.fx); else if (effHero.type === 'emoji') subj = drawEmoji(c, effHero.char || '⭐', Z.subject, style.fx); else if (effHero.type === 'motif') subj = drawMotifHero(c, effHero.id, Z.subject); }
+  // decorative motifs (small, safe corners)
+  (spec.motifs || []).slice(0, 3).forEach((m, i) => { if (!MOTIFS[m]) return; const spots = [[.93, .1], [.06, .9], [.52, .06]]; const [fx, fy] = spots[i]; if (layoutId === 'banner-wide' && i > 0) return; drawMotif(ctx, m, fx * W, fy * H, u * (4 + i), P.accent, null, 0); });
+  if (style.mid) style.mid(c);
+  if (style.front) style.front(c);
+  // readability: sample luminance under title zone
+  const sample = (r) => { const t = cv(12, 12), g = t.getContext('2d', { willReadFrequently: true }); g.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, 12, 12); const d = g.getImageData(0, 0, 12, 12).data; let s = 0, n = 0; for (let i = 0; i < d.length; i += 4) { s += relLum([d[i], d[i + 1], d[i + 2]]); n++; } return s / n; };
+  const bgL = c.plateLum != null ? c.plateLum : sample(Z.title);
+  const tcfg = style.text(c); let titleFill = tcfg.fill; let plate = false;
+  const fillIsFn = typeof tcfg.fill === 'function'; const inkL = fillIsFn ? .85 : lum(tcfg.fill);
+  if (!tcfg.stroke && ratio(bgL, inkL) < 4.2) { const ink = inkOn(bgL > .35 ? '#ffffff' : '#000000'); if (!fillIsFn) { tcfg.fill = bgL > .35 ? '#0b0d12' : '#ffffff'; tcfg.accentFill = tcfg.fill === '#ffffff' ? mix(P.accent, '#ffffff', .3) : mix(P.primary, '#000', .3); } }
+  if (bgAsset || (spec.forcePlate)) { const g = ctx.createLinearGradient(0, Z.title.y - u * 6, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.35, 'rgba(0,0,0,.55)'); g.addColorStop(1, 'rgba(0,0,0,.85)'); ctx.fillStyle = g; ctx.fillRect(0, Z.title.y - u * 6, W, H); plate = true; }
+  const align = LY.align; const upper = style.upper && !isDeva(spec.title || '');
+  const accentTokens = (spec.accentWord || '').split(/\s+/).map((x) => x.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  // badge
+  if (spec.badge) { const bs = u * 2.3; ctx.save(); ctx.font = fontStr(font.body, 800, bs, fb); ctx.letterSpacing = (bs * .08) + 'px'; const txt = isDeva(spec.badge) ? spec.badge : spec.badge.toUpperCase(); const tw = ctx.measureText(txt).width, pw = tw + bs * 1.5, ph = bs * 1.9; let bx = LY.badge[0] * W; if (align === 'center') bx -= pw / 2; const by = LY.badge[1] * H; const pbg = style === STYLES.swiss || style === STYLES.pastel || style === STYLES.brutal ? P.primary : P.accent; ctx.fillStyle = pbg; ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = u * .8; rr(ctx, bx, by, pw, ph, ph / 2); ctx.fill(); ctx.shadowColor = 'transparent'; ctx.fillStyle = lum(pbg) > .45 ? '#0b0d12' : '#ffffff'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + bs * .75, by + ph / 2 + bs * .04); ctx.restore(); }
+  const maxT = Math.min(Z.title.h * (isDeva(spec.title || '') ? .62 : .5), W * (LY.align === 'center' ? .15 : .11)) ;
+  const tOpts = { fam: font.display, weight: style.weight || font.dw, fallback: fb, align, upper, accent: accentTokens, maxLines: layoutId === 'banner-wide' ? 2 : layoutId === 'story-vertical' || layoutId === 'poster-stack' ? 4 : 3, min: u * 3.4, max: maxT, valign: 'middle', ls: style.ls || tcfg.ls || 0, ...tcfg };
+  if (tOpts.stroke) tOpts.stroke = { ...tOpts.stroke };
+  const tRes = drawText(c, spec.title, Z.title, tOpts);
+  if (spec.subtitle) drawText(c, spec.subtitle, Z.sub, { fam: font.body, weight: 600, fallback: fb, align, upper: false, accent: [], maxLines: 2, min: u * 2, max: u * 3.4, valign: 'top', fill: tcfg.fill === undefined || typeof tcfg.fill === 'function' ? '#ffffff' : (tcfg.fill === '#000000' ? '#222' : tcfg.fill), shadow: tcfg.shadow ? { color: 'rgba(0,0,0,.4)', blur: u * .8, y: u * .3 } : null, stroke: null, ls: 0, lh: 1.3 });
+  if (spec.cta) { const bs = u * 2.6; ctx.save(); ctx.font = fontStr(font.body, 800, bs, fb); const tw = ctx.measureText(spec.cta).width, pw = tw + bs * 2, ph = bs * 2.1; let bx = Z.cta.x; if (align === 'center') bx = W / 2 - pw / 2; const by = Z.cta.y; ctx.fillStyle = P.accent; ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = u; ctx.shadowOffsetY = u * .4; rr(ctx, bx, by, pw, ph, ph / 2); ctx.fill(); ctx.shadowColor = 'transparent'; ctx.fillStyle = lum(P.accent) > .45 ? '#0b0d12' : '#ffffff'; ctx.textBaseline = 'middle'; ctx.fillText(spec.cta, bx + bs, by + ph / 2 + bs * .04); ctx.restore(); }
+  // real measurements for the "check" step
+  const inkFinal = typeof tOpts.fill === 'function' ? .85 : lum(tOpts.fill); const ctr = Math.max(ratio(bgL, inkFinal), tOpts.stroke ? ratio(lum(tOpts.stroke.color), inkFinal) : 0);
+  return { canvas, info: { layout: layoutId, style: spec.style, titleSize: Math.round(tRes ? tRes.size : 0), titleFits: tRes ? tRes.fits : true, titleLines: tRes ? tRes.lines.length : 0, contrast: +ctr.toFixed(1), hasStroke: !!tOpts.stroke, plate, subjectDrawn: !!subj, fonts: font.display } };
+}
+return { render, STYLES, LAYOUTS, MOTIFS, adaptLayout, loadFonts, cv, lum, ratio };
+})();
+
+/* ===================== INTENT DETECTION ===================== */
+// Rule-based intent detection (EN / Hinglish / Hindi). Fast, deterministic, no LLM needed.
+const GEN_VERBS = /\b(make|create|design|generate|build|draw|prepare|banao|bana\s*do|bana\s*de|banado|banana|banaye|banayiye|tayyar|kar\s*do)\b|बनाओ|बना\s*दो|बना\s*दे|बनाइए|बनाना|डिज़ाइन|डिजाइन|तैयार|जनरेट/i;
+const GEN_NOUNS = [
+  ['thumbnail', /thumb\s*nail|thumbnil|थंबनेल|थम्बनेल|थंबनील/i],
+  ['poster', /poster|पोस्टर/i],
+  ['logo', /\blogo\b|लोगो/i],
+  ['banner', /banner|बैनर|channel\s*art|cover\s*photo|header/i],
+  ['wallpaper', /wallpaper|वॉलपेपर|वालपेपर/i],
+  ['quote-card', /quote\s*card|quote\s*image|कोट\s*कार्ड/i],
+  ['story-reel', /\bstory\b|\breel\b|\bshorts?\s*cover|स्टोरी|रील/i],
+  ['ig-post', /insta(gram)?\s*post|social\s*(media)?\s*post|\bpost\s*(design|image)|फेसबुक\s*पोस्ट|पोस्ट\s*(बना|डिज़ाइन)/i],
+  ['invitation', /invit(e|ation)|निमंत्रण|आमंत्रण|card\s*for\s*(wedding|birthday)|शादी\s*का\s*कार्ड/i],
+  ['certificate', /certificate|सर्टिफिकेट|प्रमाण\s*पत्र/i],
+  ['business-card', /business\s*card|visiting\s*card|विज़िटिंग\s*कार्ड/i],
+  ['flyer', /flyer|pamphlet|पर्चा|फ्लायर|sale\s*(offer|ad)/i],
+  ['album-cover', /album\s*cover|podcast\s*cover|song\s*cover/i],
+  ['book-cover', /book\s*cover|किताब\s*का\s*कवर/i],
+  ['infographic', /infographic|इन्फोग्राफिक/i],
+  ['profile-dp', /\bdp\b|profile\s*(pic|photo|picture)|प्रोफाइल\s*(फोटो|पिक)/i],
+  ['menu', /\bmenu\s*(card|design)|मेनू\s*कार्ड/i],
+  ['product-ad', /product\s*(ad|advert|poster|image)|advertisement|ad\s*creative/i],
+  ['news-card', /news\s*card|announcement\s*(card|image)/i],
+];
+const GENERIC_IMG = /\b(image|images|imej|photo|pic|picture|graphic|artwork|illustration|design)\b|इमेज|तस्वीर|फोटो|चित्र|ग्राफ़िक|ग्राफिक/i;
+const EXPLICIT_GENERATE = /(generate|create|make|banao|bana\s*do|बनाओ|बना\s*दो|जनरेट)\s*(an?\s*|ek\s*|एक\s*)?(new\s*)?(image|picture|imej|photo|pic|इमेज|तस्वीर|फोटो)|image\s*(generate|generation|banao|bana\s*do)|इमेज\s*(जनरेट|बनाओ|बना\s*दो|बनानी)/i;
+const SEARCH_WORDS = /\b(find|search|dhundo|dhoondo|dhoond|dikhao|dikha\s*do|show\s*me|get\s*me|look\s*up|laga\s*do\s*photo|real\s*photo|pics?\s*of|photos?\s*of|images?\s*of)\b|ढूंढ|ढूँढ|दिखाओ|दिखा\s*दो|फाइंड|खोजो|सर्च/i;
+const EDIT_WORDS = /(remove|hata|hatao|हटा|हटाओ|nikalo|निकालो)\s*(the\s*)?(background|bg|बैकग्राउंड)|\bbackground\s*(remove|hata)|\bbg\s*(remove|hata)|cut\s*-?out|transparent\s*(bana|kar)|बैकग्राउंड\s*(रिमूव|हटा)|resize|crop|brighten|enhance|retouch|text\s*(add|lagao)|add\s*text/i;
+
+const PLATFORM_SIZE = [
+  [/youtube\s*thumb|yt\s*thumb|thumbnail|थंबनेल/i, 'yt-thumbnail'],
+  [/youtube\s*(channel\s*)?(banner|art)|yt\s*banner/i, 'yt-banner'],
+  [/insta(gram)?\s*(post)?\s*(square|1\s*:\s*1)/i, 'ig-square'],
+  [/insta(gram)?\s*(post|portrait|4\s*:\s*5)/i, 'ig-portrait'],
+  [/\bstory\b|\breel\b|\bshorts?\b|9\s*:\s*16|स्टोरी|रील/i, 'story-reel'],
+  [/facebook\s*cover|fb\s*cover/i, 'fb-cover'],
+  [/facebook|fb\s*post|link\s*share/i, 'fb-post'],
+  [/\b(twitter|x)\s*header/i, 'x-header'],
+  [/\b(twitter|x)\s*post/i, 'x-post'],
+  [/linkedin\s*(banner|cover)/i, 'linkedin-banner'],
+  [/pinterest/i, 'pinterest-pin'],
+  [/\bdp\b|profile\s*(pic|photo)/i, 'profile-dp'],
+  [/phone\s*wallpaper|mobile\s*wallpaper|मोबाइल\s*वॉलपेपर/i, 'phone-wallpaper'],
+  [/desktop\s*wallpaper|pc\s*wallpaper|laptop\s*wallpaper/i, 'desktop-wallpaper'],
+  [/\ba4\b/i, 'a4-portrait'],
+  [/business\s*card|visiting\s*card/i, 'business-card'],
+  [/\blogo\b|लोगो/i, 'logo-square'],
+];
+const STYLE_WORDS = /glass|neumorph|neon|cyberpunk|synthwave|retro|minimal|brutal|cinematic|editorial|luxury|pastel|comic|pop\s*art|grunge|sticker|mesh|flat|paper\s*cut|isometric|holo|blueprint|watercolou?r|anime|doodle|riso|गहरा|सिनेमैटिक|मिनिमल/i;
+
+function detectLanguage(text) {
+  const dev = (text.match(/[\u0900-\u097F]/g) || []).length;
+  const lat = (text.match(/[A-Za-z]/g) || []).length;
+  if (dev > lat) return 'hi';
+  if (dev > 0 && lat > 0) return 'hinglish';
+  const hinglishMarks = /\b(kar|karo|do|de|hai|ka|ki|ke|me|mein|se|ko|aur|banao|chahiye|dikhao|nahi)\b/i;
+  return hinglishMarks.test(text) && lat > 0 ? 'hinglish' : 'en';
+}
+
+/** Parse "1200x628", "1200 × 628", "1200 by 628" → {w,h} clamped, or null */
+function parseCustomSize(text, min = 200, max = 4096) {
+  const m = /(\d{3,4})\s*(?:x|×|by|\*|X)\s*(\d{3,4})/.exec(text || '');
+  if (!m) return null;
+  const c = (v) => Math.max(min, Math.min(max, parseInt(v, 10)));
+  return { w: c(m[1]), h: c(m[2]) };
+}
+
+function inferSizePreset(text) {
+  for (const [re, id] of PLATFORM_SIZE) if (re.test(text)) return id;
+  return null;
+}
+
+function detectIntent(message, attachments = []) {
+  const text = String(message || '').trim();
+  const lang = detectLanguage(text);
+  const hasImageUpload = attachments.some((a) => /^image\//.test(a.type || '') || a.kind === 'image');
+  const reasons = [];
+  if (!text) return { intent: 'none', confidence: 0, lang, reasons: ['empty'] };
+
+  let recipe = null;
+  for (const [id, re] of GEN_NOUNS) if (re.test(text)) { recipe = id; break; }
+  const hasVerb = GEN_VERBS.test(text);
+  const explicit = EXPLICIT_GENERATE.test(text);
+  const generic = GENERIC_IMG.test(text);
+  const search = SEARCH_WORDS.test(text);
+  const edit = EDIT_WORDS.test(text);
+
+  // Edit: uploaded image + edit words
+  if (edit && (hasImageUpload || generic)) {
+    reasons.push('edit-words', hasImageUpload ? 'has-upload' : 'mentions-image');
+    return { intent: 'edit', confidence: hasImageUpload ? 0.9 : 0.65, recipe: recipe || 'generic', lang, reasons };
+  }
+
+  // Pure search ("find photos of X") is NOT studio, unless a design noun/explicit generate word is present
+  if (search && !recipe && !explicit && !hasVerb) return { intent: 'search', confidence: 0.85, lang, reasons: ['search-words'] };
+  if (search && generic && !recipe && !explicit) return { intent: 'search', confidence: 0.75, lang, reasons: ['search-words+image'] };
+
+  let score = 0;
+  if (recipe) { score += 0.55; reasons.push('design-noun:' + recipe); }
+  if (hasVerb) { score += 0.25; reasons.push('make-verb'); }
+  if (explicit) { score += 0.45; reasons.push('explicit-generate'); }
+  if (generic && hasVerb) { score += 0.2; reasons.push('image-word+verb'); }
+  if (hasImageUpload && (recipe || hasVerb)) { score += 0.1; reasons.push('has-upload'); }
+  score = Math.min(1, score);
+  if (score >= 0.6) return { intent: 'generate', confidence: Number(score.toFixed(2)), recipe: recipe || 'generic', lang, reasons };
+  if (score >= 0.4) return { intent: 'maybe_generate', confidence: Number(score.toFixed(2)), recipe: recipe || 'generic', lang, reasons };
+  return { intent: 'none', confidence: Number(score.toFixed(2)), lang, reasons };
+}
+
+function analyzeRequestSignals(message) {
+  const text = String(message || '');
+  const custom = parseCustomSize(text);
+  const preset = inferSizePreset(text);
+  const quoted = /["“”'‘’「」]([^"“”'‘’]{3,120})["“”'‘’]/.exec(text);
+  return { sizeKnown: !!(custom || preset), custom, preset, styleKnown: STYLE_WORDS.test(text), quotedText: quoted ? quoted[1] : null, lang: detectLanguage(text) };
+}
+
+const POPUP_TEXT = {
+  en: { title: 'Generate an image?', body: 'Do you agree to generate this image?', yes: 'Generate', no: 'Cancel' },
+  hi: { title: 'इमेज बनानी है?', body: 'क्या आप इस इमेज को जनरेट करने के लिए सहमत हैं?', yes: 'जनरेट करें', no: 'रद्द करें' },
+  hinglish: { title: 'Image banani hai?', body: 'Kya aap is image ko generate karne ke liye agree hain?', yes: 'Generate karo', no: 'Cancel' },
+};
+
+/* ===================== SETTINGS + LLM CLIENT ===================== */
+const PROVIDERS = { xai: { label: 'xAI (Grok)', base: 'https://api.x.ai/v1' }, groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1' }, custom: { label: 'Custom / my proxy', base: '' } };
+const KEY = 'creative_studio_settings_v1';
+const Settings = {
+  get() { try { return JSON.parse(localStorage.getItem(KEY) || 'null') || {}; } catch (e) { return window.__mem || {}; } },
+  set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) { window.__mem = v; } },
+  clear() { try { localStorage.removeItem(KEY); } catch (e) { window.__mem = {}; } },
+};
+const baseOf = (s) => (s.baseUrl || (PROVIDERS[s.provider] || {}).base || '').replace(/\/$/, '');
+function explain(e) { const m = String(e && e.message || e); if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Browser could not reach the API (network or CORS block). Try: another network, or put a proxy URL in "Base URL" (your own server forwarding to the provider).'; return m; }
+async function api(s, path, init = {}, timeout = 90000) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const res = await fetch(baseOf(s) + path, { ...init, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + s.apiKey }, signal: ctl.signal });
+    const txt = await res.text(); let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
+    if (!res.ok) { const msg = (j.error && (j.error.message || j.error)) || j.raw || res.statusText; throw new Error(`API ${res.status}: ${typeof msg === 'string' ? msg.slice(0, 220) : JSON.stringify(msg).slice(0, 220)}`); }
+    return j;
+  } finally { clearTimeout(t); }
+}
+async function llmChat(messages, { temperature = .6, maxTokens = 1800 } = {}) {
+  const s = Settings.get(); if (!s.apiKey || !s.model) throw new Error('Not set up yet: open Settings, add your key, pick a model and press Test & Save.');
+  const body = { model: s.model, messages, temperature, [s.tokenParam || 'max_tokens']: maxTokens };
+  const j = await api(s, '/chat/completions', { method: 'POST', body: JSON.stringify(body) });
+  const out = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content; if (!out) throw new Error('Empty response from model'); return String(out);
+}
+async function listModels(s) { const j = await api(s, '/models', { method: 'GET' }, 25000); const ids = (j.data || []).map((m) => m.id); const bad = /image|imagine|embed|whisper|tts|guard|moderation|transcri|speech|vision-preview/i; return [...ids.filter((i) => !bad.test(i)).sort(), ...ids.filter((i) => bad.test(i)).sort()]; }
+async function testSettings(s, onStep) {
+  const steps = []; const log = (name, ok, detail) => { const st = { name, ok, detail }; steps.push(st); onStep && onStep(st); return ok; };
+  if (!s.apiKey) { log('API key', false, 'Paste your key first'); return { ok: false, steps }; } log('API key', true, 'found (' + s.apiKey.length + ' chars)');
+  let models = []; try { models = await listModels(s); log('Connect & authenticate', true, models.length + ' models visible'); } catch (e) { log('Connect & authenticate', false, explain(e)); return { ok: false, steps, models }; }
+  if (!s.model) { log('Model', false, 'Pick a model from the list'); return { ok: false, steps, models }; }
+  if (models.length && !models.includes(s.model)) { log('Model', false, `"${s.model}" is not available for this key`); return { ok: false, steps, models }; } log('Model', true, s.model);
+  try { const j = await api(s, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: s.model, messages: [{ role: 'user', content: 'Reply with the single word: ok' }], [s.tokenParam || 'max_tokens']: 8, temperature: 0 }) }, 40000); const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content; log('Test message', !!t, t ? 'model replied: ' + String(t).trim().slice(0, 30) : 'empty reply'); if (!t) return { ok: false, steps, models }; }
+  catch (e) { const m = explain(e); if (/max_tokens/i.test(m) && /max_completion_tokens/i.test(m)) { log('Test message', false, 'This provider wants max_completion_tokens — switched, press Test again'); s.tokenParam = 'max_completion_tokens'; } else log('Test message', false, m); return { ok: false, steps, models, retry: s.tokenParam === 'max_completion_tokens' }; }
+  return { ok: true, steps, models };
+}
+
+/* ===================== PLANNER ===================== */
+const STYLE_IDS = Object.keys(E.STYLES);
+const STYLE_INFO = { bold: 'loud high-contrast YouTube/social thumbnails, sale, sports, news', neon: 'tech, AI, gaming, coding, night, cyber (dark)', glass: 'modern app/SaaS/promos, premium clean (frosted card)', luxury: 'jewellery, wedding, premium brand, awards (dark+gold)', swiss: 'minimal corporate, announcements, clean posters (light)', comic: 'fun, kids, cricket/sports, memes, comics', mesh: 'startup launches, banners, modern gradients', pastel: 'quotes, wellness, kids, soft lifestyle, greetings (light)', cinema: 'documentary, film, story, history, serious topics', synth: 'music, retro, party, 80s, gaming posters', brutal: 'bold statements, events, streetwear (light, loud)', sticker: 'social posts, reels, food, youth, friendly tips' };
+const EMOJI_HINT = { money: '💰', earn: '💰', paise: '💰', kamai: '💰', कमाई: '💰', ai: '🤖', robot: '🤖', tech: '💻', code: '💻', game: '🎮', gaming: '🎮', music: '🎵', food: '🍔', recipe: '🍳', travel: '✈️', fitness: '💪', gym: '💪', health: '🥗', cricket: '🏏', football: '⚽', birthday: '🎂', wedding: '💍', diwali: '🪔', festival: '🎉', love: '❤️', news: '📰', exam: '📚', study: '📚', business: '📈', crypto: '🪙', bitcoin: '🪙', car: '🚗', phone: '📱', camera: '📷', idea: '💡', fire: '🔥', sale: '🏷️', offer: '🏷️', rocket: '🚀', startup: '🚀' };
+function pickEmoji(text) { const t = String(text || '').toLowerCase(); for (const k in EMOJI_HINT) if (t.includes(k)) return EMOJI_HINT[k]; return '⭐'; }
+
+const PLANNER_SYSTEM = () => `You are the creative director of an image studio. Given a user's request (any language), the details they chose, and facts about uploaded files, you output ONE JSON design spec that a deterministic renderer draws. You never write code. Think like a designer: goal, one message, one focal point, true content only.
+
+RULES
+- Use ONLY the ids listed below.
+- "title": the main headline, ${'<='} the word limit for the recipe (thumbnail 3-6 words, poster 2-7, quote card = the quote, logo = brand name). Keep the user's own words/language; never invent prices, dates, names or statistics.
+- "accentWord": ONE word (or two) copied exactly from the title to highlight, or "".
+- "subtitle" optional (<= 8 words, only facts the user gave or a neutral tagline). "badge" optional (1-3 words, UPPERCASE for Latin). "cta" optional (2-3 words).
+- Hindi/Devanagari text -> choose a font id starting with "hi-". Latin-only text can use any.
+- "hero": what fills the subject area. If an uploaded photo should be the subject -> {"type":"asset","id":"a1"} and add it in "assets". Otherwise pick ONE emoji that fits the topic {"type":"emoji","char":"🚀"} or a motif {"type":"motif","id":"lightning"}. Use {"type":"none"} for quote cards, logos, minimal text posters.
+- "assets": [{"id":"a1","source":"upload","uploadId":"<id>","role":"subject|background","removeBackground":true|false,"adjust":{"brightness":1.05,"contrast":1.1,"saturate":1.1}}]. Use "source":"search","query":"2-6 words" only for real places/public figures/products when the user wants real photos and web search is available (${'`webSearch`'} flag). Never private persons or minors.
+- "rationale": 1-2 honest sentences: WHY this style/layout/palette suits THIS request.
+- Refuse (return {"refuse":"reason"}) for: private individuals, minors, sexual/graphic content, impersonation, fake news/ads.
+
+STYLES (id: best for)
+${STYLE_IDS.map((i) => `${i}: ${STYLE_INFO[i]}`).join('\n')}
+PALETTES: ${Object.entries(DATA.PALETTES).map(([i, p]) => `${i}(${p.mood})`).join(', ')}
+FONTS: ${Object.entries(DATA.FONTS).map(([i, f]) => `${i}${f.scripts.includes('devanagari') ? '[hindi]' : ''}(${f.bestFor})`).join('; ')}
+LAYOUTS: text-left-subject-right, subject-left-text-right, centered-hero, centered-text, poster-stack, story-vertical, quote-center, banner-wide, product-spotlight (the renderer adapts to the canvas shape)
+MOTIFS: lightning, heart, starburst, sparkle, check, blob, quote, arrow
+
+OUTPUT (JSON only, no markdown):
+{"refuse":null,"brief":{"goal":"","audience":"","message":""},"rationale":"","recipe":"thumbnail|poster|ig-post|story-reel|banner|quote-card|logo|infographic|wallpaper|product-ad|profile-dp|invitation|certificate|business-card|flyer|album-cover|book-cover|news-card|menu|generic","style":"id","palette":"id","fonts":"id","layout":"id","language":"hi|en|hinglish","title":"","accentWord":"","subtitle":"","badge":"","cta":"","hero":{"type":"emoji","char":"🚀"},"motifs":["sparkle"],"assets":[]}
+
+EXAMPLE 1 (request: "AI se paise kaise kamaye YouTube thumbnail")
+{"refuse":null,"brief":{"goal":"get clicks on an AI-earning video","audience":"Hindi YouTube viewers","message":"AI can earn you money"},"rationale":"Thumbnails are judged at tiny size, so I chose the loud bold style with a red/yellow palette and a big money emoji focal point.","recipe":"thumbnail","style":"bold","palette":"money-red","fonts":"hi-bold-poppins","layout":"text-left-subject-right","language":"hi","title":"AI से कमाई","accentWord":"कमाई","subtitle":"","badge":"नया","cta":"","hero":{"type":"emoji","char":"💰"},"motifs":["starburst"],"assets":[]}
+EXAMPLE 2 (request: "quote card: 'Dream big, start small'")
+{"refuse":null,"brief":{"goal":"shareable motivational quote","audience":"social followers","message":"start small"},"rationale":"A quote needs calm and readability, so soft pastel colours, centred text and no hero image.","recipe":"quote-card","style":"pastel","palette":"pastel-dream","fonts":"editorial-playfair","layout":"quote-center","language":"en","title":"Dream big, start small","accentWord":"start small","subtitle":"","badge":"","cta":"","hero":{"type":"none"},"motifs":["sparkle"],"assets":[]}`;
+
+function extractJson(text) { const t = String(text || ''); const f = /```(?:json)?\s*([\s\S]*?)```/i.exec(t); const b = f ? f[1] : t; const a = b.indexOf('{'), z = b.lastIndexOf('}'); if (a < 0 || z <= a) throw new Error('no JSON in model output'); return JSON.parse(b.slice(a, z + 1)); }
+const RECIPE_DEFAULTS = { thumbnail: ['bold', 'money-red', 'text-left-subject-right'], poster: ['cinema', 'teal-orange', 'poster-stack'], 'ig-post': ['sticker', 'candy', 'centered-hero'], 'story-reel': ['sticker', 'sunset-pop', 'story-vertical'], banner: ['mesh', 'holo', 'banner-wide'], 'quote-card': ['pastel', 'pastel-dream', 'quote-center'], logo: ['luxury', 'ink-gold', 'centered-text'], infographic: ['glass', 'ocean-deep', 'centered-hero'], wallpaper: ['synth', 'retro-wave', 'centered-text'], 'product-ad': ['luxury', 'ink-gold', 'product-spotlight'], 'profile-dp': ['sticker', 'candy', 'centered-hero'], invitation: ['luxury', 'royal-gold', 'centered-text'], certificate: ['luxury', 'ink-gold', 'centered-text'], 'business-card': ['swiss', 'mono-clean', 'text-left-subject-right'], flyer: ['comic', 'sunset-pop', 'poster-stack'], 'album-cover': ['synth', 'retro-wave', 'centered-hero'], 'book-cover': ['cinema', 'teal-orange', 'poster-stack'], 'news-card': ['bold', 'money-red', 'text-left-subject-right'], menu: ['luxury', 'ink-gold', 'centered-text'], generic: ['mesh', 'sunset-pop', 'centered-hero'] };
+const RECIPE_SIZE = { thumbnail: 'yt-thumbnail', poster: 'a4-portrait', 'ig-post': 'ig-portrait', 'story-reel': 'story-reel', banner: 'yt-banner', 'quote-card': 'ig-square', logo: 'logo-square', infographic: 'ig-portrait', wallpaper: 'phone-wallpaper', 'product-ad': 'ig-square', 'profile-dp': 'profile-dp', invitation: 'a4-portrait', certificate: 'a4-landscape', 'business-card': 'business-card', flyer: 'a4-portrait', 'album-cover': 'album-cover', 'book-cover': 'book-cover', 'news-card': 'fb-post', menu: 'a4-portrait', generic: 'ig-square' };
+
+function cleanTitleFromRequest(msg) { let t = String(msg || '').replace(/["“”]/g, '').replace(/\b(youtube|yt|instagram|insta|facebook|thumbnail|poster|banner|logo|wallpaper|post|story|reel|card|image|design|please|bana|banao|do|de|ek|ka|ki|ke|for|a|an|the|make|create|generate)\b/gi, ' ').replace(/बनाओ|बना|दो|एक|का|की|के|थंबनेल|पोस्टर|लोगो|बैनर|इमेज/g, ' ').replace(/\s+/g, ' ').trim(); const w = t.split(' ').filter(Boolean).slice(0, 6); return w.join(' ') || 'Your Title'; }
+function fallbackSpec(message, resolved, recipeId) { const [st, pal, lay] = RECIPE_DEFAULTS[recipeId] || RECIPE_DEFAULTS.generic; const title = resolved.text || cleanTitleFromRequest(message); const hindi = isDevaStr(title) || resolved.language === 'hi'; return { recipe: recipeId, style: resolved.style || st, palette: pal, fonts: hindi ? 'hi-bold-poppins' : 'modern-grotesk', layout: lay, language: resolved.language, title, accentWord: title.split(' ').slice(-1)[0], subtitle: '', badge: '', cta: '', hero: { type: ['quote-card', 'logo', 'certificate', 'invitation', 'menu'].includes(recipeId) ? 'none' : 'emoji', char: pickEmoji(message + ' ' + title) }, motifs: ['sparkle'], assets: [], brief: {}, rationale: '' }; }
+const isDevaStr = (s) => /[\u0900-\u097F]/.test(s);
+const STYLE_PAL = { bold: ['money-red', 'sunset-pop', 'cyber-lime', 'neon-night'], neon: ['neon-night', 'cyber-lime', 'retro-wave', 'holo'], glass: ['holo', 'ocean-deep', 'pastel-dream', 'neon-night'], luxury: ['ink-gold', 'royal-gold', 'midnight-emerald'], swiss: ['mono-clean', 'ice-white', 'desert-sand'], comic: ['candy', 'sunset-pop', 'money-red'], mesh: ['holo', 'sunset-pop', 'ocean-deep', 'midnight-emerald'], pastel: ['pastel-dream', 'sakura', 'candy', 'coral-cream'], cinema: ['teal-orange', 'blood-moon', 'ink-gold'], synth: ['retro-wave', 'neon-night'], brutal: ['desert-sand', 'coral-cream', 'mono-clean'], sticker: ['candy', 'sunset-pop', 'fresh-mint', 'coral-cream'] };
+
+function normSpec(raw, { resolved, recipeId, prepared }) {
+  const warn = []; const s = { ...raw };
+  s.recipe = RECIPE_DEFAULTS[s.recipe] ? s.recipe : recipeId; const def = RECIPE_DEFAULTS[s.recipe];
+  s.style = resolved.style && E.STYLES[resolved.style] ? resolved.style : (E.STYLES[s.style] ? s.style : def[0]);
+  if (!DATA.PALETTES[s.palette]) { s.palette = (STYLE_PAL[s.style] || [def[1]])[0]; warn.push('palette-fixed'); }
+  s.language = ['hi', 'en', 'hinglish'].includes(s.language) ? s.language : resolved.language;
+  s.title = String(resolved.text || s.title || '').trim().slice(0, 140) || cleanTitleFromRequest(''); const hindi = isDevaStr(s.title + (s.subtitle || '') + (s.badge || ''));
+  if (!DATA.FONTS[s.fonts]) s.fonts = hindi ? 'hi-bold-poppins' : 'modern-grotesk';
+  if (hindi && !DATA.FONTS[s.fonts].scripts.includes('devanagari')) { warn.push('font-swapped-for-hindi'); s.fonts = 'hi-bold-poppins'; }
+  s.layout = s.layout || def[2];
+  s.accentWord = s.accentWord && s.title.toLowerCase().includes(String(s.accentWord).toLowerCase()) ? s.accentWord : '';
+  for (const k of ['subtitle', 'badge', 'cta']) s[k] = String(s[k] || '').trim().slice(0, 60);
+  if (s.recipe === 'quote-card') { s.badge = ''; s.cta = ''; }
+  s.motifs = (Array.isArray(s.motifs) ? s.motifs : []).filter((m) => E.MOTIFS[m]).slice(0, 2);
+  const h = s.hero || {}; if (h.type === 'asset') { s.hero = prepared[h.id] ? h : { type: 'emoji', char: pickEmoji(s.title) }; if (!prepared[h.id]) warn.push('asset-missing'); }
+  else if (h.type === 'emoji') s.hero = { type: 'emoji', char: String(h.char || '').trim().slice(0, 4) || pickEmoji(s.title) };
+  else if (h.type === 'motif' && E.MOTIFS[h.id]) s.hero = h; else s.hero = { type: 'none' };
+  if (s.hero.type === 'none' && !['quote-card', 'logo', 'certificate', 'invitation', 'menu'].includes(s.recipe) && !Object.values(prepared).length && s.layout !== 'centered-text') { /* engine centers text */ }
+  const pids = Object.keys(prepared).filter((k) => !k.startsWith('__')); if (pids.length && s.hero.type !== 'asset') { const subj = pids.find((i) => prepared[i].role !== 'background'); if (subj) s.hero = { type: 'asset', id: subj }; }
+  s.rationale = String(s.rationale || '').trim().slice(0, 300);
+  return { spec: s, warn };
+}
+
+/* ===================== THINKING LOG ===================== */
+function describeFacts(f, hi) { const b = []; if (f.bgUniform === true) b.push(hi ? `बैकग्राउंड लगभग एक रंग का (${f.bgColor})` : `plain ${f.bgColor} background`); else if (f.bgUniform === false) b.push(hi ? 'बैकग्राउंड जटिल है' : 'busy background'); if (f.hasAlpha) b.push(hi ? 'पारदर्शिता मौजूद' : 'already has transparency'); if (typeof f.brightness === 'number') b.push(hi ? (f.brightness < .35 ? 'काफ़ी डार्क' : f.brightness > .7 ? 'काफ़ी ब्राइट' : 'सामान्य रोशनी') : (f.brightness < .35 ? 'dark overall' : f.brightness > .7 ? 'bright overall' : 'balanced lighting')); if (f.dominant && f.dominant.length) b.push((hi ? 'मुख्य रंग ' : 'dominant colours ') + f.dominant.slice(0, 3).join(', ')); if (f.width < 600) b.push(hi ? 'रेज़ोल्यूशन कम' : 'low resolution (may look soft)'); return b.join('; ') + '.'; }
+class Think {
+  constructor(hi, onStep) { this.hi = hi; this.steps = []; this.on = onStep; }
+  add(kind, text) { const s = { kind, text }; this.steps.push(s); this.on && this.on(s); return s; }
+  understand(recipe, goal, size) { this.add('understand', this.hi ? `रिक्वेस्ट समझी: ${recipe}${goal ? ' — ' + goal : ''}. साइज़ ${size}.` : `Understood the request: ${recipe}${goal ? ' — ' + goal : ''}. Size ${size}.`); }
+  analysis(f) { const o = { landscape: 'landscape', portrait: 'portrait', square: 'square' }[f.orientation] || f.orientation; this.add('analysis', this.hi ? `${f.name} (${f.width}×${f.height}) का विश्लेषण: ${describeFacts(f, true)}` : `Analysed ${f.name} (${f.width}×${f.height}, ${o}): ${describeFacts(f, false)}`); }
+  fail(what) { this.add('edit', this.hi ? `${what}` : what); }
+}
+
+/* ===================== ASSETS (browser-side) ===================== */
+const fileToDataUrl = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+const loadImage = (src, cors = true) => new Promise((res, rej) => { const i = new Image(); if (cors) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('image load failed')); i.src = src; });
+function drawScaled(img, maxSize) { const k = Math.min(1, maxSize / Math.max(img.width, img.height)); const c = E.cv(img.width * k, img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c; }
+function analyzeCanvas(canvas, name) {
+  const W = canvas.width, H = canvas.height, k = Math.min(1, 96 / Math.max(W, H)), s = E.cv(W * k, H * k), ctx = s.getContext('2d', { willReadFrequently: true }); ctx.drawImage(canvas, 0, 0, s.width, s.height);
+  const d = ctx.getImageData(0, 0, s.width, s.height).data; let sum = 0, n = 0, alpha = false; const bins = new Map();
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 250) alpha = true; if (d[i + 3] < 20) continue; sum += (.2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2]) / 255; n++; const key = ((d[i] >> 5) << 6) | ((d[i + 1] >> 5) << 3) | (d[i + 2] >> 5); bins.set(key, (bins.get(key) || 0) + 1); }
+  const dominant = [...bins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([q]) => '#' + [(q >> 6) & 7, (q >> 3) & 7, q & 7].map((v) => Math.min(255, v * 36 + 18).toString(16).padStart(2, '0')).join(''));
+  const ring = [], sw = s.width, sh = s.height, px = (x, y) => { const i = (y * sw + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  for (let x = 0; x < sw; x++) ring.push(px(x, 0)); for (let y = 0; y < Math.floor(sh * .7); y++) ring.push(px(0, y), px(sw - 1, y));
+  const avg = ring.reduce((a, c) => [a[0] + c[0], a[1] + c[1], a[2] + c[2]], [0, 0, 0]).map((v) => v / ring.length); const dev = ring.reduce((a, c) => a + Math.hypot(c[0] - avg[0], c[1] - avg[1], c[2] - avg[2]), 0) / ring.length;
+  return { name, width: W, height: H, orientation: Math.abs(W - H) / Math.max(W, H) < .06 ? 'square' : W > H ? 'landscape' : 'portrait', hasAlpha: alpha, brightness: n ? +(sum / n).toFixed(2) : 0, dominant, bgUniform: dev < 28, bgColor: '#' + avg.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') };
+}
+function removeBgSimple(canvas, tol = 52) {
+  const W = canvas.width, H = canvas.height, c = E.cv(W, H), ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(canvas, 0, 0); const im = ctx.getImageData(0, 0, W, H), p = im.data, at = (x, y) => (y * W + x) * 4;
+  const cs = [at(0, 0), at(W - 1, 0), at(0, H - 1), at(W - 1, H - 1)].map((i) => [p[i], p[i + 1], p[i + 2]]); const bg = cs.reduce((a, b) => [a[0] + b[0] / 4, a[1] + b[1] / 4, a[2] + b[2] / 4], [0, 0, 0]);
+  const seen = new Uint8Array(W * H), st = []; for (let x = 0; x < W; x++) st.push(x, 0, x, H - 1); for (let y = 0; y < H; y++) st.push(0, y, W - 1, y);
+  while (st.length) { const y = st.pop(), x = st.pop(); if (x < 0 || y < 0 || x >= W || y >= H) continue; const k = y * W + x; if (seen[k]) continue; const i = k * 4; if (Math.hypot(p[i] - bg[0], p[i + 1] - bg[1], p[i + 2] - bg[2]) > tol) continue; seen[k] = 1; p[i + 3] = 0; st.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1); }
+  ctx.putImageData(im, 0, 0); const t = E.cv(W, H), tc = t.getContext('2d'); tc.filter = 'blur(.7px)'; tc.drawImage(c, 0, 0); return t;
+}
+async function removeBg(canvas) {
+  try { const mod = await Promise.race([import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm'), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 20000))]); const blob = await new Promise((r) => canvas.toBlob(r, 'image/png')); const out = await mod.removeBackground(blob); const img = await loadImage(URL.createObjectURL(out), false); const c = E.cv(img.width, img.height); c.getContext('2d').drawImage(img, 0, 0); return { canvas: c, method: 'AI model' }; }
+  catch (e) { return { canvas: removeBgSimple(canvas), method: 'colour-based method' }; }
+}
+function adjustCanvas(canvas, a = {}) { const c = E.cv(canvas.width, canvas.height), g = c.getContext('2d'); g.filter = `brightness(${a.brightness || 1}) contrast(${a.contrast || 1}) saturate(${a.saturate || 1})${a.blur ? ` blur(${a.blur}px)` : ''}`; g.drawImage(canvas, 0, 0); return c; }
+function adjustText(a, hi) { const p = []; for (const [k, v] of Object.entries(a || {})) if (typeof v === 'number' && v !== 1 && v !== 0) p.push(`${k} ${v > 1 ? '+' : ''}${Math.round((v - 1) * 100)}%`); return p.join(', '); }
+
+async function fetchWebPhoto(query, s) {
+  if (!s.searchUrl) return { error: 'web search not configured' };
+  let list = []; try { const r = await fetch(s.searchUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, offset: 0 }) }); const j = await r.json(); list = (j.images || []).filter((i) => !/\.svg(\?|$)/i.test(i.url || '') && (!i.width || i.width >= 500)).slice(0, 6); } catch (e) { return { error: 'search failed' }; }
+  if (!list.length) return { error: 'no results', count: 0 };
+  for (const c of list) { const src = s.proxyUrl ? s.proxyUrl + encodeURIComponent(c.url || c.thumbnail) : (c.url || c.thumbnail); try { const img = await loadImage(src); const cv = drawScaled(img, 1800); cv.getContext('2d').getImageData(0, 0, 1, 1); return { canvas: cv, chosen: c, count: list.length }; } catch (e) { /* next */ } }
+  return { error: 'could not download any result', count: list.length };
+}
+
+/* ===================== PIPELINE ===================== */
+async function runPipeline({ message, intent, resolved, uploads, onProgress, onStep, spec: reuseSpec, preparedReuse }) {
+  const hi = intent.lang === 'hi'; const think = new Think(hi, onStep); const s = Settings.get(); const t0 = performance.now();
+  const recipeId = RECIPE_DEFAULTS[intent.recipe] ? intent.recipe : 'generic'; onProgress(4, 'Understanding');
+  const uploadFacts = []; const prepared = preparedReuse || {};
+  if (!reuseSpec) think.understand(RECIPES_NAME[recipeId] || 'image', null, `${resolved.size.w}×${resolved.size.h}`);
+  let spec = reuseSpec, rawPlan = null, plannerError = null;
+  if (!reuseSpec) {
+    for (const u of uploads) { u.facts = u.facts || { ...analyzeCanvas(drawScaled(u.img, 600), u.name), width: u.img.width, height: u.img.height }; uploadFacts.push({ id: u.id, ...u.facts }); think.analysis(u.facts); }
+    onProgress(10, 'Planning');
+    const user = JSON.stringify({ request: message, language: resolved.language, userChoices: { size: resolved.size, style: resolved.style, text: resolved.text, photo: resolved.photo }, recipeHint: recipeId, webSearch: !!s.searchUrl, uploads: uploadFacts });
+    for (let i = 0; i < 2 && !rawPlan; i++) { try { rawPlan = extractJson(await llmChat([{ role: 'system', content: PLANNER_SYSTEM() }, { role: 'user', content: user + (i ? '\nReturn ONLY the JSON object.' : '') }], { temperature: .6, maxTokens: 1400 })); } catch (e) { plannerError = explain(e); if (/API 40[13]|Not set up/.test(plannerError)) break; } }
+    if (rawPlan && rawPlan.refuse) return { refused: String(rawPlan.refuse.reason || rawPlan.refuse).slice(0, 200) };
+    if (!rawPlan) { think.add('decision', hi ? `AI प्लानर से जवाब नहीं मिला (${plannerError}); बिल्ट-इन डिज़ाइन नियमों से आगे बढ़ा।` : `The AI planner did not answer (${plannerError}); used the built-in design rules instead.`); rawPlan = fallbackSpec(message, resolved, recipeId); }
+    onProgress(25, 'Preparing photos');
+    // assets
+    const wants = (rawPlan.assets || []).slice(0, 3);
+    if (!wants.length && uploads.length && resolved.photo !== 'no' && ['yes-cutout', 'yes-asis'].includes(resolved.photo)) wants.push({ id: 'a1', source: 'upload', uploadId: uploads[0].id, role: 'subject', removeBackground: resolved.photo === 'yes-cutout' });
+    for (const a of wants) {
+      const id = String(a.id || 'a1').replace(/[^a-z0-9_-]/gi, '') || 'a1';
+      try {
+        let cv, name, removed = null;
+        if (a.source === 'upload') { const u = uploads.find((x) => x.id === a.uploadId) || uploads[0]; if (!u || resolved.photo === 'no') continue; cv = drawScaled(u.img, 2000); name = u.name; }
+        else if (a.source === 'search') { const r = await fetchWebPhoto(String(a.query || '').slice(0, 80), s); if (r.error) { think.add('search', hi ? `वेब पर “${a.query}” खोजा: ${r.error}; उसके बिना आगे बढ़ा।` : `Searched the web for “${a.query}”: ${r.error}; continued without it.`); continue; } cv = r.canvas; name = (r.chosen.title || a.query).slice(0, 50); const f = analyzeCanvas(cv, name); think.add('search', hi ? `वेब पर “${a.query}” खोजा: ${r.count} नतीजे; ${r.chosen.sourceDomain || 'वेब'} से ${cv.width}×${cv.height} ली। ${describeFacts(f, true)}` : `Searched the web for “${a.query}”: ${r.count} results; used ${cv.width}×${cv.height} from ${r.chosen.sourceDomain || 'the web'}. ${describeFacts(f, false)}`); prepared.__sources = (prepared.__sources || []).concat({ domain: r.chosen.sourceDomain, url: r.chosen.sourceUrl }); }
+        else continue;
+        const wantCut = a.removeBackground || (resolved.photo === 'yes-cutout' && a.source === 'upload'); const wasAlpha = analyzeCanvas(cv, name).hasAlpha;
+        if (wantCut && !wasAlpha) { onProgress(35, 'Removing background'); const r = await removeBg(cv); cv = r.canvas; removed = r.method; think.add('edit', hi ? `${name} का बैकग्राउंड हटाया (${removed}).` : `Removed the background from ${name} (${removed}).`); }
+        if (a.adjust && Object.keys(a.adjust).length) { cv = adjustCanvas(cv, a.adjust); const t = adjustText(a.adjust); if (t) think.add('edit', hi ? `${name} में बदलाव: ${t}.` : `Adjusted ${name}: ${t}.`); }
+        prepared[id] = { img: cv, cutout: !!removed || wasAlpha, role: a.role === 'background' ? 'background' : 'subject', name };
+      } catch (e) { think.add('edit', hi ? `एसेट ${id} तैयार नहीं हुआ (${String(e.message).slice(0, 60)}); उसके बिना आगे बढ़ा।` : `Could not prepare asset ${id} (${String(e.message).slice(0, 60)}); continued without it.`); }
+    }
+    const n = normSpec(rawPlan, { resolved, recipeId, prepared }); spec = n.spec;
+    if (rawPlan.brief && rawPlan.brief.goal) think.add('understand', hi ? `लक्ष्य: ${rawPlan.brief.goal}.` : `Goal: ${rawPlan.brief.goal}.`);
+    const styleName = E.STYLES[spec.style].name; const palName = DATA.PALETTES[spec.palette].name;
+    think.add('decision', hi ? `${styleName} स्टाइल, ${DATA.PALETTES[spec.palette].name} पैलेट चुना। ${spec.rationale}` : `Chose ${styleName} with the ${palName} palette. ${spec.rationale || ''}`.trim());
+    if (n.warn.length) think.add('check', hi ? `सुधार: ${n.warn.join(', ')}` : `Auto-fixed: ${n.warn.join(', ')}`);
+  }
+  onProgress(55, 'Designing');
+  const res = await E.render(spec, prepared, resolved.size); onProgress(92, 'Checking');
+  const i = res.info; const checks = []; checks.push(i.titleFits ? (hi ? 'टाइटल अपने बॉक्स में फिट' : 'headline fits its box') : (hi ? 'टाइटल छोटा करना पड़ा' : 'headline needed minimum size'));
+  checks.push((hi ? 'कंट्रास्ट ' : 'text contrast ') + i.contrast + ':1' + (i.contrast >= 4.5 ? ' ✓' : ' (low)')); if (i.plate) checks.push(hi ? 'फोटो पर पढ़ने के लिए गहरी परत' : 'readability plate over photo');
+  think.add('check', (hi ? 'डिज़ाइन जाँचा: ' : 'Checked the design: ') + checks.join(', ') + (hi ? `. लेआउट: ${i.layout}.` : `. Layout used: ${i.layout}.`));
+  const secs = Math.max(1, Math.round((performance.now() - t0) / 1000)); think.add('result', hi ? `${resolved.size.w}×${resolved.size.h} की इमेज ${secs} सेकंड में तैयार।` : `Finished a ${resolved.size.w}×${resolved.size.h} image in ${secs}s.`);
+  onProgress(100, 'Done');
+  return { canvas: res.canvas, info: i, spec, prepared, steps: think.steps, sources: prepared.__sources || [] };
+}
+const RECIPES_NAME = { thumbnail: 'YouTube thumbnail', poster: 'poster', 'ig-post': 'social post', 'story-reel': 'story / reel cover', banner: 'banner', 'quote-card': 'quote card', logo: 'logo', infographic: 'infographic', wallpaper: 'wallpaper', 'product-ad': 'product ad', 'profile-dp': 'profile picture', invitation: 'invitation', certificate: 'certificate', 'business-card': 'business card', flyer: 'flyer', 'album-cover': 'album cover', 'book-cover': 'book cover', 'news-card': 'news card', menu: 'menu', generic: 'image' };
+
+/* questions + answers → resolved */
+function buildQuestions(message, intent, uploads, answers = {}) {
+  const hi = intent.lang === 'hi'; const sig = analyzeRequestSignals(message); const recipeId = RECIPE_DEFAULTS[intent.recipe] ? intent.recipe : 'generic'; const q = [];
+  if (!sig.sizeKnown) { const ids = [...new Set([RECIPE_SIZE[recipeId], 'yt-thumbnail', 'ig-square', 'ig-portrait', 'story-reel', 'a4-portrait'])].slice(0, 5); q.push({ id: 'size', text: hi ? 'इमेज का साइज़ क्या रखना है?' : 'What size should the image be?', options: [...ids.map((i) => ({ id: 'preset:' + i, label: `${DATA.SIZES[i].name} ${DATA.SIZES[i].w}×${DATA.SIZES[i].h}` })), { id: 'custom', label: hi ? 'अपना साइज़ लिखें' : 'Custom size…' }], def: 'preset:' + RECIPE_SIZE[recipeId], custom: true }); }
+  if (uploads.length) q.push({ id: 'photo', text: hi ? 'आपकी फोटो मुख्य सब्जेक्ट में लगानी है?' : 'Use your photo as the main subject?', options: [{ id: 'yes-cutout', label: hi ? 'हाँ, बैकग्राउंड हटाकर' : 'Yes, remove background' }, { id: 'yes-asis', label: hi ? 'हाँ, जैसी है वैसी' : 'Yes, as it is' }, { id: 'no', label: hi ? 'नहीं' : 'No' }], def: 'yes-cutout' });
+  if (!sig.styleKnown) q.push({ id: 'style', text: hi ? 'कौन सा स्टाइल चाहिए?' : 'Which style?', options: [{ id: 'auto', label: hi ? 'आप चुन लो' : 'You choose' }, ...['bold', 'neon', 'glass', 'luxury', 'pastel', 'cinema'].map((i) => ({ id: 'style:' + i, label: E.STYLES[i].name }))], def: 'auto' });
+  if (!['wallpaper', 'profile-dp'].includes(recipeId) && !sig.quotedText) q.push({ id: 'text', text: hi ? 'इस पर क्या लिखना है? (खाली छोड़ें तो मैं तय करूँगा)' : 'What text should be on it? (leave empty and I will write it)', text_input: true });
+  return q.slice(0, 4);
+}
+function resolveAnswers(message, intent, a) {
+  const sig = analyzeRequestSignals(message); const recipeId = RECIPE_DEFAULTS[intent.recipe] ? intent.recipe : 'generic'; let size = null;
+  if (a.size && a.size.startsWith('preset:')) { const p = DATA.SIZES[a.size.slice(7)]; if (p) size = { w: p.w, h: p.h }; }
+  if (!size && a.sizeCustom) size = parseCustomSize(a.sizeCustom); if (!size && sig.custom) size = sig.custom; if (!size && sig.preset && DATA.SIZES[sig.preset]) { const p = DATA.SIZES[sig.preset]; size = { w: p.w, h: p.h }; }
+  if (!size) { const p = DATA.SIZES[RECIPE_SIZE[recipeId]]; size = { w: p.w, h: p.h }; }
+  const style = a.style && a.style.startsWith('style:') ? a.style.slice(6) : null;
+  return { size, style, text: (a.text || '').trim() || sig.quotedText || null, photo: a.photo || null, language: sig.lang };
+}
+
+/* ===================== UI ===================== */
+const $ = (s, r = document) => r.querySelector(s); const el = (h) => { const d = document.createElement('div'); d.innerHTML = h.trim(); return d.firstChild; };
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const md = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+const chat = $('#chat'); let pending = []; const history = []; let uid = 0;
+const scrollDown = () => { chat.scrollTop = chat.scrollHeight; };
+function addMsg(role, html, cls = '') { const m = el(`<div class="msg ${role} ${cls}"><div class="bubble">${html}</div></div>`); chat.appendChild(m); scrollDown(); return m; }
+const previewBox = (w, h, maxW = Math.min(320, chat.clientWidth - 56), maxH = 380) => { const k = Math.min(maxW / w, maxH / h, 1); return { width: Math.round(w * k), height: Math.round(h * k) }; };
+const configured = () => { const s = Settings.get(); return !!(s.apiKey && s.model); };
+
+/* ---------- settings dialog ---------- */
+const dlg = $('#settings'); const sv = () => ({ provider: $('#prov').value, baseUrl: $('#base').value.trim(), apiKey: $('#key').value.trim(), model: $('#model').value.trim(), searchUrl: $('#searchUrl').value.trim(), proxyUrl: $('#proxyUrl').value.trim(), tokenParam: Settings.get().tokenParam || 'max_tokens' });
+function fillSettings() { const s = Settings.get(); $('#prov').value = s.provider || 'xai'; $('#base').value = s.baseUrl || ''; $('#base').placeholder = (PROVIDERS[$('#prov').value] || {}).base || 'https://your-proxy/v1'; $('#key').value = s.apiKey || ''; $('#model').value = s.model || ''; $('#searchUrl').value = s.searchUrl || ''; $('#proxyUrl').value = s.proxyUrl || ''; $('#steps').innerHTML = ''; $('#savedNote').textContent = s.apiKey ? 'Saved in this browser (key ends …' + s.apiKey.slice(-4) + ').' : 'Nothing saved yet.'; }
+function renderStatus() { const s = Settings.get(); const ok = configured(); $('#status').textContent = ok ? `${(PROVIDERS[s.provider] || {}).label || 'API'} · ${s.model}` : 'Not set up'; $('#status').className = 'chip ' + (ok ? 'ok' : 'warn'); }
+function stepRow(st) { const r = el(`<li class="${st.ok ? 'pass' : 'fail'}"><b>${st.ok ? '✓' : '✗'} ${esc(st.name)}</b><span>${esc(st.detail || '')}</span></li>`); $('#steps').appendChild(r); }
+$('#openSettings').onclick = () => { fillSettings(); dlg.showModal(); };
+$('#closeSettings').onclick = () => dlg.close();
+$('#prov').onchange = () => { $('#base').placeholder = (PROVIDERS[$('#prov').value] || {}).base || 'https://your-proxy/v1'; };
+$('#loadModels').onclick = async () => { const s = sv(); $('#steps').innerHTML = ''; $('#loadModels').disabled = true; try { const ms = await listModels(s); const dl = $('#modelList'); dl.innerHTML = ms.map((m) => `<option value="${esc(m)}">`).join(''); stepRow({ ok: true, name: 'Models loaded', detail: ms.length + ' found — tap the Model box and pick one' }); if (!$('#model').value && ms[0]) $('#model').value = ms[0]; } catch (e) { stepRow({ ok: false, name: 'Could not load models', detail: explain(e) }); } $('#loadModels').disabled = false; };
+$('#testSave').onclick = async () => { const s = sv(); $('#steps').innerHTML = ''; $('#testSave').disabled = true; $('#testSave').textContent = 'Testing…'; const r = await testSettings(s, stepRow); if (r.models && r.models.length) $('#modelList').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join(''); if (r.ok) { Settings.set(s); stepRow({ ok: true, name: 'Saved', detail: 'You are ready — close this and ask for an image.' }); renderStatus(); fillSettingsNote(); } else { $('#saveAnyway').hidden = false; } $('#testSave').disabled = false; $('#testSave').textContent = 'Test & Save'; };
+$('#saveAnyway').onclick = () => { Settings.set(sv()); renderStatus(); fillSettingsNote(); $('#saveAnyway').hidden = true; stepRow({ ok: true, name: 'Saved without a passing test', detail: 'It may not work until the test passes.' }); };
+$('#clearKey').onclick = () => { Settings.clear(); fillSettings(); renderStatus(); };
+const fillSettingsNote = () => { const s = Settings.get(); $('#savedNote').textContent = 'Saved in this browser (key ends …' + String(s.apiKey || '').slice(-4) + ').'; };
+$('#toggleKey').onclick = () => { const k = $('#key'); k.type = k.type === 'password' ? 'text' : 'password'; };
+
+/* ---------- uploads ---------- */
+$('#attach').onclick = () => $('#file').click();
+$('#file').onchange = async (e) => { for (const f of [...e.target.files].slice(0, 3)) { try { const img = await loadImage(await fileToDataUrl(f), false); pending.push({ id: 'u' + (++uid), name: f.name, img, type: f.type, file: f }); } catch (err) { addMsg('assistant', 'Could not read ' + esc(f.name)); } } e.target.value = ''; renderPending(); };
+function renderPending() { const b = $('#pending'); b.innerHTML = ''; pending.forEach((u) => { const t = E.cv(56, 56); const g = t.getContext('2d'); const k = Math.max(56 / u.img.width, 56 / u.img.height); g.drawImage(u.img, (56 - u.img.width * k) / 2, (56 - u.img.height * k) / 2, u.img.width * k, u.img.height * k); const d = el(`<div class="pchip"><button title="remove">×</button></div>`); d.prepend(t); d.querySelector('button').onclick = () => { pending = pending.filter((x) => x !== u); renderPending(); }; b.appendChild(d); }); b.hidden = !pending.length; }
+
+/* ---------- send ---------- */
+const input = $('#input'); input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; });
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) { e.preventDefault(); send(); } });
+$('#send').onclick = send;
+async function send(forced) {
+  const text = (typeof forced === 'string' ? forced : input.value).trim(); if (!text && !pending.length) return;
+  const ups = pending; pending = []; renderPending(); input.value = ''; input.style.height = 'auto';
+  const thumbs = ups.map((u) => `<span class="uname">📎 ${esc(u.name)}</span>`).join(' ');
+  addMsg('user', md(text) + (thumbs ? '<div class="uthumbs">' + thumbs + '</div>' : ''));
+  if (!configured()) { const m = addMsg('assistant', 'First, set up your API key so I can work. 👇'); const b = el('<button class="btn primary">Open Settings</button>'); b.onclick = () => $('#openSettings').click(); m.querySelector('.bubble').appendChild(el('<div style="margin-top:8px"></div>')).appendChild(b); return; }
+  const intent = detectIntent(text, ups.map((u) => ({ type: u.type })));
+  if (intent.intent === 'generate' || intent.intent === 'edit') return confirmCard(text, intent, ups);
+  if (intent.intent === 'search' && Settings.get().searchUrl) return searchCard(text);
+  await chatReply(text, intent, ups);
+}
+async function chatReply(text, intent, ups) {
+  history.push({ role: 'user', content: text + (ups.length ? `\n[attached: ${ups.map((u) => u.name).join(', ')}]` : '') });
+  const m = addMsg('assistant', '<span class="dots"><i></i><i></i><i></i></span>');
+  try {
+    const sys = 'You are a thoughtful, concise assistant inside "Creative Studio", an app that designs images (thumbnails, posters, logos, banners, quote cards…) from requests. Reply in the same language as the user (Hindi, Hinglish or English). Lead with the answer. If the user wants an image designed, say they can just describe it (e.g. "YouTube thumbnail banao …") and the app will offer to generate it. Video generation is currently off. Never claim to have seen attachments you were not given facts about.';
+    const out = await llmChat([{ role: 'system', content: sys }, ...history.slice(-12)], { maxTokens: 900, temperature: .6 }); history.push({ role: 'assistant', content: out }); m.querySelector('.bubble').innerHTML = md(out);
+    if (intent.intent === 'maybe_generate') { const b = el('<button class="btn">🎨 Make this an image</button>'); b.onclick = () => confirmCard(text, { ...intent, intent: 'generate' }, ups); m.querySelector('.bubble').appendChild(el('<div style="margin-top:8px"></div>')).appendChild(b); }
+    if (intent.intent === 'search' && !Settings.get().searchUrl) m.querySelector('.bubble').appendChild(el('<div class="note">Tip: add the Image Search URL in Settings to see real web photos here.</div>'));
+  } catch (e) { m.querySelector('.bubble').innerHTML = '⚠️ ' + esc(explain(e)); }
+  scrollDown();
+}
+async function searchCard(text) {
+  const q = text.replace(/\b(find|search|show me|dikhao|dhundo|photos?|images?|pics?|of|ki|ka|ke|do|de)\b/gi, ' ').replace(/ढूंढ|दिखाओ|फोटो|इमेज|की|का|के|दो/g, ' ').replace(/\s+/g, ' ').trim() || text; const m = addMsg('assistant', `Searching the web for “${esc(q)}”…`);
+  try { const r = await fetch(Settings.get().searchUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, offset: 0 }) }); const j = await r.json(); const imgs = (j.images || []).slice(0, 6); if (!imgs.length) { m.querySelector('.bubble').textContent = 'No images found for that.'; return; }
+    m.querySelector('.bubble').innerHTML = `<div class="sgrid">${imgs.map((i) => `<a href="${esc(i.sourceUrl || i.url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(i.thumbnail || i.url)}" alt=""><span>${esc(i.sourceDomain || '')}</span></a>`).join('')}</div><div class="note">Web photos belong to their owners; tap to open the source.</div>`;
+  } catch (e) { m.querySelector('.bubble').textContent = 'Search failed: ' + explain(e); } scrollDown();
+}
+
+/* ---------- confirm → questions → generate ---------- */
+function confirmCard(text, intent, ups) {
+  const P = POPUP_TEXT[intent.lang] || POPUP_TEXT.en; const m = addMsg('assistant', `<div class="ctitle">🎨 ${esc(P.title)}</div><div>${esc(P.body)}</div><div class="row"><button class="btn primary yes">${esc(P.yes)}</button><button class="btn no">${esc(P.no)}</button></div>`, 'card');
+  m.querySelector('.no').onclick = () => { m.remove(); }; m.querySelector('.yes').onclick = () => { m.remove(); questionsCard(text, intent, ups); };
+}
+function questionsCard(text, intent, ups) {
+  const qs = buildQuestions(text, intent, ups); const ans = {}; qs.forEach((q) => { if (q.def) ans[q.id] = q.def; });
+  if (!qs.length) return startGeneration(text, intent, ups, ans);
+  const m = addMsg('assistant', '<div class="ctitle">A few quick details</div><div class="qs"></div><div class="row"><button class="btn primary go">Generate</button><button class="btn now">Generate now (defaults)</button></div>', 'card'); const box = m.querySelector('.qs');
+  qs.forEach((q) => { const w = el(`<div class="q"><div class="qt">${esc(q.text)}</div><div class="opts"></div></div>`); const opts = w.querySelector('.opts');
+    if (q.text_input) { const i = el('<input type="text" class="qin" placeholder="e.g. AI से कमाई 2026">'); i.oninput = () => { ans.text = i.value; }; opts.appendChild(i); }
+    else { q.options.forEach((o) => { const b = el(`<button class="opt${ans[q.id] === o.id ? ' on' : ''}">${esc(o.label)}</button>`); b.onclick = () => { ans[q.id] = o.id; opts.querySelectorAll('.opt').forEach((x) => x.classList.remove('on')); b.classList.add('on'); const ci = w.querySelector('.custom'); if (ci) ci.hidden = o.id !== 'custom'; }; opts.appendChild(b); }); if (q.custom) { const ci = el('<input type="text" class="qin custom" placeholder="1200x628" hidden>'); ci.oninput = () => { ans.sizeCustom = ci.value; }; w.appendChild(ci); } }
+    box.appendChild(w); });
+  const go = () => { m.remove(); startGeneration(text, intent, ups, ans); }; m.querySelector('.go').onclick = go; m.querySelector('.now').onclick = () => { Object.keys(ans).forEach((k) => { if (k === 'text') delete ans.text; }); go(); }; scrollDown();
+}
+
+function startGeneration(text, intent, ups, answers, reuse) {
+  const resolved = resolveAnswers(text, intent, answers); const box = previewBox(resolved.size.w, resolved.size.h);
+  const m = addMsg('assistant', `<div class="gen"><details class="think" open><summary>Thinking <small class="cnt"></small></summary><ol class="steps"></ol></details><div class="stage" style="width:${box.width}px;height:${box.height}px"><div class="shimmer"></div><div class="pbadge">0% · 0:00</div></div><div class="actions" hidden></div><div class="edit" hidden></div><div class="srcs"></div><div class="gnote"></div></div>`, 'card wide');
+  const stage = $('.stage', m), badge = $('.pbadge', m), steps = $('.steps', m), cnt = $('.cnt', m); let target = 0, shown = 0; const t0 = performance.now(); let raf;
+  const tick = () => { shown += (target - shown) * .08; if (target - shown < .3) shown = target; badge.textContent = `${Math.min(99, Math.round(shown))}% · ${fmtT((performance.now() - t0) / 1000)}`; raf = requestAnimationFrame(tick); }; raf = requestAnimationFrame(tick);
+  const onProgress = (p) => { target = Math.max(target, p); }; const onStep = (s) => { const li = el(`<li class="k-${s.kind}">${esc(s.text)}</li>`); steps.appendChild(li); cnt.textContent = '· ' + steps.children.length; scrollDown(); };
+  runPipeline({ message: text, intent, resolved, uploads: ups, onProgress, onStep }).then((r) => {
+    cancelAnimationFrame(raf);
+    if (r.refused) { m.querySelector('.gen').innerHTML = `<div>🚫 ${esc(r.refused)}</div>`; return; }
+    badge.textContent = `100% · ${fmtT((performance.now() - t0) / 1000)}`; setTimeout(() => badge.remove(), 900); showResult(m, { text, intent, resolved, ups, answers, ...r, box }); $('.think', m).open = false;
+  }).catch((e) => { cancelAnimationFrame(raf); stage.remove(); m.querySelector('.gnote').innerHTML = '⚠️ ' + esc(explain(e)) + '<div class="row"><button class="btn retry">Try again</button></div>'; m.querySelector('.retry').onclick = () => { m.remove(); startGeneration(text, intent, ups, answers); }; });
+}
+const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function showResult(m, g) {
+  const stage = $('.stage', m); stage.querySelector('.shimmer') && stage.querySelector('.shimmer').remove(); const cvs = g.canvas; cvs.style.width = g.box.width + 'px'; cvs.style.height = g.box.height + 'px'; cvs.className = 'result'; stage.appendChild(cvs); g.stage = stage; g.cvs = cvs; cvs.onclick = () => openViewer(g.cvs);
+  const act = $('.actions', m); act.hidden = false; act.innerHTML = '<button class="btn primary dl">⬇ Download PNG</button><button class="btn shuf">🔀 Shuffle style</button><button class="btn ed">✏️ Edit text</button><button class="btn re">↻ Regenerate</button>';
+  $('.dl', m).onclick = () => g.cvs.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `studio-${(g.spec.title || 'image').replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 24)}-${g.resolved.size.w}x${g.resolved.size.h}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
+  $('.shuf', m).onclick = async () => { const ids = Object.keys(E.STYLES); const i = (ids.indexOf(g.spec.style) + 1) % ids.length; const st = ids[i]; const pals = STYLE_PAL[st]; const pal = pals[Math.floor(Math.random() * pals.length)]; g.spec = { ...g.spec, style: st, palette: pal }; await rerender(m, g, `Switched to ${E.STYLES[st].name} with the ${DATA.PALETTES[pal].name} palette (re-rendered locally).`); };
+  const ed = $('.edit', m); $('.ed', m).onclick = () => { ed.hidden = !ed.hidden; if (ed.hidden) return; ed.innerHTML = `<input class="qin t1" value="${esc(g.spec.title)}" placeholder="Title"><input class="qin t2" value="${esc(g.spec.subtitle || '')}" placeholder="Subtitle (optional)"><div class="row"><button class="btn primary ap">Apply</button></div>`; $('.ap', ed).onclick = async () => { const t = $('.t1', ed).value.trim(); if (!t) return; g.spec = { ...g.spec, title: t, subtitle: $('.t2', ed).value.trim(), accentWord: t.toLowerCase().includes((g.spec.accentWord || '').toLowerCase()) ? g.spec.accentWord : '' }; ed.hidden = true; await rerender(m, g, 'Updated the text (re-rendered locally).'); }; };
+  $('.re', m).onclick = () => startGeneration(g.text, g.intent, g.ups, g.answers || {});
+  if (g.sources.length) $('.srcs', m).innerHTML = 'Photo sources: ' + g.sources.map((s) => `<a href="${esc(s.url || '#')}" target="_blank" rel="noopener">${esc(s.domain || 'source')}</a>`).join(', ');
+  const i = g.info; if (!i.subjectDrawn && g.spec.hero.type !== 'none') $('.gnote', m).textContent = 'Note: the photo could not be placed, so a graphic was used instead.'; scrollDown();
+}
+async function rerender(m, g, line) { const t0 = performance.now(); const res = await E.render(g.spec, g.prepared, g.resolved.size); const c = res.canvas; c.style.width = g.box.width + 'px'; c.style.height = g.box.height + 'px'; c.className = 'result'; c.onclick = () => openViewer(c); g.cvs.replaceWith(c); g.cvs = c; const li = el(`<li class="k-edit">${esc(line)} Contrast ${res.info.contrast}:1.</li>`); $('.steps', m).appendChild(li); $('.cnt', m).textContent = '· ' + $('.steps', m).children.length; }
+function openViewer(cvs) { const v = el('<div class="viewer"><button class="vx">×</button></div>'); const c = E.cv(cvs.width, cvs.height); c.getContext('2d').drawImage(cvs, 0, 0); c.className = 'vimg'; v.appendChild(c); v.onclick = () => v.remove(); document.body.appendChild(v); }
+
+/* ---------- boot ---------- */
+renderStatus();
+addMsg('assistant', `Hi! I design images from your words — thumbnails, posters, logos, quote cards, banners. 🎨<br>${configured() ? 'Try one of these or type your own:' : 'First open <b>Settings</b> (⚙️), paste your API key and press <b>Test &amp; Save</b>. Then try an example:'}`);
+const ex = el('<div class="examples"></div>'); ['YouTube thumbnail banao: AI से कमाई', 'Instagram quote card: Dream big, start small', 'Diwali sale poster banao', 'Neon logo for my gaming channel'].forEach((t) => { const b = el(`<button class="opt">${esc(t)}</button>`); b.onclick = () => send(t); ex.appendChild(b); }); chat.appendChild(ex);
+if (!configured()) setTimeout(() => $('#openSettings').click(), 400);
+
+</script>
+</body>
+</html>

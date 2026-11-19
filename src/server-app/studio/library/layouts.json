@@ -571,6 +571,94 @@
     }
    },
    "notes": "2x2 or 3x2 tiles with 2% gutters; each tile has object-fit:cover."
+  },
+  {
+   "id": "editorial-split",
+   "name": "Editorial magazine split",
+   "bestFor": [
+    "poster",
+    "portrait",
+    "ig-portrait",
+    "book cover"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.07,
+     "y": 0.06,
+     "w": 0.4,
+     "h": 0.05,
+     "align": "left"
+    },
+    "title": {
+     "x": 0.07,
+     "y": 0.13,
+     "w": 0.86,
+     "h": 0.2,
+     "align": "left"
+    },
+    "subject": {
+     "x": 0.07,
+     "y": 0.34,
+     "w": 0.86,
+     "h": 0.5,
+     "anchor": "center"
+    },
+    "subtitle": {
+     "x": 0.07,
+     "y": 0.86,
+     "w": 0.86,
+     "h": 0.08,
+     "align": "left"
+    }
+   },
+   "notes": "Bold serif editorial header separated by thin hairline rules above crisp visual frame."
+  },
+  {
+   "id": "portrait-studio",
+   "name": "Studio portrait centerpiece",
+   "bestFor": [
+    "portrait",
+    "poster",
+    "profile-dp",
+    "album-cover"
+   ],
+   "aspects": [
+    "any"
+   ],
+   "zones": {
+    "badge": {
+     "x": 0.08,
+     "y": 0.06,
+     "w": 0.45,
+     "h": 0.06,
+     "align": "left"
+    },
+    "subject": {
+     "x": 0.08,
+     "y": 0.06,
+     "w": 0.84,
+     "h": 0.94,
+     "anchor": "bottom"
+    },
+    "title": {
+     "x": 0.08,
+     "y": 0.68,
+     "w": 0.84,
+     "h": 0.18,
+     "align": "left"
+    },
+    "subtitle": {
+     "x": 0.08,
+     "y": 0.86,
+     "w": 0.84,
+     "h": 0.08,
+     "align": "left"
+    }
+   },
+   "notes": "Bottom-anchored portrait with dramatic studio keylight behind subject and crisp lower-third nameplate."
   }
  ]
 }

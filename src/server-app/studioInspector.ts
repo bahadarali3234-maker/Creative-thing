@@ -1,31 +1,41 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
+import {
+  getAvailableGrokKeys,
+  isRateLimitResponse,
+  markKeyRateLimited,
+} from './grokKeyPool';
+import { resolveProviderKeyForRequest } from './firebaseServerAuth';
+import { extractJson } from './studio/src/plan.mjs';
 
 export interface StudioInspectionDefect {
-  area: 'layout' | 'text' | 'cutout' | 'face';
+  area: 'layout' | 'text' | 'cutout' | 'face' | 'background' | 'subject';
   severity: 'major' | 'minor';
   issue: string;
   fixInstruction: string;
 }
 
+export interface StudioInspectionRepairHints {
+  increaseOverlay?: boolean;
+  addTextPlate?: boolean;
+  swapBackground?: boolean;
+  tightenCutout?: boolean;
+  shiftTextZone?: boolean;
+}
+
 export interface StudioInspectionResult {
   inspectorAvailable: boolean;
+  inspectorModel?: string;
   approved: boolean;
   score: number;
   summary: string;
   defects: StudioInspectionDefect[];
+  repairHints: StudioInspectionRepairHints;
 }
 
 function getGeminiInspectorClient(): GoogleGenAI | null {
   const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) return null;
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+  return new GoogleGenAI({ apiKey });
 }
 
 function parseDataUrlBase64(dataUrl: string): { mimeType: string; data: string } | null {
@@ -37,10 +47,127 @@ function parseDataUrlBase64(dataUrl: string): { mimeType: string; data: string }
   };
 }
 
+async function discoverGroqVisionModels(key: string): Promise<string[]> {
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return [];
+    const j: any = await r.json().catch(() => ({}));
+    const ids: string[] = Array.isArray(j?.data) ? j.data.map((m: any) => String(m?.id || '')) : [];
+    return ids.filter(
+      (id) => /(vision|llama-4|scout|maverick|pixtral|llava|vl)/i.test(id) && !/guard|whisper|tts/i.test(id)
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function callGroqVisionInspector(
+  promptText: string,
+  imageDataUrl: string,
+  req?: any
+): Promise<{ text: string; model: string } | null> {
+  const groqPool = getAvailableGrokKeys({ providerFilter: 'groq', includeCooldownAsLastResort: true });
+  const xaiPool = getAvailableGrokKeys({ providerFilter: 'xai', includeCooldownAsLastResort: true });
+  const candidates: Array<{ endpoint: string; key: string; models: string[] }> = [];
+
+  for (const entry of groqPool) {
+    const discovered = await discoverGroqVisionModels(entry.key);
+    candidates.push({
+      endpoint: entry.endpoint,
+      key: entry.key,
+      models: [
+        ...new Set([
+          ...discovered,
+          'meta-llama/llama-4-scout-17b-16e-instruct',
+          'meta-llama/llama-4-maverick-17b-128e-instruct',
+        ]),
+      ],
+    });
+  }
+
+  for (const entry of xaiPool) {
+    candidates.push({
+      endpoint: entry.endpoint,
+      key: entry.key,
+      models: ['grok-2-vision-1212', 'grok-4'],
+    });
+  }
+
+  if (candidates.length === 0 && req) {
+    try {
+      const rec = await resolveProviderKeyForRequest(req, 'groq');
+      if (rec?.apiKey && !rec.apiKey.startsWith('xai-')) {
+        const discovered = await discoverGroqVisionModels(rec.apiKey.trim());
+        candidates.push({
+          endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+          key: rec.apiKey.trim(),
+          models: [
+            ...new Set([
+              ...discovered,
+              'meta-llama/llama-4-scout-17b-16e-instruct',
+              'meta-llama/llama-4-maverick-17b-128e-instruct',
+            ]),
+          ],
+        });
+      }
+    } catch {}
+  }
+
+  for (const cand of candidates) {
+    for (const model of cand.models) {
+      try {
+        const res = await fetch(cand.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cand.key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: promptText },
+                  { type: 'image_url', image_url: { url: imageDataUrl } },
+                ],
+              },
+            ],
+            temperature: 0.2,
+            max_tokens: 1200,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          if (isRateLimitResponse(res.status, errText)) {
+            markKeyRateLimited(cand.key, res.headers.get('retry-after'));
+            break;
+          }
+          continue;
+        }
+
+        const data: any = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (text && String(text).trim()) {
+          return { text: String(text), model };
+        }
+      } catch {}
+    }
+  }
+
+  return null;
+}
+
 /**
  * Multimodal AI visual inspector for Creative Studio compositions.
- * Evaluates rendered PNG screenshots across layout, text readability/spelling,
- * background cutout cleanliness, and face placement/blending before delivery.
+ * Uses Groq Vision primary (plus Gemini fallback) to verify rendered quality across
+ * subject, identity preservation, background relevance, text spelling/contrast,
+ * cutout edge cleanliness, and layout margins before final delivery.
  */
 export async function inspectRenderedStudioDesign(params: {
   imageDataUrl: string;
@@ -48,6 +175,7 @@ export async function inspectRenderedStudioDesign(params: {
   plan: any;
   width: number;
   height: number;
+  req?: any;
 }): Promise<StudioInspectionResult> {
   const parsedImg = parseDataUrlBase64(params.imageDataUrl);
   if (!parsedImg) {
@@ -57,117 +185,117 @@ export async function inspectRenderedStudioDesign(params: {
       score: 90,
       summary: 'Rendered preview snapshot missing; relied on static structural validation.',
       defects: [],
+      repairHints: {},
     };
   }
 
-  const ai = getGeminiInspectorClient();
-  if (!ai) {
-    return {
-      inspectorAvailable: false,
-      approved: true,
-      score: 90,
-      summary: 'Static structural checks passed (multimodal inspector API key not set in environment).',
-      defects: [],
-    };
-  }
-
-  const expectedTitle = String(params.plan?.text?.title || '').trim();
-  const expectedSubtitle = String(params.plan?.text?.subtitle || '').trim();
-  const expectedBadge = String(params.plan?.text?.badge || '').trim();
-  const hasFaceSwap = Array.isArray(params.plan?.assets)
-    ? params.plan.assets.some((a: any) => a?.role === 'face_swap_target')
-    : false;
+  const expectedTitle = String(params.plan?.title || params.plan?.text?.title || '').trim();
+  const expectedSubtitle = String(params.plan?.subtitle || params.plan?.text?.subtitle || '').trim();
+  const expectedBadge = String(params.plan?.badge || params.plan?.text?.badge || '').trim();
+  const hasFaceSwap =
+    Boolean(params.plan?.faceSwap?.needed) ||
+    (Array.isArray(params.plan?.assets)
+      ? params.plan.assets.some((a: any) => a?.role === 'face_swap_target')
+      : false);
   const hasCutout = Array.isArray(params.plan?.assets)
     ? params.plan.assets.some((a: any) => Boolean(a?.removeBackground))
     : false;
 
-  const rubricPrompt = `You are a strict Senior Visual Design Quality Inspector reviewing a rendered ${params.width}x${params.height}px graphic.
+  const rubricPrompt = `You are a strict Senior Visual Design Quality Control Director inspecting a rendered ${params.width}x${params.height}px graphic.
 
-User Request: "${String(params.prompt || '').slice(0, 300)}"
+User Request: "${String(params.prompt || '').slice(0, 350)}"
 Planned Recipe: ${String(params.plan?.recipe || 'generic')} | Style: ${String(params.plan?.style || 'modern')}
 Expected Text:
 - Headline: ${expectedTitle || '(none)'}
 - Subtitle: ${expectedSubtitle || '(none)'}
 - Badge: ${expectedBadge || '(none)'}
 Contains Cutout Asset: ${hasCutout ? 'yes' : 'no'}
-Contains Face Swap Asset: ${hasFaceSwap ? 'yes' : 'no'}
+Contains Face Swap / Portrait Edit: ${hasFaceSwap ? 'yes' : 'no'}
 
-Inspect the rendered image carefully for ANY visible flaws across these 4 areas:
-1. "layout": Overlapping zones, elements clipped or touching outer edges (<3% safe margin), broken aspect ratios, missing broken image icons, huge empty voids.
-2. "text": Misspelled or garbled expected words, low text-background contrast (unreadable light text on bright photo or dark text on dark photo), truncated words, headline overlapping a person's face/eyes.
-3. "cutout": Ugly white/checkerboard halo around removed-background subject, harsh rectangular box cutout, floating ungrounded cutout.
-4. "face": Cropped head/forehead, severely misaligned face swap seam, unnatural color/lighting mismatch on the face.
+Inspect the rendered image carefully for ANY visible flaws across these areas:
+1. "subject": Main subject missing, heavily cropped, or wrong subject for the prompt.
+2. "face": Cropped head/forehead, unnatural face-swap seam, distorted identity, or text covering face/eyes.
+3. "background": Background completely unrelated to topic, contains watermarks, or clashes heavily with foreground.
+4. "text": Misspelled or garbled expected words, low text-background contrast (unreadable text over busy background), truncated words, or clipped edges.
+5. "cutout": Ugly white/checkerboard halo around removed-background subject, harsh rectangular box cutout.
+6. "layout": Overlapping zones, elements clipped near outer borders, awkward alignment, or visual clutter.
+
+Return ONLY strict JSON (no markdown):
+{
+  "approved": true,
+  "score": 90,
+  "summary": "Concise 1-sentence visual quality control verdict.",
+  "repairHints": {
+    "increaseOverlay": false,
+    "addTextPlate": false,
+    "swapBackground": false,
+    "tightenCutout": false,
+    "shiftTextZone": false
+  },
+  "defects": [
+    {
+      "area": "layout|text|cutout|face|background|subject",
+      "severity": "major|minor",
+      "issue": "Specific observed flaw",
+      "fixInstruction": "Concrete repair action"
+    }
+  ]
+}
 
 Decision rule:
-- Be practical and honest: minor aesthetic nuances shouldn't reject a clean, high-contrast design (approve if score >= 82 and there are NO major defects).
-- Flag "major" ONLY for real defects that hurt readability, crop faces/text, clip borders, or leave broken/ugly artifacts.
-- For every defect, provide a concrete, actionable "fixInstruction" targeting CSS/layout/contrast/text adjustments.`;
+- Approve (approved: true) if score >= 80 and there are NO major defects hurting legibility, identity, subject relevance, or edges.
+- Flag "major" ONLY for real visible issues.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: parsedImg.mimeType,
-              data: parsedImg.data,
-            },
-          },
-          { text: rubricPrompt },
-        ],
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            approved: {
-              type: Type.BOOLEAN,
-              description: 'True if composition is clean, legible, and ready for the user without major flaws.',
-            },
-            score: {
-              type: Type.INTEGER,
-              description: 'Overall visual quality score from 0 to 100.',
-            },
-            summary: {
-              type: Type.STRING,
-              description: 'Concise 1-sentence visual inspection verdict.',
-            },
-            defects: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  area: {
-                    type: Type.STRING,
-                    description: 'One of layout, text, cutout, face.',
-                  },
-                  severity: {
-                    type: Type.STRING,
-                    description: 'Either major or minor.',
-                  },
-                  issue: {
-                    type: Type.STRING,
-                    description: 'Specific observed visual defect.',
-                  },
-                  fixInstruction: {
-                    type: Type.STRING,
-                    description: 'Concrete CSS/HTML/composition fix instruction.',
+  let rawText = '';
+  let usedModel = '';
+
+  const groqOut = await callGroqVisionInspector(rubricPrompt, params.imageDataUrl, params.req);
+  if (groqOut?.text) {
+    rawText = groqOut.text;
+    usedModel = groqOut.model;
+  } else {
+    const ai = getGeminiInspectorClient();
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: rubricPrompt },
+                {
+                  inlineData: {
+                    mimeType: parsedImg.mimeType,
+                    data: parsedImg.data,
                   },
                 },
-                required: ['area', 'severity', 'issue', 'fixInstruction'],
-              },
+              ],
             },
-          },
-          required: ['approved', 'score', 'summary', 'defects'],
-        },
-      },
-    });
+          ],
+        });
+        rawText = (response.text || '').trim();
+        usedModel = 'gemini-2.5-flash';
+      } catch (err: any) {
+        console.warn('[Studio Inspector notice]:', err?.message || err);
+      }
+    }
+  }
 
-    const rawText = (response.text || '').trim();
-    const parsed = JSON.parse(rawText || '{}');
-    const validAreas = new Set(['layout', 'text', 'cutout', 'face']);
+  if (!rawText) {
+    return {
+      inspectorAvailable: false,
+      approved: true,
+      score: 90,
+      summary: 'Completed structural validation (multimodal inspector temporarily unavailable).',
+      defects: [],
+      repairHints: {},
+    };
+  }
+
+  try {
+    const parsed: any = extractJson(rawText);
+    const validAreas = new Set(['layout', 'text', 'cutout', 'face', 'background', 'subject']);
     const defects: StudioInspectionDefect[] = Array.isArray(parsed.defects)
       ? parsed.defects
           .filter((d: any) => d && typeof d.issue === 'string' && d.issue.trim())
@@ -182,25 +310,40 @@ Decision rule:
           }))
       : [];
 
-    const score = Math.max(0, Math.min(100, Number(parsed.score) || (defects.length ? 70 : 92)));
+    const score = Math.max(0, Math.min(100, Number(parsed.score) || (defects.length ? 74 : 92)));
     const hasMajor = defects.some((d) => d.severity === 'major');
-    const approved = Boolean(parsed.approved) && !hasMajor && score >= 82;
+    const approved = Boolean(parsed.approved) && !hasMajor && score >= 80;
+    const rawHints = parsed.repairHints && typeof parsed.repairHints === 'object' ? parsed.repairHints : {};
 
     return {
       inspectorAvailable: true,
+      inspectorModel: usedModel,
       approved,
       score,
-      summary: String(parsed.summary || (approved ? 'Passed visual layout, contrast, cutout & face quality inspection.' : 'Detected visual issues requiring repair.')).trim(),
+      summary: String(
+        parsed.summary ||
+          (approved
+            ? 'Passed visual QC across subject, identity, background, text & edge alignment.'
+            : 'Detected visual flaws requiring auto-repair.')
+      ).trim(),
       defects,
+      repairHints: {
+        increaseOverlay: Boolean(rawHints.increaseOverlay),
+        addTextPlate: Boolean(rawHints.addTextPlate),
+        swapBackground: Boolean(rawHints.swapBackground),
+        tightenCutout: Boolean(rawHints.tightenCutout),
+        shiftTextZone: Boolean(rawHints.shiftTextZone),
+      },
     };
   } catch (err: any) {
-    console.warn('[Studio Inspector notice]:', err?.message || err);
+    console.warn('[Studio Inspector parse notice]:', err?.message || err);
     return {
       inspectorAvailable: false,
       approved: true,
       score: 90,
-      summary: 'Completed static checks (multimodal inspector temporarily unavailable).',
+      summary: 'Completed structural validation (inspector JSON fallback).',
       defects: [],
+      repairHints: {},
     };
   }
 }

@@ -303,6 +303,54 @@
    ],
    "bestFor": "Friendly script accents (not for Hindi)",
    "googleFonts": "https://fonts.googleapis.com/css2?family=Pacifico&family=Poppins:wght@500&display=swap"
+  },
+  {
+   "id": "editorial-bricolage",
+   "display": "Bricolage Grotesque",
+   "displayWeight": "800",
+   "body": "Plus Jakarta Sans",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Expressive studio posters, product launches, modern SaaS",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Plus+Jakarta+Sans:wght@500;700&display=swap"
+  },
+  {
+   "id": "magazine-fraunces",
+   "display": "Fraunces",
+   "displayWeight": "800",
+   "body": "DM Sans",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Luxury editorial covers, portraits, fashion",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,800&family=DM+Sans:wght@500;700&display=swap"
+  },
+  {
+   "id": "punch-oswald",
+   "display": "Oswald",
+   "displayWeight": "700",
+   "body": "Plus Jakarta Sans",
+   "bodyWeight": "600",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "Bold YouTube thumbnails, sports hype, movie posters",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Plus+Jakarta+Sans:wght@500;700&display=swap"
+  },
+  {
+   "id": "luxury-cormorant",
+   "display": "Cormorant Garamond",
+   "displayWeight": "700",
+   "body": "Montserrat",
+   "bodyWeight": "500",
+   "scripts": [
+    "latin"
+   ],
+   "bestFor": "High-fashion portraits, fragrance ads, invitations",
+   "googleFonts": "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Montserrat:wght@500;600&display=swap"
   }
  ]
 }

@@ -28,6 +28,8 @@ import {
   stopGeminiTts,
 } from '../utils/geminiTts';
 import { isSimpleMessage } from './FullScreenChatView';
+import { subscribeToAuth, getCurrentUser, type User } from '../firebase';
+import { getUserDisplayName, getUserFirstName } from '../utils/gmailClient';
 
 export interface LiveVoiceCallModalProps {
   isOpen: boolean;
@@ -193,6 +195,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   onGoToChat,
   onVoiceChanged,
 }) => {
+  const [authUser, setAuthUser] = useState<User | null>(() => getCurrentUser());
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => getStoredVoice());
   const voiceInfo = getVoiceInfo(selectedVoiceId);
   const personaName = voiceInfo.persona; // 'Zara' (Female) | 'Daro' (Male)
@@ -200,8 +203,11 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   const [status, setStatus] = useState<AssistantStatus>('idle');
   const [textInput, setTextInput] = useState<string>('');
   const [userTranscript, setUserTranscript] = useState<string>('');
+  const initialFirstName = getUserFirstName(authUser);
   const [aiSpeechText, setAiSpeechText] = useState<string>(
-    `Assalam-o-Alaikum! Main ${personaName} hoon. Bol kar, likh kar ya camera se kuch bhi poochhein.`
+    initialFirstName
+      ? `Assalam-o-Alaikum ${initialFirstName}! Main ${personaName} hoon. Bol kar, likh kar ya camera se kuch bhi poochhein.`
+      : `Assalam-o-Alaikum! Main ${personaName} hoon. Bol kar, likh kar ya camera se kuch bhi poochhein.`
   );
   const [goToChatTopic, setGoToChatTopic] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -248,6 +254,11 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
   const vadAudioCtxRef = useRef<AudioContext | null>(null);
   const startListeningRef = useRef<() => void>(() => {});
   const historyRef = useRef<Array<{ sender: 'user' | 'ai'; text: string }>>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToAuth((u) => setAuthUser(u));
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     isModalOpenRef.current = isOpen;
@@ -406,8 +417,12 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
       } else {
         setLockReason(null);
         setVoiceEngineMode('studio');
+        const activeUser = getCurrentUser();
+        const firstName = getUserFirstName(activeUser);
         setAiSpeechText(
-          `Assalam-o-Alaikum! Main ${info.persona} hoon. Seedha bolna shuru karein — mic hamesha open hai.`
+          firstName
+            ? `Assalam-o-Alaikum ${firstName}! Main ${info.persona} hoon. Seedha bolna shuru karein — mic hamesha open hai.`
+            : `Assalam-o-Alaikum! Main ${info.persona} hoon. Seedha bolna shuru karein — mic hamesha open hai.`
         );
         setStatus('listening');
         // Hands-free always-open mic starts automatically when voice call opens
@@ -688,6 +703,12 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             isVoiceAssistant: true,
             voiceLanguage: 'auto',
             assistantPersona: personaName,
+            userProfile: (() => {
+              const activeUser = authUser || getCurrentUser();
+              if (!activeUser || activeUser.isAnonymous) return undefined;
+              const name = getUserDisplayName(activeUser);
+              return name ? { name, email: activeUser.email || undefined } : undefined;
+            })(),
           }),
         });
 
@@ -1129,8 +1150,28 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
           </div>
         </header>
 
-        {/* Main Center: Pulsing Video Orb + Status + Bold Romanized Text Directly at Bottom of Orb */}
+        {/* Main Center: Single Top Thinking/Status Badge + Pulsing Video Orb + Word-by-Word Voice Text Below Orb */}
         <main className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-6 text-center">
+          {/* Single Top Thinking / Listening / Speaking Pill Above Orb */}
+          <div className="mb-2.5 flex items-center justify-center min-h-[32px]">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/85 backdrop-blur-md border border-[#4cc3ff]/45 shadow-sm text-[11px] sm:text-xs font-extrabold tracking-[0.14em] uppercase text-[#0a2a66]">
+              {status === 'thinking' ? (
+                <Loader2 size={13} className="animate-spin text-[#1450c8] shrink-0" />
+              ) : (
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    status === 'listening'
+                      ? 'bg-[#0ea5e9] shadow-[0_0_8px_#4cc3ff] animate-pulse'
+                      : status === 'speaking'
+                      ? 'bg-[#1450c8] shadow-[0_0_8px_#1450c8] animate-pulse'
+                      : 'bg-slate-400'
+                  }`}
+                />
+              )}
+              <span>{statusLabel}</span>
+            </div>
+          </div>
+
           {/* Interactive Energy Video Orb */}
           <div
             ref={orbScaleRef}
@@ -1139,8 +1180,8 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             aria-label="Tap to talk"
             className="relative flex items-center justify-center cursor-pointer select-none will-change-transform"
             style={{
-              width: 'min(52vmin, 340px)',
-              height: 'min(52vmin, 340px)',
+              width: 'min(48vmin, 320px)',
+              height: 'min(48vmin, 320px)',
               transition: 'transform 0.09s linear',
             }}
           >
@@ -1182,17 +1223,7 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
             />
           </div>
 
-          {/* Status Indicator Dot + Label */}
-          <div className="flex items-center gap-2 text-[11px] sm:text-xs font-bold tracking-[0.2em] uppercase text-[#6179a0] mt-1">
-            <span
-              className={`w-2 h-2 rounded-full bg-[#4cc3ff] shadow-[0_0_10px_#4cc3ff] ${
-                status === 'thinking' || status === 'listening' ? 'animate-pulse' : ''
-              }`}
-            />
-            <span>{statusLabel}</span>
-          </div>
-
-          {/* Bold Text Always Shown Directly at Bottom of Orb */}
+          {/* User Transcript + Word-by-Word Spoken AI Response Directly Below Orb */}
           <div className="w-full max-w-[680px] mt-3 px-2 space-y-1.5">
             {attachedThumbUrl && (
               <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/80 border border-[#4cc3ff]/40 shadow-sm mx-auto">
@@ -1215,19 +1246,14 @@ export const LiveVoiceCallModal: React.FC<LiveVoiceCallModalProps> = ({
               </p>
             )}
 
-            <div
-              dir="auto"
-              className="max-h-[22dvh] overflow-y-auto px-2 text-base sm:text-xl font-extrabold text-[#0a2a66] leading-relaxed select-text"
-            >
-              {status === 'thinking' && !aiSpeechText ? (
-                <span className="inline-flex items-center gap-2 text-sm sm:text-base font-bold text-[#4a6491] animate-pulse">
-                  <Loader2 size={15} className="animate-spin text-[#1450c8]" />
-                  Thinking &amp; preparing voice...
-                </span>
-              ) : (
-                aiSpeechText
-              )}
-            </div>
+            {aiSpeechText && (
+              <div
+                dir="auto"
+                className="max-h-[22dvh] overflow-y-auto px-2 text-base sm:text-xl font-extrabold text-[#0a2a66] leading-relaxed select-text"
+              >
+                {aiSpeechText}
+              </div>
+            )}
 
             {lockReason && (
               <div className="mt-3 mx-auto max-w-md rounded-2xl bg-amber-50/95 border border-amber-300 p-3.5 text-left shadow-sm space-y-2">

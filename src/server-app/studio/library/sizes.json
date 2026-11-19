@@ -107,6 +107,14 @@
    "ratio": 1.0
   },
   {
+   "id": "poster-2-3",
+   "name": "Poster (2:3)",
+   "w": 1200,
+   "h": 1800,
+   "note": "Default 2:3 poster aspect ratio",
+   "ratio": 0.6667
+  },
+  {
    "id": "a4-portrait",
    "name": "A4 poster / flyer (portrait)",
    "w": 2480,

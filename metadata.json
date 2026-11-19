@@ -1,6 +1,6 @@
 {
-  "name": "Grok AI Assistant",
-  "description": "Next-generation AI Workspace showcasing multimodal reasoning, generative creative sessions, reference image crawler, and website preview generation.",
+  "name": "Think Creative",
+  "description": "Think Creative — Next-generation AI Workspace showcasing multimodal reasoning, generative creative studio, project planning, and website design.",
   "requestFramePermissions": ["microphone", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

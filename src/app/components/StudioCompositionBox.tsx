@@ -9,7 +9,7 @@ import {
   Loader2,
   AlertCircle,
   ExternalLink,
-  Palette,
+  Layers,
 } from 'lucide-react';
 import {
   previewBox,
@@ -17,6 +17,11 @@ import {
   StudioSourceAttribution,
   StudioThinkingLogStep,
 } from '../utils/studioClient';
+import {
+  CanvasDesignSpec,
+  SerializedPreparedAsset,
+  StudioSceneGraph,
+} from '../utils/studioCanvasEngine';
 import { enhancedBackgroundRemove } from '../utils/webgpuVision';
 
 export interface StudioJobState {
@@ -30,6 +35,10 @@ export interface StudioJobState {
   width: number;
   height: number;
   html?: string;
+  imageDataUrl?: string;
+  canvasSpec?: CanvasDesignSpec;
+  serializedAssets?: SerializedPreparedAsset[];
+  sceneGraph?: StudioSceneGraph;
   summary?: StudioThinkingLogStep[];
   sources?: StudioSourceAttribution[];
   warnings?: string[];
@@ -44,7 +53,8 @@ export const StudioFullscreenModal: React.FC<{
   onClose: () => void;
   onRegenerate: (job: StudioJobState) => void;
   onEditInstruction: (job: StudioJobState, instruction: string) => void;
-}> = ({ studioJob, onClose, onRegenerate, onEditInstruction }) => {
+  onEditLayers?: (job: StudioJobState) => void;
+}> = ({ studioJob, onClose, onRegenerate, onEditInstruction, onEditLayers }) => {
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [cutoutUrl, setCutoutUrl] = useState<string | null>(null);
   const [showingCutout, setShowingCutout] = useState(false);
@@ -53,13 +63,13 @@ export const StudioFullscreenModal: React.FC<{
   const [tweakText, setTweakText] = useState('');
 
   useEffect(() => {
-    setPngUrl(null);
+    setPngUrl(studioJob?.imageDataUrl || null);
     setCutoutUrl(null);
     setShowingCutout(false);
     setBusyAction(null);
     setActionError('');
     setTweakText('');
-  }, [studioJob?.jobId, studioJob?.html]);
+  }, [studioJob?.jobId, studioJob?.html, studioJob?.imageDataUrl]);
 
   useEffect(() => {
     if (!studioJob) return;
@@ -70,9 +80,10 @@ export const StudioFullscreenModal: React.FC<{
     return () => window.removeEventListener('keydown', onKey);
   }, [studioJob, onClose]);
 
-  if (!studioJob || !studioJob.html) return null;
+  if (!studioJob || (!studioJob.imageDataUrl && !studioJob.html)) return null;
 
   const ensurePng = async () => {
+    if (studioJob.imageDataUrl) return studioJob.imageDataUrl;
     if (pngUrl) return pngUrl;
     const rendered = await exportStudioHtmlToPngDataUrl(
       studioJob.html!,
@@ -110,7 +121,7 @@ export const StudioFullscreenModal: React.FC<{
       const slug = (studioJob.recipe || 'studio-design').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
       const a = document.createElement('a');
       a.href = href;
-      a.download = showingCutout ? `${slug}_cutout.png` : `${slug}_${studioJob.width}x${studioJob.height}.png`;
+      a.download = showingCutout ? `studio-${slug}-cutout.png` : `studio-${slug}-${studioJob.width}x${studioJob.height}.png`;
       a.click();
     } catch (e: any) {
       setActionError(e?.message || 'Could not export PNG.');
@@ -222,6 +233,12 @@ export const StudioFullscreenModal: React.FC<{
               alt="Cutout design preview"
               className="w-full h-full object-contain"
             />
+          ) : studioJob.imageDataUrl ? (
+            <img
+              src={studioJob.imageDataUrl}
+              alt={studioJob.canvasSpec?.title || studioJob.prompt || 'Creative Studio Design'}
+              className="w-full h-full object-contain"
+            />
           ) : (
             <iframe
               sandbox="allow-same-origin"
@@ -240,7 +257,7 @@ export const StudioFullscreenModal: React.FC<{
           )}
         </div>
 
-        {/* Bottom quick tweak / regenerate strip */}
+        {/* Bottom quick tweak / Edit Layers / Regenerate strip */}
         <div className="w-full max-w-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <form
             onSubmit={(e) => {
@@ -269,17 +286,19 @@ export const StudioFullscreenModal: React.FC<{
           </form>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                onEditInstruction(studioJob, 'Change the style and palette to a fresh alternative look');
-                onClose();
-              }}
-              className="h-9 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Palette size={13} />
-              <span>Change style</span>
-            </button>
+            {onEditLayers && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditLayers(studioJob);
+                }}
+                className="h-9 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Layers size={13} />
+                <span>Edit Layers</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -301,14 +320,17 @@ export const StudioFullscreenModal: React.FC<{
 export const StudioCompositionBox: React.FC<{
   studioJob: StudioJobState;
   onOpenFullscreen: (job: StudioJobState) => void;
-}> = ({ studioJob, onOpenFullscreen }) => {
+  onEditLayers?: (job: StudioJobState) => void;
+  onRegenerate?: (job: StudioJobState) => void;
+}> = ({ studioJob, onOpenFullscreen, onEditLayers, onRegenerate }) => {
   const box = previewBox(studioJob.width || 1280, studioJob.height || 720, 320, 380);
+  const hasPreview = Boolean(studioJob.imageDataUrl || studioJob.html);
 
   if (studioJob.status === 'refused') {
     return (
       <div className="my-2 p-3.5 rounded-2xl neu-glass border border-border/20 text-xs text-foreground/85 max-w-[340px]">
         {studioJob.refusalReason ||
-          'I cannot create this specific image request. Share a safe public subject or product and I will design it.'}
+          'Please adjust this prompt to a safe creative concept and try again.'}
       </div>
     );
   }
@@ -324,14 +346,23 @@ export const StudioCompositionBox: React.FC<{
 
   const isRunning = studioJob.status === 'running';
 
+  const handleDownloadInline = () => {
+    if (!studioJob.imageDataUrl) return;
+    const slug = (studioJob.recipe || 'image').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
+    const a = document.createElement('a');
+    a.href = studioJob.imageDataUrl;
+    a.download = `studio-${slug}-${studioJob.width}x${studioJob.height}.png`;
+    a.click();
+  };
+
   return (
-    <div className="my-2 space-y-1.5 max-w-full">
+    <div className="my-2 space-y-2 max-w-full">
       <div
-        role={studioJob.html ? 'button' : undefined}
-        tabIndex={studioJob.html ? 0 : undefined}
-        onClick={() => studioJob.html && onOpenFullscreen(studioJob)}
+        role={hasPreview ? 'button' : undefined}
+        tabIndex={hasPreview ? 0 : undefined}
+        onClick={() => hasPreview && onOpenFullscreen(studioJob)}
         onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && studioJob.html) {
+          if ((e.key === 'Enter' || e.key === ' ') && hasPreview) {
             e.preventDefault();
             onOpenFullscreen(studioJob);
           }
@@ -341,10 +372,10 @@ export const StudioCompositionBox: React.FC<{
           height: `${box.h}px`,
         }}
         className={`relative rounded-2xl overflow-hidden neu-raise border border-border/20 ${
-          studioJob.html ? 'cursor-pointer group' : ''
+          hasPreview ? 'cursor-pointer group' : ''
         }`}
       >
-        {isRunning || !studioJob.html ? (
+        {isRunning || !hasPreview ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-gradient-to-br from-surface/70 via-background/80 to-surface/70 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-foreground/[0.04] to-transparent animate-pulse" />
             {/* Corner progress badge: percent · elapsed */}
@@ -356,6 +387,20 @@ export const StudioCompositionBox: React.FC<{
               {studioJob.stageLabel || 'Designing canvas...'}
             </span>
           </div>
+        ) : studioJob.imageDataUrl ? (
+          <>
+            <img
+              src={studioJob.imageDataUrl}
+              alt={studioJob.canvasSpec?.title || studioJob.prompt || 'Creative Studio Image'}
+              className="w-full h-full object-contain block bg-black/5"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-xl bg-black/75 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                <Maximize2 size={13} />
+                <span>Open Viewer</span>
+              </span>
+            </div>
+          </>
         ) : (
           <>
             <iframe
@@ -381,6 +426,42 @@ export const StudioCompositionBox: React.FC<{
           </>
         )}
       </div>
+
+      {/* Focused Inline Action Bar: strictly Download PNG, Edit Layers, and Regenerate */}
+      {studioJob.status === 'done' && studioJob.imageDataUrl && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleDownloadInline}
+            className="h-8 px-3 rounded-xl theme-button-primary text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap shrink-0"
+          >
+            <Download size={13} />
+            <span>Download PNG</span>
+          </button>
+
+          {onEditLayers && (
+            <button
+              type="button"
+              onClick={() => onEditLayers(studioJob)}
+              className="h-8 px-3 rounded-xl neu-raise border border-border/20 text-xs font-semibold text-foreground/85 hover:text-foreground flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap shrink-0"
+            >
+              <Layers size={13} />
+              <span>Edit Layers</span>
+            </button>
+          )}
+
+          {onRegenerate && (
+            <button
+              type="button"
+              onClick={() => onRegenerate(studioJob)}
+              className="h-8 px-3 rounded-xl neu-raise border border-border/20 text-xs font-semibold text-foreground/85 hover:text-foreground flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap shrink-0"
+            >
+              <RefreshCw size={13} />
+              <span>Regenerate</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Unboxed quiet source attribution metadata when web photos are used */}
       {studioJob.status === 'done' && studioJob.sources && studioJob.sources.length > 0 && (

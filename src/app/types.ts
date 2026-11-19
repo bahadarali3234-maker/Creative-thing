@@ -69,6 +69,19 @@ export interface SectionItem {
   question?: QuestionBlock;
 }
 
+export type PromptChatMode = 'Plan' | 'Chat' | 'Max';
+
+export interface PlanProposal {
+  id: string;
+  title: string;
+  summary: string;
+  fullText: string;
+  originalPrompt: string;
+  answers?: Record<string, string>;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'ai';
@@ -87,6 +100,7 @@ export interface ChatMessage {
     question?: QuestionBlock;
   };
   activeQuestion?: QuestionBlock;
+  planProposal?: PlanProposal;
   clarificationDecision?: ClarificationDecision;
   imagePlan?: {
     mode: 'NONE' | 'AUTO_REFERENCE' | 'USER_REQUESTED';

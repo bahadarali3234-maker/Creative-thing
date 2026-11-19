@@ -58,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenChat, onNavigate, onOpenLo
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-        {/* Brand identity: AI Workspace */}
+        {/* Brand identity: Think Creative */}
         <button
           id="nav-brand-logo"
           onClick={() => handleLinkClick('hero')}
@@ -67,7 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenChat, onNavigate, onOpenLo
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105 border border-[var(--border)] shadow-[var(--shadow-neumorphic-soft)]">
             <img
               src={HERO_AVATAR}
-              alt="AI Workspace"
+              alt="Think Creative"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
             />
@@ -76,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenChat, onNavigate, onOpenLo
             className="font-bold text-base sm:text-lg tracking-tight transition-colors"
             style={{ fontFamily: "'Syne', sans-serif", color: 'var(--text)' }}
           >
-            AI Workspace
+            Think Creative
           </span>
         </button>
 

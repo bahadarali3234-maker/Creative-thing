@@ -84,7 +84,7 @@ export const BuildyWorkspaceModal: React.FC<BuildyWorkspaceModalProps> = ({
             <Hammer size={14} strokeWidth={2.2} />
           </div>
           <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100 truncate">
-            Buildy Studio
+            Buildy
           </span>
         </div>
 
@@ -95,8 +95,8 @@ export const BuildyWorkspaceModal: React.FC<BuildyWorkspaceModalProps> = ({
             setReloadNonce((n) => n + 1);
           }}
           className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-          title="Refresh Buildy Studio"
-          aria-label="Refresh Buildy Studio"
+          title="Reload Buildy"
+          aria-label="Reload Buildy"
         >
           <RefreshCw size={14} className={!isFrameLoaded ? 'animate-spin' : ''} />
         </button>
@@ -107,7 +107,7 @@ export const BuildyWorkspaceModal: React.FC<BuildyWorkspaceModalProps> = ({
         {!isFrameLoaded && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-white dark:bg-zinc-950 pointer-events-none">
             <Loader2 size={24} className="animate-spin text-[#00a6ff]" />
-            <span className="text-xs font-semibold text-zinc-500">Loading Buildy Studio...</span>
+            <span className="text-xs font-semibold text-zinc-500">Opening Buildy...</span>
           </div>
         )}
         <iframe

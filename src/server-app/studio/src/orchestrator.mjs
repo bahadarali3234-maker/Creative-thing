@@ -153,6 +153,9 @@ export async function runStudioJob(job, deps) {
         if (res.palette && (a.role === 'background' || !plan.extractedPalette)) {
           plan.extractedPalette = res.palette;
         }
+        if (res.colorGradePreset) {
+          step(log.colorGrade(name, res.colorGradePreset, !!res.usedWebGpuColorGrade));
+        }
         step(log.adjust(name, a.adjust));
         assetData[a.id] = res.dataUrl;
         manifest.push({ id: a.id, name, role: a.role, width: res.width, height: res.height, hasAlpha: !!(res.facts && res.facts.hasAlpha) || !!(a.removeBackground && res.method && res.method !== 'none') });

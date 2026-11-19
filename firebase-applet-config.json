@@ -1,12 +1,11 @@
 {
-  "projectId": "windy-epoch-n07pf",
-  "appId": "1:129430515684:web:ccdc82e12fcb5a7a6261f1",
-  "apiKey": "AIzaSyDkGlwHwedXNm9lh-G_VUiVkAQc519ke8o",
-  "authDomain": "windy-epoch-n07pf.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-secureswap-46bd359d-6ab5-4c28-b311-75f56c5f4efc",
-  "storageBucket": "windy-epoch-n07pf.firebasestorage.app",
-  "messagingSenderId": "129430515684",
+  "projectId": "project-d15d0446-020e-4902-81a",
+  "appId": "1:598746048486:web:9abf3794b7b534df0d1827",
+  "apiKey": "AIzaSyAnhsG7bmGnOMwGYt6dEEarglFAYGWa-JY",
+  "authDomain": "project-d15d0446-020e-4902-81a.firebaseapp.com",
+  "storageBucket": "project-d15d0446-020e-4902-81a.firebasestorage.app",
+  "messagingSenderId": "598746048486",
   "measurementId": "",
-  "oAuthClientId": "129430515684-urqq9p221461utqtopap4v3v5uaimi7t.apps.googleusercontent.com",
+  "oAuthClientId": "598746048486-eknbd24800s8o7e0a5stko3rlopjp7r1.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
